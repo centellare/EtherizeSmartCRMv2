@@ -9,13 +9,11 @@ export const useAuth = () => {
 
   const fetchProfile = useCallback(async (userId: string) => {
     try {
-      // Выбираем только существующие поля на случай, если SQL еще не применен полностью
-      // Но пробуем получить всё, чтобы Soft Delete работал
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .maybeSingle(); // maybeSingle не кидает ошибку, если запись не найдена
+        .maybeSingle();
       
       if (error) {
         console.error('Database error fetching profile:', error.message);
@@ -41,12 +39,12 @@ export const useAuth = () => {
 
   useEffect(() => {
     let isMounted = true;
+    let authSubscription: any = null;
 
-    const initAuth = async () => {
+    const initialize = async () => {
+      // 1. Проверяем текущую сессию при загрузке
       try {
-        const { data: { session: initialSession }, error } = await supabase.auth.getSession();
-        if (error) throw error;
-
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
         if (isMounted) {
           setSession(initialSession);
           if (initialSession) {
@@ -56,28 +54,44 @@ export const useAuth = () => {
           }
         }
       } catch (err) {
-        console.error('Auth initialization failed:', err);
+        console.error('Session check failed:', err);
         if (isMounted) setLoading(false);
       }
-    };
 
-    initAuth();
+      // 2. Подписываемся на изменения состояния авторизации
+      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+        if (!isMounted) return;
+        
+        console.debug(`[Auth Event] ${event}`);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, currentSession) => {
-      if (isMounted) {
-        setSession(currentSession);
-        if (currentSession) {
-          await fetchProfile(currentSession.user.id);
-        } else {
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          setSession(currentSession);
+          if (currentSession) {
+            await fetchProfile(currentSession.user.id);
+          }
+        } else if (event === 'SIGNED_OUT') {
+          setSession(null);
           setProfile(null);
           setLoading(false);
         }
+      });
+      authSubscription = subscription;
+    };
+
+    initialize();
+
+    // Страховочный таймаут: если инициализация зависла более чем на 6 секунд
+    const timeout = setTimeout(() => {
+      if (isMounted && loading) {
+        console.warn('[Auth] Loading state forced to false due to timeout');
+        setLoading(false);
       }
-    });
+    }, 6000);
 
     return () => {
       isMounted = false;
-      subscription.unsubscribe();
+      if (authSubscription) authSubscription.unsubscribe();
+      clearTimeout(timeout);
     };
   }, [fetchProfile]);
 
