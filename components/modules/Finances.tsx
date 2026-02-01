@@ -141,7 +141,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   }, [transactions, typeFilter, startDate, endDate, summaryFilter, profile?.id]);
 
   const totals = useMemo(() => {
-    // Фильтруем транзакции по дате для расчета итогов в карточках
     const dateFiltered = transactions.filter(t => {
       const tDate = new Date(t.created_at);
       const matchesStart = !startDate || tDate >= new Date(startDate);
@@ -326,8 +325,8 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
               <Input type="date" value={endDate} onChange={(e:any) => setEndDate(e.target.value)} icon="event" className="h-12 !py-2 !text-xs !rounded-2xl min-w-[140px]" />
            </div>
            <div className="flex gap-2 w-full sm:w-auto ml-2">
-              <Button variant="tonal" onClick={() => { setFormData(p => ({...p, type: 'expense'})); setIsMainModalOpen(true); }} icon="request_quote" className="flex-1 h-12">Расход</Button>
-              {!isSpecialist && <Button onClick={() => { setFormData(p => ({...p, type: 'income'})); setIsMainModalOpen(true); }} icon="add_chart" className="flex-1 h-12">Приход</Button>}
+              <Button variant="tonal" onClick={() => { setFormData({ ...formData, type: 'expense' }); setIsMainModalOpen(true); }} icon="request_quote" className="flex-1 h-12">Расход</Button>
+              {!isSpecialist && <Button onClick={() => { setFormData({ ...formData, type: 'income' }); setIsMainModalOpen(true); }} icon="add_chart" className="flex-1 h-12">Приход</Button>}
            </div>
         </div>
       </div>
@@ -436,7 +435,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
                     <tr className="bg-slate-50/50">
                       <td colSpan={6} className="p-4 pl-16">
                          <div className="space-y-2">
-                            {t.payments && t.payments.length > 0 ? t.payments.map(p => (
+                            {t.payments && t.payments.length > 0 ? t.payments.map((p: any) => (
                               <div key={p.id} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
                                 <div className="flex flex-col">
                                    <span className="text-sm font-bold text-emerald-700">+{formatBYN(p.amount)}</span>
@@ -464,19 +463,19 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       {/* Модальное окно создания ТРАНЗАКЦИИ (Расход/Приход) */}
       <Modal isOpen={isMainModalOpen} onClose={() => setIsMainModalOpen(false)} title={formData.type === 'income' ? 'План прихода' : 'Заявка на расход'}>
         <form onSubmit={handleCreateTransaction} className="space-y-4">
-          <Select label="Объект" required value={formData.object_id} onChange={(e:any) => setFormData({...formData, object_id: e.target.value})} options={[{value: '', label: 'Выберите объект'}, ...objects.map(o => ({value: o.id, label: o.name}))]} icon="business" />
+          <Select label="Объект" required value={formData.object_id} onChange={(e:any) => setFormData({ ...formData, object_id: e.target.value })} options={[{value: '', label: 'Выберите объект'}, ...objects.map(o => ({value: o.id, label: o.name}))]} icon="business" />
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Сумма" type="number" step="0.01" required value={formData.amount} onChange={(e:any) => setFormData({...formData, amount: e.target.value})} icon="payments" />
-            <Input label="Дата плана" type="date" value={formData.planned_date} onChange={(e:any) => setFormData({...formData, planned_date: e.target.value})} icon="calendar_today" />
+            <Input label="Сумма" type="number" step="0.01" required value={formData.amount} onChange={(e:any) => setFormData({ ...formData, amount: e.target.value })} icon="payments" />
+            <Input label="Дата плана" type="date" value={formData.planned_date} onChange={(e:any) => setFormData({ ...formData, planned_date: e.target.value })} icon="calendar_today" />
           </div>
-          <Input label="Категория" required value={formData.category} onChange={(e:any) => setFormData({...formData, category: e.target.value})} icon="category" />
-          <Input label="Описание / Детали" value={formData.description} onChange={(e:any) => setFormData({...formData, description: e.target.value})} icon="notes" />
+          <Input label="Категория" required value={formData.category} onChange={(e:any) => setFormData({ ...formData, category: e.target.value })} icon="category" />
+          <Input label="Описание / Детали" value={formData.description} onChange={(e:any) => setFormData({ ...formData, description: e.target.value })} icon="notes" />
           
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-4">
              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Документация (опц.)</p>
              <div className="grid grid-cols-2 gap-4">
-               <Input label="Имя документа" value={formData.doc_name} onChange={(e:any) => setFormData({...formData, doc_name: e.target.value})} icon="description" />
-               <Input label="Ссылка" value={formData.doc_link} onChange={(e:any) => setFormData({...formData, doc_link: e.target.value})} icon="link" />
+               <Input label="Имя документа" value={formData.doc_name} onChange={(e:any) => setFormData({ ...formData, doc_name: e.target.value })} icon="description" />
+               <Input label="Ссылка" value={formData.doc_link} onChange={(e:any) => setFormData({ ...formData, doc_link: e.target.value })} icon="link" />
              </div>
           </div>
           <Button type="submit" className="w-full h-14" loading={loading} icon="save">Создать операцию</Button>

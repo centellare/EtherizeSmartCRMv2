@@ -223,8 +223,8 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
                 <span className="text-[10px] text-slate-300 font-bold">ПО</span>
                 <Input type="date" value={endDate} onChange={(e:any) => setEndDate(e.target.value)} className="!border-0 !p-0 h-6 text-[10px] w-28" />
              </div>
-             <Button variant="tonal" icon="request_quote" onClick={() => { resetForm(); setFormData((p: any) => ({...p, type: 'expense'})); setIsModalOpen(true); }} className="text-xs h-10">Внести расход</Button>
-             {!isSpecialist && <Button icon="add_chart" onClick={() => { resetForm(); setFormData((p: any) => ({...p, type: 'income'})); setIsModalOpen(true); }} className="text-xs h-10">План прихода</Button>}
+             <Button variant="tonal" icon="request_quote" onClick={() => { resetForm(); setFormData({ ...formData, type: 'expense' }); setIsModalOpen(true); }} className="text-xs h-10">Внести расход</Button>
+             {!isSpecialist && <Button icon="add_chart" onClick={() => { resetForm(); setFormData({ ...formData, type: 'income' }); setIsModalOpen(true); }} className="text-xs h-10">План прихода</Button>}
           </div>
        </div>
 
@@ -318,7 +318,7 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
                       <tr className="bg-slate-50/50">
                         <td colSpan={6} className="p-4 pl-16">
                            <div className="space-y-2">
-                              {t.payments && t.payments.length > 0 ? t.payments.map(p => (
+                              {t.payments && t.payments.length > 0 ? t.payments.map((p: any) => (
                                 <div key={p.id} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
                                   <div className="flex flex-col">
                                     <span className="text-sm font-bold text-emerald-700">+{formatBYN(p.amount)}</span>
@@ -394,17 +394,17 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title="Новая финансовая запись">
         <form onSubmit={handleSaveTransaction} className="space-y-4">
            <div className="grid grid-cols-2 gap-4">
-             <Input label="Сумма" type="number" step="0.01" required value={formData.amount} onChange={(e:any) => setFormData((p: any) => ({...p, amount: e.target.value}))} icon="payments" />
-             <Input label="Дата плана" type="date" value={formData.planned_date} onChange={(e:any) => setFormData((p: any) => ({...p, planned_date: e.target.value}))} icon="calendar_today" />
+             <Input label="Сумма" type="number" step="0.01" required value={formData.amount} onChange={(e:any) => setFormData({ ...formData, amount: e.target.value })} icon="payments" />
+             <Input label="Дата плана" type="date" value={formData.planned_date} onChange={(e:any) => setFormData({ ...formData, planned_date: e.target.value })} icon="calendar_today" />
            </div>
-           <Input label="Категория" required value={formData.category} onChange={(e:any) => setFormData((p: any) => ({...p, category: e.target.value}))} icon="category" />
-           <Input label="Описание" value={formData.description} onChange={(e:any) => setFormData((p: any) => ({...p, description: e.target.value}))} icon="notes" />
+           <Input label="Категория" required value={formData.category} onChange={(e:any) => setFormData({ ...formData, category: e.target.value })} icon="category" />
+           <Input label="Описание" value={formData.description} onChange={(e:any) => setFormData({ ...formData, description: e.target.value })} icon="notes" />
            
            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-4">
              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Документация (опц.)</p>
              <div className="grid grid-cols-2 gap-4">
-               <Input label="Имя документа" value={formData.doc_name} onChange={(e:any) => setFormData((p: any) => ({...p, doc_name: e.target.value}))} icon="description" />
-               <Input label="Ссылка" value={formData.doc_link} onChange={(e:any) => setFormData((p: any) => ({...p, doc_link: e.target.value}))} icon="link" />
+               <Input label="Имя документа" value={formData.doc_name} onChange={(e:any) => setFormData({ ...formData, doc_name: e.target.value })} icon="description" />
+               <Input label="Ссылка" value={formData.doc_link} onChange={(e:any) => setFormData({ ...formData, doc_link: e.target.value })} icon="link" />
              </div>
           </div>
           <Button type="submit" className="w-full h-14" loading={loading} icon="save">Создать</Button>
