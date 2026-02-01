@@ -28,7 +28,7 @@ const SchemaVisualizer: React.FC<SchemaVisualizerProps> = ({ schemas }) => {
                     </span>
                     {col.isForeign && (
                       <div className="text-[10px] text-emerald-400 font-mono">
-                        FK -> {col.references}
+                        FK {'->'} {col.references}
                       </div>
                     )}
                   </div>
