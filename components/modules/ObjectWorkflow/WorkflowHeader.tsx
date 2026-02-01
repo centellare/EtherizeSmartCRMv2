@@ -39,15 +39,7 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
 }) => {
   const isSpecialist = profile.role === 'specialist';
   
-  /**
-   * СТРОГАЯ ЛОГИКА ПО ТЗ:
-   * Ищем запись в object_stages, где статус именно 'active'.
-   * stage_name должен соответствовать текущему этапу объекта.
-   */
   const activeStageRecord = allStagesData.find(s => s.status === 'active');
-
-  // Если статус active не найден или он не совпадает с текущим этапом объекта (рассинхрон),
-  // данные не отображаем, чтобы не вводить в заблуждение.
   const startDate = activeStageRecord?.stage_name === object.current_stage ? activeStageRecord?.started_at : null;
   const deadlineDate = activeStageRecord?.stage_name === object.current_stage ? activeStageRecord?.deadline : null;
 
@@ -57,7 +49,6 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
 
   return (
     <div className="flex flex-col space-y-8 mb-10">
-      {/* Upper row: Navigation and Status controls */}
       <div className="flex flex-col xl:flex-row justify-between items-start gap-6">
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="w-12 h-12 rounded-full hover:bg-slate-100 flex items-center justify-center transition-colors shrink-0">
@@ -75,7 +66,7 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
                  className="text-xs font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1 group"
                >
                  <span className="material-icons-round text-sm group-hover:scale-110 transition-transform">place</span>
-                 <span className="border-b border-blue-600/30 group-hover:border-blue-800">{object.address || 'Адрес не указан'}</span>
+                 <span className="border-b border-blue-600/30 group-hover:border-blue-800 truncate max-w-[200px]">{object.address || 'Адрес не указан'}</span>
                </a>
             </div>
           </div>
@@ -105,42 +96,42 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
         </div>
       </div>
 
-      {/* Info Grid: Metadata */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 bg-slate-50/50 p-6 rounded-[28px] border border-slate-100">
-        <div className="space-y-1">
+      {/* Адаптивная сетка метаданных */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-slate-50/50 p-6 rounded-[28px] border border-slate-100">
+        <div className="space-y-1 min-w-0">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Клиент</p>
-          <div className="flex items-center gap-2">
-            <span className="material-icons-round text-slate-400 text-lg">person</span>
-            <p className="text-sm font-bold text-slate-700">{object.client?.name || '—'}</p>
+          <div className="flex items-center gap-2 overflow-hidden">
+            <span className="material-icons-round text-slate-400 text-lg shrink-0">person</span>
+            <p className="text-sm font-bold text-slate-700 truncate">{object.client?.name || '—'}</p>
           </div>
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-1 min-w-0">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Ответственный</p>
-          <div className="flex items-center gap-2">
-            <span className="material-icons-round text-blue-500 text-lg">support_agent</span>
-            <p className="text-sm font-bold text-slate-700">{object.responsible?.full_name || 'Не назначен'}</p>
+          <div className="flex items-center gap-2 overflow-hidden">
+            <span className="material-icons-round text-blue-500 text-lg shrink-0">support_agent</span>
+            <p className="text-sm font-bold text-slate-700 truncate">{object.responsible?.full_name || 'Не назначен'}</p>
           </div>
         </div>
 
-        <div className="space-y-1">
+        <div className="space-y-1 min-w-0">
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Создан</p>
-          <div className="flex items-center gap-2">
-            <span className="material-icons-round text-slate-400 text-lg">calendar_today</span>
+          <div className="flex items-center gap-2 overflow-hidden">
+            <span className="material-icons-round text-slate-400 text-lg shrink-0">calendar_today</span>
             <p className="text-sm font-bold text-slate-700">{new Date(object.created_at).toLocaleDateString()}</p>
           </div>
         </div>
 
-        <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-center">
-          <div className="flex justify-between items-center mb-1">
-            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest">Сроки этапа</p>
+        <div className="bg-white p-3 rounded-2xl border border-slate-100 shadow-sm flex flex-col justify-center min-w-0">
+          <div className="flex justify-between items-center mb-1 gap-2">
+            <p className="text-[10px] font-bold text-blue-600 uppercase tracking-widest truncate">Сроки этапа</p>
             {deadlineDate && (
-              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${new Date(deadlineDate) < new Date() ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded shrink-0 ${new Date(deadlineDate) < new Date() ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-600'}`}>
                 {new Date(deadlineDate) < new Date() ? 'Просрочено' : 'В срок'}
               </span>
             )}
           </div>
-          <p className="text-xs font-medium text-slate-600">
+          <p className="text-xs font-medium text-slate-600 truncate">
             {startDate ? new Date(startDate).toLocaleDateString() : '—'} 
             <span className="mx-1 text-slate-300">→</span>
             <span className="font-bold text-slate-900">{deadlineDate ? new Date(deadlineDate).toLocaleDateString() : 'Не задан'}</span>

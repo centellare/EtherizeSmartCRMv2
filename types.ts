@@ -47,6 +47,7 @@ export interface TransactionPayment {
   id: string;
   transaction_id: string;
   amount: number;
+  comment?: string;
   payment_date: string;
   created_by: string;
   created_by_name?: string;
@@ -69,7 +70,16 @@ export interface Transaction {
   created_at: string;
   created_by: string;
   created_by_name?: string;
+  processed_by?: string;
+  processed_at?: string;
+  processor_name?: string;
+  deleted_at?: string;
   payments?: TransactionPayment[];
+  objects?: {
+    id: string;
+    name: string;
+    responsible_id: string;
+  };
 }
 
 export interface TableSchema {

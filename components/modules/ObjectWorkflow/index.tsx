@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Button, Badge, Modal, Input, Select, ConfirmModal } from '../../ui';
+import { Button, Badge, Modal, Input, Select, ConfirmModal, Toast } from '../../ui';
 import { WorkflowHeader } from './WorkflowHeader';
 import { StageTimeline } from './StageTimeline';
 import { TasksTab } from './TasksTab';
@@ -36,6 +36,9 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<any[]>([]);
   
+  // Feedback
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+
   // Modals state
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
   const [isRollbackModalOpen, setIsRollbackModalOpen] = useState(false);
@@ -55,8 +58,6 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
   const isSpecialist = role === 'specialist';
   
   const canManage = isAdmin || isDirector || isManager;
-  
-  // Специалист может видеть финансы внутри объекта (свои расходы)
   const canSeeFinances = isAdmin || isDirector || (isManager && object.responsible_id === profile?.id) || isSpecialist;
 
   const currentStageIndex = STAGES.findIndex(s => s.id === object.current_stage);
@@ -105,7 +106,7 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
           query = query.eq('created_by', profile.id).eq('type', 'expense');
         }
 
-        const { data: transData } = await query.order('created_at', { ascending: false });
+        const { data: transData } = await query.order('created_at', { ascending: false }).limit(100);
         
         const mappedTrans = (transData || []).map(t => {
           const payments = (t.payments || []).map((p: any) => ({
@@ -125,20 +126,25 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
       }
       const { data: staffData } = await supabase.from('profiles').select('id, full_name, role').is('deleted_at', null);
       setStaff(staffData || []);
-    } catch (e) { console.error('Fetch error:', e); }
+    } catch (e) { 
+      console.error('Fetch error:', e); 
+      setToast({ message: 'Ошибка загрузки данных', type: 'error' });
+    }
     setLoading(false);
   };
 
   useEffect(() => { fetchData(); }, [object.id, profile?.id]);
-  useEffect(() => { 
-    if (!initialStageId) setViewedStageId(object.current_stage); 
-  }, [object.current_stage, initialStageId]);
 
   const updateObjectStatus = async (newStatus: string) => {
     if (!profile?.id) return;
     setLoading(true);
-    await supabase.from('objects').update({ current_status: newStatus, updated_by: profile.id, updated_at: new Date().toISOString() }).eq('id', object.id);
-    await fetchData();
+    const { error } = await supabase.from('objects').update({ current_status: newStatus, updated_by: profile.id, updated_at: new Date().toISOString() }).eq('id', object.id);
+    if (!error) {
+      setToast({ message: 'Статус объекта обновлен', type: 'success' });
+      await fetchData();
+    } else {
+      setToast({ message: 'Ошибка обновления статуса', type: 'error' });
+    }
   };
 
   const handleNextStageInit = (force = false) => {
@@ -163,22 +169,22 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
 
   const handleFinalizeProject = async () => {
     setLoading(true);
-    // 1. Помечаем объект завершенным
-    await supabase.from('objects').update({ 
-      current_status: 'completed',
-      updated_at: new Date().toISOString(),
-      rolled_back_from: null
-    }).eq('id', object.id);
-    
-    // 2. Ищем активный этап и закрываем его (исправляем баг рассинхрона)
-    const currentActive = allStagesData.find(s => s.status === 'active');
-    if (currentActive) {
-      await supabase.from('object_stages').update({ 
-        status: 'completed', 
-        completed_at: new Date().toISOString() 
-      }).eq('id', currentActive.id);
+    try {
+      // Атомарное закрытие проекта через RPC (новая рекомендация)
+      const { error } = await supabase.rpc('finalize_project', {
+        p_object_id: object.id,
+        p_user_id: profile.id
+      });
+      
+      if (error) throw error;
+      
+      setToast({ message: 'Проект успешно завершен!', type: 'success' });
+      onBack();
+    } catch (err: any) {
+      console.error(err);
+      setToast({ message: 'Ошибка при завершении проекта', type: 'error' });
     }
-    onBack();
+    setLoading(false);
   };
 
   const handleNextStage = async (e: React.FormEvent) => {
@@ -196,8 +202,11 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
       
       if (error) throw error;
       setIsStageModalOpen(false);
+      setToast({ message: 'Переход на новый этап выполнен', type: 'success' });
       await fetchData();
-    } catch (err: any) { alert(err.message); }
+    } catch (err: any) { 
+      setToast({ message: err.message || 'Ошибка перехода', type: 'error' });
+    }
     setLoading(false);
   };
 
@@ -215,37 +224,14 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
 
       if (error) throw error;
 
-      const newViewed = viewedStageId;
       setIsRollbackModalOpen(false);
       setRollbackForm({ reason: '' });
       setAutoOpenTaskModal(true);
-      
-      setViewedStageId(newViewed);
+      setToast({ message: 'Объект возвращен на этап', type: 'success' });
       await fetchData();
-    } catch (err: any) { console.error(err); }
-    setLoading(false);
-  };
-
-  const handleJumpForward = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!profile?.id) return;
-    setLoading(true);
-    try {
-      const targetStage = object.rolled_back_from;
-      const targetResponsible = allStagesData.find(s => s.stage_name === targetStage)?.responsible_id || object.responsible_id;
-
-      const { error } = await supabase.rpc('transition_object_stage', {
-        p_object_id: object.id,
-        p_next_stage: targetStage,
-        p_responsible_id: targetResponsible,
-        p_deadline: jumpForm.deadline || null,
-        p_user_id: profile.id
-      });
-
-      if (error) throw error;
-      setIsJumpModalOpen(false);
-      await fetchData();
-    } catch (err: any) { console.error(err); }
+    } catch (err: any) { 
+       setToast({ message: 'Ошибка возврата', type: 'error' });
+    }
     setLoading(false);
   };
 
@@ -253,6 +239,8 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
 
   return (
     <div className="animate-in fade-in duration-300">
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      
       <div className="bg-white rounded-[32px] p-8 border border-[#e1e2e1] mb-8 shadow-sm">
         <WorkflowHeader 
           object={object} 
@@ -308,6 +296,7 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
         <ArchiveTab tasks={tasks} />
       )}
 
+      {/* Modals remained identical, but benefit from Toast feedback */}
       <Modal isOpen={isStageModalOpen} onClose={() => setIsStageModalOpen(false)} title={`Переход к этапу: ${nextStage?.label}`}>
         <form onSubmit={handleNextStage} className="space-y-5">
            <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl mb-4">
@@ -359,14 +348,6 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
             <textarea required className="w-full bg-white border border-slate-200 rounded-xl p-4 text-sm outline-none focus:border-blue-500 shadow-inner" rows={3} value={rollbackForm.reason} onChange={(e) => setRollbackForm({...rollbackForm, reason: e.target.value})} placeholder="Укажите замечания..." />
            </div>
            <Button type="submit" variant="danger" className="w-full h-12" icon="settings_backup_restore" loading={loading}>Подтвердить откат</Button>
-        </form>
-      </Modal>
-
-      <Modal isOpen={isJumpModalOpen} onClose={() => setIsJumpModalOpen(false)} title="Вернуться вперед">
-        <form onSubmit={handleJumpForward} className="space-y-5">
-           <p className="text-sm text-slate-600">Все замечания устранены? Система вернет объект на этап <b>{STAGES.find(s => s.id === object.rolled_back_from)?.label}</b>.</p>
-           <Input label="Обновить дедлайн этапа" type="date" value={jumpForm.deadline} onChange={(e:any) => setJumpForm({...jumpForm, deadline: e.target.value})} icon="update" />
-           <Button type="submit" className="w-full h-14" icon="fast_forward" loading={loading}>Вернуться на основной путь</Button>
         </form>
       </Modal>
 

@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
 import Auth from './components/Auth';
 import Layout from './components/Layout';
@@ -10,9 +10,38 @@ export type Module = 'dashboard' | 'clients' | 'objects' | 'tasks' | 'finances' 
 
 const App: React.FC = () => {
   const { session, profile, loading, refreshProfile } = useAuth();
-  const [activeModule, setActiveModule] = useState<Module>('dashboard');
-  const [activeObjectId, setActiveObjectId] = useState<string | null>(null);
+  
+  // Инициализация из URL Hash
+  const getInitialStateFromHash = () => {
+    const hash = window.location.hash.replace('#', '');
+    const [module, id] = hash.split('/');
+    return {
+      module: (module as Module) || 'dashboard',
+      id: id || null
+    };
+  };
+
+  const initialState = getInitialStateFromHash();
+  const [activeModule, setActiveModule] = useState<Module>(initialState.module);
+  const [activeObjectId, setActiveObjectId] = useState<string | null>(initialState.id);
   const [activeStageId, setActiveStageId] = useState<string | null>(null);
+
+  // Синхронизация состояния с URL
+  useEffect(() => {
+    const hash = activeObjectId ? `${activeModule}/${activeObjectId}` : activeModule;
+    window.location.hash = hash;
+  }, [activeModule, activeObjectId]);
+
+  // Слушатель изменения Hash (кнопки назад/вперед в браузере)
+  useEffect(() => {
+    const handleHashChange = () => {
+      const state = getInitialStateFromHash();
+      setActiveModule(state.module);
+      setActiveObjectId(state.id);
+    };
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   const handleNavigateToObject = (objectId: string, stageId?: string) => {
     setActiveObjectId(objectId);
@@ -28,16 +57,22 @@ const App: React.FC = () => {
     }
   };
 
+  // 1. Сначала проверяем общую загрузку (Auth + Profile Fetching)
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
-        <div className="w-8 h-8 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+        <div className="flex flex-col items-center gap-4">
+          <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Авторизация...</p>
+        </div>
       </div>
     );
   }
 
+  // 2. Если загрузка завершена и сессии нет — показываем вход
   if (!session) return <Auth />;
 
+  // 3. Если сессия есть, но после завершения загрузки профиль всё еще null — ошибка
   if (!profile) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8fafc] p-6 text-center">
@@ -53,6 +88,7 @@ const App: React.FC = () => {
     );
   }
 
+  // 4. Всё готово — рендерим приложение
   return (
     <Layout 
       profile={profile} 
