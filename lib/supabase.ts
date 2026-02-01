@@ -8,11 +8,12 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 /**
  * Хелпер для замера времени выполнения запроса.
- * Использование: const { data, duration } = await measureQuery(supabase.from('tasks').select('*'));
+ * Мы используем тип any для query, так как Supabase возвращает сложные билдеры,
+ * которые являются thenable (как промисы), но имеют специфическую структуру.
  */
-export const measureQuery = async (queryPromise: Promise<any>) => {
+export const measureQuery = async (query: any) => {
   const start = performance.now();
-  const result = await queryPromise;
+  const result = await query;
   const end = performance.now();
   const duration = Math.round(end - start);
   
