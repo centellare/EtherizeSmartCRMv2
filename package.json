@@ -1,4 +1,5 @@
-  "name": "smarthome-crm-architect",
+{
+"name": "smarthome-crm-architect",
   "version": "1.0.0",
   "description": "CRM for Smart Home Team",
   "main": "index.html",
