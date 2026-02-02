@@ -52,73 +52,36 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
     ]
   },
   {
-    name: 'task_checklists',
-    description: 'Подзадачи (чек-листы) внутри основных задач.',
+    name: 'transaction_payments',
+    description: 'Фактические платежи по транзакциям.',
     columns: [
       { name: 'id', type: 'uuid', isPrimary: true, defaultValue: 'gen_random_uuid()' },
-      { name: 'task_id', type: 'uuid', isForeign: true, references: 'tasks(id)' },
-      { name: 'content', type: 'text', description: 'Текст подзадачи' },
-      { name: 'is_completed', type: 'boolean', defaultValue: 'false' },
-      { name: 'created_at', type: 'timestamp', defaultValue: 'now()' }
+      { name: 'transaction_id', type: 'uuid', isForeign: true, references: 'transactions(id)' },
+      { name: 'amount', type: 'numeric' },
+      { name: 'requires_doc', type: 'boolean', defaultValue: 'false' },
+      { name: 'doc_type', type: 'text', isNullable: true },
+      { name: 'doc_number', type: 'text', isNullable: true },
+      { name: 'doc_date', type: 'date', isNullable: true }
     ]
   }
 ];
 
 export const SUPABASE_SETUP_GUIDE = `
-### Инструкция по внедрению SQL:
-1. Зайдите в SQL Editor в Supabase.
-2. Скопируйте и выполните SQL для создания таблицы подзадач:
+### SQL для внедрения закрывающих документов:
+Выполните этот код в SQL Editor Supabase для расширения таблицы платежей:
 
 \`\`\`sql
--- Таблица подзадач (чек-листы)
-CREATE TABLE IF NOT EXISTS public.task_checklists (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    task_id UUID NOT NULL REFERENCES public.tasks(id) ON DELETE CASCADE,
-    content TEXT NOT NULL,
-    is_completed BOOLEAN NOT NULL DEFAULT false,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+-- Добавление полей для закрывающих документов
+ALTER TABLE public.transaction_payments 
+ADD COLUMN IF NOT EXISTS requires_doc BOOLEAN DEFAULT false,
+ADD COLUMN IF NOT EXISTS doc_type TEXT,
+ADD COLUMN IF NOT EXISTS doc_number TEXT,
+ADD COLUMN IF NOT EXISTS doc_date DATE;
 
--- Настройка RLS
-ALTER TABLE public.task_checklists ENABLE ROW LEVEL SECURITY;
+-- Создание индекса для быстрого поиска
+CREATE INDEX IF NOT EXISTS idx_payments_doc_number ON public.transaction_payments(doc_number);
 
--- Директора и админы могут всё
-CREATE POLICY "Checklist full access for admins" ON public.task_checklists
-    FOR ALL USING (
-        EXISTS (SELECT 1 FROM public.profiles WHERE id = auth.uid() AND role IN ('admin', 'director'))
-    );
-
--- Исполнители могут обновлять статус
-CREATE POLICY "Checklist update for executors" ON public.task_checklists
-    FOR UPDATE USING (
-        EXISTS (SELECT 1 FROM public.tasks WHERE id = task_checklists.task_id AND assigned_to = auth.uid())
-    ) WITH CHECK (
-        EXISTS (SELECT 1 FROM public.tasks WHERE id = task_checklists.task_id AND assigned_to = auth.uid())
-    );
-
--- Все остальные могут только смотреть
-CREATE POLICY "Checklist read access" ON public.task_checklists
-    FOR SELECT USING (true);
+-- Обновление типов данных (если нужно)
+COMMENT ON COLUMN public.transaction_payments.requires_doc IS 'Нужен ли акт/накладная для этого платежа';
 \`\`\`
-
-3. Добавьте функцию для завершения проектов:
-
-\`\`\`sql
-CREATE OR REPLACE FUNCTION public.finalize_project(
-    p_object_id UUID,
-    p_user_id UUID
-) RETURNS VOID AS $$
-BEGIN
-    UPDATE public.object_stages
-    SET status = 'completed', completed_at = NOW()
-    WHERE object_id = p_object_id AND status = 'active';
-
-    UPDATE public.objects
-    SET current_status = 'completed', updated_at = NOW(), updated_by = p_user_id, rolled_back_from = NULL
-    WHERE id = p_object_id;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-\`\`\`
-
-4. Нажмите Run.
 `;

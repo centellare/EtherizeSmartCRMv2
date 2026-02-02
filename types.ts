@@ -60,6 +60,10 @@ export interface TransactionPayment {
   payment_date: string;
   created_by: string;
   created_by_name?: string;
+  requires_doc?: boolean;
+  doc_type?: 'ТН' | 'ТТН' | 'Акт';
+  doc_number?: string;
+  doc_date?: string;
 }
 
 export interface Transaction {
