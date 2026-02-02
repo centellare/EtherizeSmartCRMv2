@@ -8,12 +8,13 @@
     "dev": "vite",
     "build": "tsc && vite build",
     "preview": "vite preview",
-    "start": "vite dev --host"
+    "start": "serve -s dist -l ${PORT:-3000}"
   },
   "dependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@supabase/supabase-js": "^2.45.4"
+    "@supabase/supabase-js": "^2.45.4",
+    "serve": "^14.2.4"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
