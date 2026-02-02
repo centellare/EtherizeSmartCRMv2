@@ -7,7 +7,7 @@ export const useAuth = () => {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  // Используем ref для отслеживания актуального профиля в замыканиях
+  // Используем ref для хранения текущего значения профиля для сравнения
   const profileRef = useRef<any>(null);
 
   const fetchProfile = useCallback(async (userId: string, silent = false) => {
@@ -22,18 +22,24 @@ export const useAuth = () => {
       
       if (error) {
         console.error('Database error fetching profile:', error.message);
-        // В silent-режиме не сбрасываем старый профиль при сетевой ошибке
         if (!silent) setProfile(null);
       } else if (data) {
         if (data.deleted_at) {
-          console.warn('Access denied: Profile deactivated');
           setProfile(null);
           profileRef.current = null;
           setSession(null);
           await supabase.auth.signOut();
         } else {
-          setProfile(data);
-          profileRef.current = data;
+          // Важнейшее исправление: Сравниваем данные перед обновлением стейта.
+          // Это предотвращает создание нового объекта в памяти (re-allocation),
+          // который триггерит useEffect во всех модулях (Dashboard, Tasks и т.д.)
+          const newDataStr = JSON.stringify(data);
+          const oldDataStr = JSON.stringify(profileRef.current);
+          
+          if (newDataStr !== oldDataStr) {
+            profileRef.current = data;
+            setProfile(data);
+          }
         }
       } else {
         setProfile(null);
@@ -53,7 +59,6 @@ export const useAuth = () => {
 
     const initialize = async () => {
       try {
-        // 1. Проверяем текущую сессию при загрузке
         const { data: { session: initialSession } } = await supabase.auth.getSession();
         
         if (isMounted) {
@@ -69,24 +74,20 @@ export const useAuth = () => {
         if (isMounted) setLoading(false);
       }
 
-      // 2. Подписываемся на изменения состояния авторизации
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
         if (!isMounted) return;
         
-        console.debug(`[Auth Event] ${event}`);
-
         switch (event) {
           case 'SIGNED_IN':
-            setLoading(true);
             setSession(currentSession);
             if (currentSession) await fetchProfile(currentSession.user.id);
             break;
             
           case 'TOKEN_REFRESHED':
             setSession(currentSession);
-            // Если профиль уже загружен, обновляем его в фоне (silent: true)
-            // Это предотвращает появление спиннера при возврате на вкладку
             if (currentSession) {
+              // При обновлении токена обновляем профиль "тихо" (без спиннера)
+              // и только если ID совпадает
               const isSilent = !!profileRef.current;
               await fetchProfile(currentSession.user.id, isSilent);
             }
@@ -109,10 +110,8 @@ export const useAuth = () => {
 
     initialize();
 
-    // Страховочный таймаут: если инициализация зависла более чем на 10 секунд
     const timeout = setTimeout(() => {
       if (isMounted && loading) {
-        console.warn('[Auth] Loading state forced to false due to timeout');
         setLoading(false);
       }
     }, 10000);
