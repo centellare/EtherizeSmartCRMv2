@@ -26,15 +26,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     object_id: '', title: '', assigned_to: '', start_date: new Date().toISOString().split('T')[0], deadline: '', comment: '', doc_link: '', doc_name: ''
   });
 
-  const [dateRange, setDateRange] = useState({
-    start: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0]
-  });
-
   const isAdmin = profile?.role === 'admin' || profile?.role === 'director';
-  const isDirector = profile?.role === 'director';
-  const isManager = profile?.role === 'manager';
-  const isSpecialist = profile?.role === 'specialist';
 
   const fetchData = useCallback(async (silent = false) => {
     if (!profile?.id || isFetching.current) return;
@@ -46,7 +38,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
       const [activeResult, staffResult, objectsResult] = await Promise.all([
         measureQuery(
           supabase.from('tasks')
-            .select('*, executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)')
+            .select('*, checklist:task_checklists(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)')
             .is('is_deleted', false)
             .eq('status', 'pending')
             .order('deadline', { ascending: true })
@@ -121,6 +113,38 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
       await fetchData();
     }
     setLoading(false);
+  };
+
+  const toggleChecklistItem = async (itemId: string, currentStatus: boolean, taskId: string) => {
+    const task = tasks.find((t: Task) => t.id === taskId);
+    if (!task) return;
+
+    const isExecutor = task.assigned_to === profile.id;
+    if (!isExecutor && !isAdmin) return;
+
+    const updatedTasks = tasks.map((t: Task) => {
+      if (t.id === taskId && t.checklist) {
+        return {
+          ...t,
+          checklist: t.checklist.map((item: any) => 
+            item.id === itemId ? { ...item, is_completed: !currentStatus } : item
+          )
+        };
+      }
+      return t;
+    });
+    setTasks(updatedTasks);
+
+    if (selectedTask?.id === taskId) {
+      setSelectedTask({
+        ...selectedTask,
+        checklist: selectedTask.checklist.map((item: any) => 
+          item.id === itemId ? { ...item, is_completed: !currentStatus } : item
+        )
+      });
+    }
+
+    await supabase.from('task_checklists').update({ is_completed: !currentStatus }).eq('id', itemId);
   };
 
   return (
@@ -245,7 +269,15 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
                           <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Дедлайн</p>
                         </div>
                       )}
-                      <span className="material-icons-round text-slate-300 group-hover:text-blue-600 group-hover:translate-x-1 transition-all">chevron_right</span>
+                      <button 
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          if (task.object_id) onNavigateToObject(task.object_id, (task as any).stage_id); 
+                        }} 
+                        className="w-10 h-10 rounded-full hover:bg-blue-50 flex items-center justify-center transition-all group/btn"
+                      >
+                        <span className="material-icons-round text-slate-300 group-hover:text-blue-600 group-hover/btn:translate-x-1 transition-all">chevron_right</span>
+                      </button>
                     </div>
                  </div>
                );
@@ -254,7 +286,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         </div>
       )}
 
-      {/* Модальные окна остаются функциональными, добавлены типы */}
+      {/* Модальные окна */}
       <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Новая задача">
         <form onSubmit={handleCreateTask} className="space-y-4">
           <Input label="Что нужно сделать?" required value={createForm.title} onChange={(e:any) => setCreateForm({...createForm, title: e.target.value})} />
@@ -264,6 +296,15 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
             <Input label="Начало" type="date" required value={createForm.start_date} onChange={(e:any) => setCreateForm({...createForm, start_date: e.target.value})} />
             <Input label="Дедлайн" type="date" value={createForm.deadline} onChange={(e:any) => setCreateForm({...createForm, deadline: e.target.value})} />
           </div>
+          
+          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-4">
+             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Документация (опц.)</p>
+             <div className="grid grid-cols-2 gap-4">
+               <Input label="Имя документа" value={createForm.doc_name} onChange={(e:any) => setCreateForm({ ...createForm, doc_name: e.target.value })} icon="description" />
+               <Input label="Ссылка" value={createForm.doc_link} onChange={(e:any) => setCreateForm({ ...createForm, doc_link: e.target.value })} icon="link" />
+             </div>
+          </div>
+
           <textarea className="w-full bg-white border border-slate-200 rounded-2xl p-4 text-sm outline-none focus:border-blue-500" rows={3} placeholder="Описание / детали..." value={createForm.comment} onChange={(e) => setCreateForm({...createForm, comment: e.target.value})} />
           <Button type="submit" className="w-full h-14" loading={loading}>Создать задачу</Button>
         </form>
@@ -272,28 +313,102 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
       <Modal isOpen={isTaskDetailsModalOpen} onClose={() => setIsTaskDetailsModalOpen(false)} title="Детали задачи">
         {selectedTask && (
           <div className="space-y-6">
-            <h3 className="text-xl font-bold">{selectedTask.title}</h3>
+            <div className="flex justify-between items-start">
+              <h3 className="text-xl font-bold text-slate-900 leading-tight pr-4">{selectedTask.title}</h3>
+              <Badge color={selectedTask.status === 'completed' ? 'emerald' : 'blue'}>
+                {selectedTask.status === 'completed' ? 'ВЫПОЛНЕНО' : 'В РАБОТЕ'}
+              </Badge>
+            </div>
+            
             <div className="grid grid-cols-2 gap-4 py-4 border-y border-slate-100">
                <div>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase">Объект</p>
-                 <p className="text-sm font-medium">{selectedTask.objects?.name}</p>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Объект</p>
+                 <p className="text-sm font-medium text-slate-700">{selectedTask.objects?.name || 'Не указан'}</p>
                </div>
                <div>
-                 <p className="text-[10px] font-bold text-slate-400 uppercase">Срок</p>
-                 <p className="text-sm font-medium">{selectedTask.deadline ? new Date(selectedTask.deadline).toLocaleDateString() : 'Бессрочно'}</p>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Срок</p>
+                 <p className={`text-sm font-bold ${selectedTask.deadline && new Date(selectedTask.deadline) < new Date() && selectedTask.status !== 'completed' ? 'text-red-500' : 'text-slate-700'}`}>
+                   {selectedTask.deadline ? new Date(selectedTask.deadline).toLocaleDateString() : 'Бессрочно'}
+                 </p>
                </div>
             </div>
-            <div className="p-4 bg-slate-50 rounded-2xl">
-               <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Ответственный</p>
-               <p className="text-sm font-bold text-blue-600">{selectedTask.executor?.full_name}</p>
-            </div>
-            {selectedTask.comment && (
-              <div className="bg-slate-50 p-4 rounded-2xl">
-                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Описание</p>
-                <p className="text-sm text-slate-600 whitespace-pre-wrap italic">{selectedTask.comment}</p>
+
+            {selectedTask.checklist && selectedTask.checklist.length > 0 && (
+              <div className="bg-slate-50 p-5 rounded-[24px] border border-slate-100">
+                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4">Чек-лист выполнения</p>
+                 <div className="space-y-3">
+                    {selectedTask.checklist.map((item: any) => {
+                      const canToggle = selectedTask.assigned_to === profile.id || isAdmin;
+                      return (
+                        <div key={item.id} className="flex items-start gap-3 group/item">
+                          <button 
+                            type="button"
+                            disabled={!canToggle}
+                            onClick={() => toggleChecklistItem(item.id, item.is_completed, selectedTask.id)}
+                            className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors mt-0.5 ${item.is_completed ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 bg-white hover:border-blue-500'}`}
+                          >
+                            {item.is_completed && <span className="material-icons-round text-xs">check</span>}
+                          </button>
+                          <span className={`text-sm leading-tight transition-all ${item.is_completed ? 'text-slate-400 line-through' : 'text-slate-700 font-medium'}`}>
+                            {item.content}
+                          </span>
+                        </div>
+                      );
+                    })}
+                 </div>
               </div>
             )}
-            <Button variant="tonal" onClick={() => setIsTaskDetailsModalOpen(false)} className="w-full">Закрыть</Button>
+
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Ответственный</p>
+               <div className="flex items-center gap-2">
+                 <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">
+                   {selectedTask.executor?.full_name?.charAt(0)}
+                 </div>
+                 <p className="text-sm font-bold text-slate-800">{selectedTask.executor?.full_name}</p>
+               </div>
+            </div>
+
+            {(selectedTask.doc_link || selectedTask.completion_doc_link) && (
+              <div className="space-y-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Документация</p>
+                {selectedTask.doc_link && (
+                  <a href={selectedTask.doc_link} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl hover:border-blue-300 transition-colors">
+                    <span className="material-icons-round text-blue-500">description</span>
+                    <span className="text-xs font-medium text-slate-700 truncate">{selectedTask.doc_name || 'Исходный документ'}</span>
+                  </a>
+                )}
+                {selectedTask.completion_doc_link && (
+                  <a href={selectedTask.completion_doc_link} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-100 rounded-xl hover:border-emerald-300 transition-colors">
+                    <span className="material-icons-round text-emerald-600">verified</span>
+                    <span className="text-xs font-medium text-emerald-900 truncate">{selectedTask.completion_doc_name || 'Отчет о выполнении'}</span>
+                  </a>
+                )}
+              </div>
+            )}
+
+            {selectedTask.comment && (
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Описание / ТЗ</p>
+                <p className="text-sm text-slate-600 whitespace-pre-wrap italic leading-relaxed">{selectedTask.comment}</p>
+              </div>
+            )}
+
+            <div className="flex gap-2">
+               <Button variant="tonal" onClick={() => setIsTaskDetailsModalOpen(false)} className="flex-1">Закрыть</Button>
+               {selectedTask.object_id && (
+                 <Button 
+                   onClick={() => { 
+                     onNavigateToObject(selectedTask.object_id, selectedTask.stage_id); 
+                     setIsTaskDetailsModalOpen(false); 
+                   }} 
+                   icon="open_in_new" 
+                   className="flex-1"
+                 >
+                   К объекту
+                 </Button>
+               )}
+            </div>
           </div>
         )}
       </Modal>
