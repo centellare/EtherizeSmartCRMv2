@@ -7,12 +7,23 @@ import { Task } from '../../types';
 type FilterMode = 'all' | 'mine' | 'created';
 type TaskTab = 'active' | 'today' | 'week' | 'overdue' | 'team' | 'archive';
 
+const PAGE_SIZE = 50;
+
 const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, stageId?: string) => void }> = ({ profile, onNavigateToObject }) => {
   const [activeTab, setActiveTab] = useState<TaskTab>('active');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [loading, setLoading] = useState(true);
   const [tasks, setTasks] = useState<Task[]>([]);
+  
+  // Archive States
   const [archiveTasks, setArchiveTasks] = useState<Task[]>([]);
+  const [archivePage, setArchivePage] = useState(0);
+  const [archiveTotal, setArchiveTotal] = useState(0);
+  const [archiveDates, setArchiveDates] = useState({
+    start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+    end: new Date().toISOString().split('T')[0]
+  });
+
   const [staff, setStaff] = useState<any[]>([]);
   const [objects, setObjects] = useState<any[]>([]);
   
@@ -60,9 +71,46 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     }
   }, [profile?.id]);
 
+  const fetchArchive = useCallback(async (page = 0) => {
+    if (!profile?.id) return;
+    setLoading(true);
+    try {
+      let query = supabase.from('tasks')
+        .select('*, checklist:task_checklists(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)', { count: 'exact' })
+        .is('is_deleted', false)
+        .eq('status', 'completed')
+        .gte('completed_at', `${archiveDates.start}T00:00:00`)
+        .lte('completed_at', `${archiveDates.end}T23:59:59`);
+
+      if (filterMode === 'mine') {
+        query = query.eq('assigned_to', profile.id);
+      } else if (filterMode === 'created') {
+        query = query.eq('created_by', profile.id);
+      }
+
+      const { data, count, error } = await query
+        .order('completed_at', { ascending: false })
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+      if (!error) {
+        setArchiveTasks(data || []);
+        setArchiveTotal(count || 0);
+        setArchivePage(page);
+      }
+    } catch (err) {
+      console.error('Archive fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [profile?.id, archiveDates, filterMode]);
+
   useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+    if (activeTab === 'archive') {
+      fetchArchive(0);
+    } else {
+      fetchData();
+    }
+  }, [activeTab, fetchData, fetchArchive]);
 
   const overdueCount = useMemo(() => {
     const today = new Date().toISOString().split('T')[0];
@@ -70,12 +118,14 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
   }, [tasks]);
 
   const filteredTasks = useMemo(() => {
+    if (activeTab === 'archive') return archiveTasks;
+
     const today = new Date().toISOString().split('T')[0];
     const nextWeek = new Date();
     nextWeek.setDate(nextWeek.getDate() + 7);
     const nextWeekStr = nextWeek.toISOString().split('T')[0];
 
-    let list = activeTab === 'archive' ? archiveTasks : tasks;
+    let list = tasks;
 
     if (filterMode === 'mine') {
       list = list.filter((t: Task) => t.assigned_to === profile.id);
@@ -116,13 +166,14 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
   };
 
   const toggleChecklistItem = async (itemId: string, currentStatus: boolean, taskId: string) => {
-    const task = tasks.find((t: Task) => t.id === taskId);
+    const task = tasks.find((t: Task) => t.id === taskId) || archiveTasks.find((t: Task) => t.id === taskId);
     if (!task) return;
 
     const isExecutor = task.assigned_to === profile.id;
     if (!isExecutor && !isAdmin) return;
 
-    const updatedTasks = tasks.map((t: Task) => {
+    // Update local state for both lists
+    const updater = (t: Task) => {
       if (t.id === taskId && t.checklist) {
         return {
           ...t,
@@ -132,8 +183,10 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         };
       }
       return t;
-    });
-    setTasks(updatedTasks);
+    };
+
+    setTasks(prev => prev.map(updater));
+    setArchiveTasks(prev => prev.map(updater));
 
     if (selectedTask?.id === taskId) {
       setSelectedTask({
@@ -175,7 +228,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         ].map(tab => (
           <button 
             key={tab.id} 
-            onClick={() => setActiveTab(tab.id as TaskTab)} 
+            onClick={() => { setActiveTab(tab.id as TaskTab); if(tab.id === 'archive') setArchivePage(0); }} 
             className={`flex items-center gap-2 px-6 py-4 text-xs font-bold uppercase transition-all relative shrink-0 ${activeTab === tab.id ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
           >
             <span className="material-icons-round text-sm">{tab.icon}</span>
@@ -189,6 +242,21 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
           </button>
         ))}
       </div>
+
+      {activeTab === 'archive' && (
+        <div className="flex flex-col md:flex-row gap-4 mb-6 bg-white p-4 rounded-3xl border border-slate-200 shadow-sm animate-in slide-in-from-top-2 duration-300">
+           <div className="flex-grow flex items-center gap-3">
+              <span className="material-icons-round text-slate-400">event_note</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Фильтр архива за период:</span>
+           </div>
+           <div className="flex items-center gap-2">
+              <Input type="date" value={archiveDates.start} onChange={(e:any) => setArchiveDates({...archiveDates, start: e.target.value})} className="h-10 !py-1 !text-xs !rounded-xl" />
+              <span className="text-slate-300 font-bold text-[10px]">ПО</span>
+              <Input type="date" value={archiveDates.end} onChange={(e:any) => setArchiveDates({...archiveDates, end: e.target.value})} className="h-10 !py-1 !text-xs !rounded-xl" />
+              <Button variant="tonal" icon="refresh" onClick={() => fetchArchive(0)} className="h-10 w-10 !px-0 rounded-xl" />
+           </div>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex flex-col items-center justify-center py-24">
@@ -232,58 +300,92 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-4">
-           {filteredTasks.length === 0 ? (
-             <div className="py-32 text-center bg-white rounded-[40px] border border-dashed border-slate-200">
-               <span className="material-icons-round text-5xl text-slate-200 mb-4">assignment_turned_in</span>
-               <p className="text-slate-400 font-medium italic">Задачи не найдены</p>
-             </div>
-           ) : (
-             filteredTasks.map((task: Task) => {
-               const isOverdue = task.deadline && new Date(task.deadline) < new Date() && task.status !== 'completed';
-               return (
-                 <div key={task.id} onClick={() => { setSelectedTask(task); setIsTaskDetailsModalOpen(true); }} className="bg-white p-5 rounded-[28px] border border-slate-200 hover:border-blue-400 hover:shadow-md transition-all cursor-pointer group flex items-center justify-between">
-                    <div className="flex items-center gap-5 min-w-0">
-                      <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isOverdue ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
-                        <span className="material-icons-round text-xl">
-                          {isOverdue ? 'priority_high' : 'more_horiz'}
-                        </span>
-                      </div>
-                      <div className="min-w-0">
-                        <h4 className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors truncate">
-                          {task.title}
-                          {task.doc_link && <span className="material-icons-round text-sm ml-2 text-slate-300">attach_file</span>}
-                        </h4>
-                        <div className="flex items-center gap-2 mt-1">
-                          <span className="px-2.5 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-bold uppercase rounded-lg tracking-tight">{(task as any).objects?.name || 'Объект'}</span>
-                          <span className="text-[10px] font-bold text-slate-400 uppercase">Исполнитель: {(task as any).executor?.full_name}</span>
+        <>
+          <div className="grid grid-cols-1 gap-4">
+             {filteredTasks.length === 0 ? (
+               <div className="py-32 text-center bg-white rounded-[40px] border border-dashed border-slate-200">
+                 <span className="material-icons-round text-5xl text-slate-200 mb-4">
+                   {activeTab === 'archive' ? 'history_toggle_off' : 'assignment_turned_in'}
+                 </span>
+                 <p className="text-slate-400 font-medium italic">
+                   {activeTab === 'archive' ? 'Архив пуст за выбранный период' : 'Задачи не найдены'}
+                 </p>
+               </div>
+             ) : (
+               filteredTasks.map((task: Task) => {
+                 const isOverdue = task.deadline && new Date(task.deadline) < new Date() && task.status !== 'completed';
+                 const isCompleted = task.status === 'completed';
+                 return (
+                   <div key={task.id} onClick={() => { setSelectedTask(task); setIsTaskDetailsModalOpen(true); }} className={`bg-white p-5 rounded-[28px] border transition-all cursor-pointer group flex items-center justify-between ${isCompleted ? 'border-slate-100 opacity-75' : 'border-slate-200 hover:border-blue-400 hover:shadow-md'}`}>
+                      <div className="flex items-center gap-5 min-w-0">
+                        <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isCompleted ? 'bg-emerald-50 text-emerald-500' : isOverdue ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
+                          <span className="material-icons-round text-xl">
+                            {isCompleted ? 'check_circle' : isOverdue ? 'priority_high' : 'more_horiz'}
+                          </span>
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className={`font-bold transition-colors truncate ${isCompleted ? 'text-slate-400' : 'text-slate-900 group-hover:text-blue-600'}`}>
+                            {task.title}
+                            {task.doc_link && <span className="material-icons-round text-sm ml-2 text-slate-300">attach_file</span>}
+                          </h4>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="px-2.5 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-bold uppercase rounded-lg tracking-tight">{(task as any).objects?.name || 'Объект'}</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase">Исполнитель: {(task as any).executor?.full_name}</span>
+                            {isCompleted && task.completed_at && (
+                              <span className="text-[9px] font-bold text-emerald-500 uppercase ml-2 bg-emerald-50 px-2 py-0.5 rounded">Завершено {new Date(task.completed_at).toLocaleDateString()}</span>
+                            )}
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-6 shrink-0 ml-4">
-                      {task.deadline && (
-                        <div className="text-right">
-                          <p className={`text-xs font-bold ${isOverdue ? 'text-red-500' : 'text-slate-700'}`}>
-                            {new Date(task.deadline).toLocaleDateString()}
-                          </p>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Дедлайн</p>
-                        </div>
-                      )}
-                      <button 
-                        onClick={(e) => { 
-                          e.stopPropagation(); 
-                          if (task.object_id) onNavigateToObject(task.object_id, (task as any).stage_id); 
-                        }} 
-                        className="w-10 h-10 rounded-full hover:bg-blue-50 flex items-center justify-center transition-all group/btn"
-                      >
-                        <span className="material-icons-round text-slate-300 group-hover:text-blue-600 group-hover/btn:translate-x-1 transition-all">chevron_right</span>
-                      </button>
-                    </div>
-                 </div>
-               );
-             })
-           )}
-        </div>
+                      <div className="flex items-center gap-6 shrink-0 ml-4">
+                        {!isCompleted && task.deadline && (
+                          <div className="text-right">
+                            <p className={`text-xs font-bold ${isOverdue ? 'text-red-500' : 'text-slate-700'}`}>
+                              {new Date(task.deadline).toLocaleDateString()}
+                            </p>
+                            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Дедлайн</p>
+                          </div>
+                        )}
+                        <button 
+                          onClick={(e) => { 
+                            e.stopPropagation(); 
+                            if (task.object_id) onNavigateToObject(task.object_id, (task as any).stage_id); 
+                          }} 
+                          className={`w-10 h-10 rounded-full flex items-center justify-center transition-all group/btn ${isCompleted ? 'hover:bg-slate-100' : 'hover:bg-blue-50'}`}
+                        >
+                          <span className={`material-icons-round transition-all ${isCompleted ? 'text-slate-300 group-hover:text-slate-600' : 'text-slate-300 group-hover:text-blue-600 group-hover/btn:translate-x-1'}`}>chevron_right</span>
+                        </button>
+                      </div>
+                   </div>
+                 );
+               })
+             )}
+          </div>
+
+          {activeTab === 'archive' && archiveTotal > PAGE_SIZE && (
+            <div className="mt-8 flex items-center justify-center gap-4">
+               <button 
+                 disabled={archivePage === 0 || loading}
+                 onClick={() => fetchArchive(archivePage - 1)}
+                 className="w-10 h-10 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
+               >
+                 <span className="material-icons-round">chevron_left</span>
+               </button>
+               <div className="flex items-center gap-2">
+                 <span className="text-xs font-bold text-slate-400 uppercase">Страница</span>
+                 <span className="px-3 py-1 bg-blue-600 text-white text-xs font-bold rounded-lg">{archivePage + 1}</span>
+                 <span className="text-xs font-bold text-slate-400 uppercase">из {Math.ceil(archiveTotal / PAGE_SIZE)}</span>
+               </div>
+               <button 
+                 disabled={(archivePage + 1) * PAGE_SIZE >= archiveTotal || loading}
+                 onClick={() => fetchArchive(archivePage + 1)}
+                 className="w-10 h-10 rounded-full border border-slate-200 flex items-center justify-center text-slate-500 hover:bg-slate-50 disabled:opacity-30 disabled:hover:bg-transparent transition-all"
+               >
+                 <span className="material-icons-round">chevron_right</span>
+               </button>
+            </div>
+          )}
+        </>
       )}
 
       {/* Модальные окна */}
