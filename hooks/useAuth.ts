@@ -1,15 +1,18 @@
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 
 export const useAuth = () => {
   const [session, setSession] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  
+  // Используем ref для отслеживания актуального профиля в замыканиях
+  const profileRef = useRef<any>(null);
 
-  const fetchProfile = useCallback(async (userId: string) => {
-    // Включаем лоадер перед запросом профиля
-    setLoading(true);
+  const fetchProfile = useCallback(async (userId: string, silent = false) => {
+    if (!silent) setLoading(true);
+    
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -19,26 +22,28 @@ export const useAuth = () => {
       
       if (error) {
         console.error('Database error fetching profile:', error.message);
-        setProfile(null);
+        // В silent-режиме не сбрасываем старый профиль при сетевой ошибке
+        if (!silent) setProfile(null);
       } else if (data) {
         if (data.deleted_at) {
           console.warn('Access denied: Profile deactivated');
-          // Если профиль удален, разлогиниваем пользователя и сбрасываем локальное состояние
           setProfile(null);
+          profileRef.current = null;
           setSession(null);
           await supabase.auth.signOut();
         } else {
           setProfile(data);
+          profileRef.current = data;
         }
       } else {
-        // Профиль не найден в таблице profiles
         setProfile(null);
+        profileRef.current = null;
       }
     } catch (err) {
       console.error('Critical auth error:', err);
-      setProfile(null);
+      if (!silent) setProfile(null);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
@@ -47,9 +52,10 @@ export const useAuth = () => {
     let authSubscription: any = null;
 
     const initialize = async () => {
-      // 1. Проверяем текущую сессию при загрузке
       try {
+        // 1. Проверяем текущую сессию при загрузке
         const { data: { session: initialSession } } = await supabase.auth.getSession();
+        
         if (isMounted) {
           setSession(initialSession);
           if (initialSession) {
@@ -69,22 +75,33 @@ export const useAuth = () => {
         
         console.debug(`[Auth Event] ${event}`);
 
-        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-          // КРИТИЧЕСКИ ВАЖНО: ставим loading в true ДО обновления сессии, 
-          // чтобы App.tsx при ререндере показал спиннер, а не ошибку "профиль не найден"
-          setLoading(true);
-          setSession(currentSession);
-          if (currentSession) {
-            await fetchProfile(currentSession.user.id);
-          }
-        } else if (event === 'SIGNED_OUT') {
-          setSession(null);
-          setProfile(null);
-          setLoading(false);
-        } else if (event === 'USER_UPDATED') {
-          if (currentSession) {
-            await fetchProfile(currentSession.user.id);
-          }
+        switch (event) {
+          case 'SIGNED_IN':
+            setLoading(true);
+            setSession(currentSession);
+            if (currentSession) await fetchProfile(currentSession.user.id);
+            break;
+            
+          case 'TOKEN_REFRESHED':
+            setSession(currentSession);
+            // Если профиль уже загружен, обновляем его в фоне (silent: true)
+            // Это предотвращает появление спиннера при возврате на вкладку
+            if (currentSession) {
+              const isSilent = !!profileRef.current;
+              await fetchProfile(currentSession.user.id, isSilent);
+            }
+            break;
+            
+          case 'SIGNED_OUT':
+            setSession(null);
+            setProfile(null);
+            profileRef.current = null;
+            setLoading(false);
+            break;
+            
+          case 'USER_UPDATED':
+            if (currentSession) await fetchProfile(currentSession.user.id, true);
+            break;
         }
       });
       authSubscription = subscription;
@@ -112,7 +129,7 @@ export const useAuth = () => {
     profile, 
     loading, 
     refreshProfile: async () => {
-      if (session?.user?.id) await fetchProfile(session.user.id);
+      if (session?.user?.id) await fetchProfile(session.user.id, true);
     } 
   };
 };
