@@ -84,7 +84,7 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
   };
 
   const filteredTransactions = useMemo(() => {
-    return transactions.filter(t => {
+    return transactions.filter((t: Transaction) => {
       const matchesType = typeFilter === 'all' || t.type === typeFilter;
       const tDate = new Date(t.created_at);
       const matchesStart = !startDate || tDate >= new Date(startDate);
@@ -94,17 +94,17 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
   }, [transactions, typeFilter, startDate, endDate]);
 
   const objectSummary = useMemo(() => {
-    const dateFiltered = transactions.filter(t => {
+    const dateFiltered = transactions.filter((t: Transaction) => {
       const tDate = new Date(t.created_at);
       const matchesStart = !startDate || tDate >= new Date(startDate);
       const matchesEnd = !endDate || tDate <= new Date(endDate + 'T23:59:59');
       return matchesStart && matchesEnd;
     });
 
-    const factIncome = dateFiltered.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.fact_amount || 0), 0);
-    const planIncome = dateFiltered.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+    const factIncome = dateFiltered.filter((t: Transaction) => t.type === 'income').reduce((sum: number, t: Transaction) => sum + (t.fact_amount || 0), 0);
+    const planIncome = dateFiltered.filter((t: Transaction) => t.type === 'income').reduce((sum: number, t: Transaction) => sum + t.amount, 0);
     const debt = planIncome - factIncome;
-    const factExpenses = dateFiltered.filter(t => t.type === 'expense' && t.status === 'approved').reduce((sum, t) => sum + t.amount, 0);
+    const factExpenses = dateFiltered.filter((t: Transaction) => t.type === 'expense' && t.status === 'approved').reduce((sum: number, t: Transaction) => sum + t.amount, 0);
     return { balance: factIncome - factExpenses, debt, planIncome, factExpenses };
   }, [transactions, startDate, endDate]);
 
@@ -250,7 +250,7 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredTransactions.map(t => {
+              {filteredTransactions.map((t: Transaction) => {
                 const isExpanded = expandedRows.has(t.id);
                 return (
                   <React.Fragment key={t.id}>

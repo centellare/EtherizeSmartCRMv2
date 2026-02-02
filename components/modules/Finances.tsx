@@ -95,7 +95,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       const result = await measureQuery(query.order('created_at', { ascending: false }));
       if (result.error) throw result.error;
 
-      const mappedTrans = (result.data || []).map(t => {
+      const mappedTrans = (result.data || []).map((t: any) => {
         const payments = (t.payments || []).map((p: any) => ({
           ...p,
           created_by_name: p.creator?.full_name || 'Неизвестно'
@@ -132,7 +132,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   };
 
   const filteredTransactions = useMemo(() => {
-    return transactions.filter(t => {
+    return transactions.filter((t: Transaction) => {
       if (!summaryFilter) {
         const tDate = new Date(t.created_at);
         const matchesStart = !startDate || tDate >= new Date(startDate);
@@ -148,17 +148,17 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   }, [transactions, typeFilter, startDate, endDate, summaryFilter]);
 
   const totals = useMemo(() => {
-    const dateFiltered = transactions.filter(t => {
+    const dateFiltered = transactions.filter((t: Transaction) => {
       const tDate = new Date(t.created_at);
       const matchesStart = !startDate || tDate >= new Date(startDate);
       const matchesEnd = !endDate || tDate <= new Date(endDate + 'T23:59:59');
       return matchesStart && matchesEnd;
     });
 
-    const factIncome = dateFiltered.filter(t => t.type === 'income').reduce((sum, t) => sum + (t.fact_amount || 0), 0);
-    const planIncome = dateFiltered.filter(t => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+    const factIncome = dateFiltered.filter((t: Transaction) => t.type === 'income').reduce((sum: number, t: Transaction) => sum + (t.fact_amount || 0), 0);
+    const planIncome = dateFiltered.filter((t: Transaction) => t.type === 'income').reduce((sum: number, t: Transaction) => sum + t.amount, 0);
     const debt = planIncome - factIncome;
-    const factExpenses = dateFiltered.filter(t => t.type === 'expense' && t.status === 'approved').reduce((sum, t) => sum + t.amount, 0);
+    const factExpenses = dateFiltered.filter((t: Transaction) => t.type === 'expense' && t.status === 'approved').reduce((sum: number, t: Transaction) => sum + t.amount, 0);
     return { income: factIncome, debt, expense: factExpenses, balance: factIncome - factExpenses };
   }, [transactions, startDate, endDate]);
 
@@ -299,7 +299,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filteredTransactions.map(t => {
+            {filteredTransactions.map((t: Transaction) => {
               const isExpanded = expandedRows.has(t.id);
               return (
                 <React.Fragment key={t.id}>
