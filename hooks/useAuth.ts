@@ -7,10 +7,14 @@ export const useAuth = () => {
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  // Используем ref для хранения текущего значения профиля для сравнения
   const profileRef = useRef<any>(null);
+  const isFetchingProfile = useRef(false);
 
   const fetchProfile = useCallback(async (userId: string, silent = false) => {
+    // Предотвращаем параллельные запросы одного и того же профиля
+    if (isFetchingProfile.current) return;
+    isFetchingProfile.current = true;
+
     if (!silent) setLoading(true);
     
     try {
@@ -30,9 +34,6 @@ export const useAuth = () => {
           setSession(null);
           await supabase.auth.signOut();
         } else {
-          // Важнейшее исправление: Сравниваем данные перед обновлением стейта.
-          // Это предотвращает создание нового объекта в памяти (re-allocation),
-          // который триггерит useEffect во всех модулях (Dashboard, Tasks и т.д.)
           const newDataStr = JSON.stringify(data);
           const oldDataStr = JSON.stringify(profileRef.current);
           
@@ -45,11 +46,14 @@ export const useAuth = () => {
         setProfile(null);
         profileRef.current = null;
       }
-    } catch (err) {
-      console.error('Critical auth error:', err);
+    } catch (err: any) {
+      if (err.name !== 'AbortError') {
+        console.error('Critical auth error:', err);
+      }
       if (!silent) setProfile(null);
     } finally {
-      if (!silent) setLoading(false);
+      isFetchingProfile.current = false;
+      setLoading(false);
     }
   }, []);
 
@@ -85,11 +89,9 @@ export const useAuth = () => {
             
           case 'TOKEN_REFRESHED':
             setSession(currentSession);
-            if (currentSession) {
-              // При обновлении токена обновляем профиль "тихо" (без спиннера)
-              // и только если ID совпадает
-              const isSilent = !!profileRef.current;
-              await fetchProfile(currentSession.user.id, isSilent);
+            // Если сессия обновилась, но профиль уже есть — не дергаем базу лишний раз без нужды
+            if (currentSession && !profileRef.current) {
+              await fetchProfile(currentSession.user.id, true);
             }
             break;
             
@@ -110,6 +112,7 @@ export const useAuth = () => {
 
     initialize();
 
+    // Защитный таймаут для Railway окружений (если сессия "зависла" в ожидании ответа)
     const timeout = setTimeout(() => {
       if (isMounted && loading) {
         setLoading(false);

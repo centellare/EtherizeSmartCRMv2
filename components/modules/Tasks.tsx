@@ -1,11 +1,11 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase, measureQuery } from '../../lib/supabase';
 import { Button, Input, Select, Badge, Modal } from '../ui';
 
 type FilterMode = 'all' | 'mine' | 'created' | 'responsible';
 type TaskTab = 'today' | 'week' | 'month' | 'active' | 'archive' | 'deadlines' | 'employees' | 'closed' | 'overdue';
 
-/* Добавлен импорт React для корректной типизации FC и FormEvent */
 const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, stageId?: string) => void }> = ({ profile, onNavigateToObject }) => {
   const [activeTab, setActiveTab] = useState<TaskTab>('active');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
@@ -18,6 +18,8 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isTaskDetailsModalOpen, setIsTaskDetailsModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<any>(null);
+
+  const isFetching = useRef(false);
 
   const [createForm, setCreateForm] = useState({
     object_id: '', title: '', assigned_to: '', start_date: new Date().toISOString().split('T')[0], deadline: '', comment: '', doc_link: '', doc_name: ''
@@ -35,15 +37,13 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
   const isSpecialist = profile?.role === 'specialist';
 
   const fetchData = useCallback(async (silent = false) => {
-    // Если профиль еще не загружен или ID отсутствует, не начинаем загрузку
-    if (!profile?.id) {
-      return;
-    }
+    if (!profile?.id || isFetching.current) return;
     
+    isFetching.current = true;
     if (!silent) setLoading(true);
     
     try {
-      const [{ data: activeTasks }, { data: staffData }, { data: objectsData }] = await Promise.all([
+      const [activeResult, staffResult, objectsResult] = await Promise.all([
         measureQuery(
           supabase.from('tasks')
             .select('*, executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)')
@@ -55,12 +55,16 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         supabase.from('objects').select('id, name, current_stage').is('is_deleted', false)
       ]);
 
-      setTasks(activeTasks || []);
-      setStaff(staffData || []);
-      setObjects(objectsData || []);
+      // Проверяем, не был ли запрос отменен
+      if (!activeResult.cancelled) {
+        setTasks(activeResult.data || []);
+      }
+      setStaff(staffResult.data || []);
+      setObjects(objectsResult.data || []);
     } catch (err) {
       console.error('Fetch tasks error:', err);
     } finally {
+      isFetching.current = false;
       setLoading(false);
     }
   }, [profile?.id]);
@@ -78,8 +82,10 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
 
       if (employeeFilter !== 'all') query = query.eq('assigned_to', employeeFilter);
 
-      const { data: archived } = await measureQuery(query.order('completed_at', { ascending: false }));
-      setArchiveTasks(archived || []);
+      const result = await measureQuery(query.order('completed_at', { ascending: false }));
+      if (!result.cancelled) {
+        setArchiveTasks(result.data || []);
+      }
     } catch (err) {
       console.error('Archive fetch error:', err);
     } finally {
@@ -101,7 +107,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
 
   useEffect(() => {
     const handleFocus = () => { 
-      if (document.visibilityState === 'visible' && profile?.id) {
+      if (document.visibilityState === 'visible' && profile?.id && !isFetching.current) {
         fetchData(true); 
       }
     };
@@ -117,7 +123,6 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     return [];
   }, [staff, profile, isAdmin, isDirector, isManager, isSpecialist]);
 
-  /* Использование React.FormEvent теперь корректно после импорта React */
   const handleCreateTask = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createForm.object_id) return;
