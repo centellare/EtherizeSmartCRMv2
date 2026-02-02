@@ -1,8 +1,9 @@
+
 import React from 'react';
 
 interface ButtonProps {
   onClick?: (e: React.MouseEvent) => void;
-  children: React.ReactNode;
+  children?: React.ReactNode;
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'tonal';
   disabled?: boolean;
   loading?: boolean;
