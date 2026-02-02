@@ -21,6 +21,14 @@ export interface Object {
   deleted_at?: string;
 }
 
+export interface TaskChecklistItem {
+  id: string;
+  task_id: string;
+  content: string;
+  is_completed: boolean;
+  created_at: string;
+}
+
 export interface Task {
   id: string;
   object_id: string;
@@ -41,6 +49,7 @@ export interface Task {
   completed_at?: string;
   last_edited_at?: string;
   last_edited_by?: string;
+  checklist?: TaskChecklistItem[];
 }
 
 export interface TransactionPayment {
