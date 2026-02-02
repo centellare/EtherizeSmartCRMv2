@@ -43,7 +43,8 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     if (!profile?.id || isFetching.current) return;
     
     isFetching.current = true;
-    if (!silent) setLoading(true);
+    const isInitial = tasks.length === 0 && !silent;
+    if (isInitial) setLoading(true);
     
     try {
       const [activeResult, staffResult, objectsResult] = await Promise.all([
@@ -58,22 +59,25 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         supabase.from('objects').select('id, name, current_stage').is('is_deleted', false)
       ]);
 
-      if (!activeResult.cancelled) {
-        setTasks(activeResult.data || []);
+      if (!activeResult.cancelled && activeResult.data) {
+        setTasks(activeResult.data);
       }
-      setStaff(staffResult.data || []);
-      setObjects(objectsResult.data || []);
+      if (staffResult.data) setStaff(staffResult.data);
+      if (objectsResult.data) setObjects(objectsResult.data);
     } catch (err) {
       console.error('Fetch tasks error:', err);
     } finally {
       isFetching.current = false;
-      if (!silent) setLoading(false);
+      setLoading(false);
     }
-  }, [profile?.id]);
+  }, [profile?.id, tasks.length]);
 
   const fetchArchive = useCallback(async (page = 0) => {
     if (!profile?.id) return;
-    setLoading(true);
+    
+    const isInitial = archiveTasks.length === 0;
+    if (isInitial) setLoading(true);
+
     try {
       let query = supabase.from('tasks')
         .select('*, checklist:task_checklists(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)', { count: 'exact' })
@@ -102,7 +106,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     } finally {
       setLoading(false);
     }
-  }, [profile?.id, archiveDates, filterMode]);
+  }, [profile?.id, archiveDates, filterMode, archiveTasks.length]);
 
   useEffect(() => {
     if (activeTab === 'archive') {
@@ -152,17 +156,20 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     e.preventDefault();
     if (!createForm.object_id) return;
     setLoading(true);
-    const { error } = await supabase.from('tasks').insert([{
-      ...createForm,
-      created_by: profile.id,
-      status: 'pending'
-    }]);
-    if (!error) {
-      setIsCreateModalOpen(false);
-      setCreateForm({ object_id: '', title: '', assigned_to: '', start_date: new Date().toISOString().split('T')[0], deadline: '', comment: '', doc_link: '', doc_name: '' });
-      await fetchData();
+    try {
+      const { error } = await supabase.from('tasks').insert([{
+        ...createForm,
+        created_by: profile.id,
+        status: 'pending'
+      }]);
+      if (!error) {
+        setIsCreateModalOpen(false);
+        setCreateForm({ object_id: '', title: '', assigned_to: '', start_date: new Date().toISOString().split('T')[0], deadline: '', comment: '', doc_link: '', doc_name: '' });
+        await fetchData(true);
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const toggleChecklistItem = async (itemId: string, currentStatus: boolean, taskId: string) => {
@@ -172,7 +179,6 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     const isExecutor = task.assigned_to === profile.id;
     if (!isExecutor && !isAdmin) return;
 
-    // Update local state for both lists
     const updater = (t: Task) => {
       if (t.id === taskId && t.checklist) {
         return {
@@ -200,11 +206,25 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     await supabase.from('task_checklists').update({ is_completed: !currentStatus }).eq('id', itemId);
   };
 
+  const showBlockingLoader = loading && (
+    (activeTab === 'archive' && archiveTasks.length === 0) || 
+    (activeTab !== 'archive' && activeTab !== 'team' && tasks.length === 0) ||
+    (activeTab === 'team' && staff.length === 0)
+  );
+
   return (
     <div className="animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
-          <h2 className="text-3xl font-medium text-[#1c1b1f]">Задачи</h2>
+          <h2 className="text-3xl font-medium text-[#1c1b1f] flex items-center gap-3">
+            Задачи
+            {loading && !showBlockingLoader && (
+              <div className="flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full animate-pulse">
+                <span className="material-icons-round text-sm">sync</span>
+                ОБНОВЛЕНИЕ...
+              </div>
+            )}
+          </h2>
           <p className="text-slate-500 text-sm mt-1">Планирование и контроль выполнения</p>
         </div>
         <div className="flex items-center gap-2">
@@ -258,7 +278,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         </div>
       )}
 
-      {loading ? (
+      {showBlockingLoader ? (
         <div className="flex flex-col items-center justify-center py-24">
           <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Загрузка данных...</p>
@@ -388,7 +408,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         </>
       )}
 
-      {/* Модальные окна */}
+      {/* Модальные окна остаются без изменений */}
       <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Новая задача">
         <form onSubmit={handleCreateTask} className="space-y-4">
           <Input label="Что нужно сделать?" required value={createForm.title} onChange={(e:any) => setCreateForm({...createForm, title: e.target.value})} />

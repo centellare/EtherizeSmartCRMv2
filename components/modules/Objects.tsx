@@ -40,16 +40,27 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
 
   const fetchData = useCallback(async (silent = false) => {
     if (!profile?.id) return;
-    if (!silent) setLoading(true);
-    const { data: objectsData } = await supabase.from('objects').select('*, client:clients(name), responsible:profiles!responsible_id(full_name)').is('is_deleted', false).order('created_at', { ascending: false });
-    setObjects(objectsData || []);
-    const [{ data: cData }, { data: sData }] = await Promise.all([
-      supabase.from('clients').select('id, name, manager_id').is('deleted_at', null).order('name'),
-      supabase.from('profiles').select('id, full_name, role').is('deleted_at', null).order('full_name')
-    ]);
-    setClients(cData || []); setStaff(sData || []);
-    if (!silent) setLoading(false);
-  }, [profile?.id]);
+    
+    // Блокируем UI только если данных нет или мы явно попросили (не silent)
+    const isInitial = objects.length === 0 && !silent;
+    if (isInitial) setLoading(true);
+
+    try {
+      const { data: objectsData } = await supabase.from('objects').select('*, client:clients(name), responsible:profiles!responsible_id(full_name)').is('is_deleted', false).order('created_at', { ascending: false });
+      if (objectsData) setObjects(objectsData);
+      
+      const [{ data: cData }, { data: sData }] = await Promise.all([
+        supabase.from('clients').select('id, name, manager_id').is('deleted_at', null).order('name'),
+        supabase.from('profiles').select('id, full_name, role').is('deleted_at', null).order('full_name')
+      ]);
+      if (cData) setClients(cData);
+      if (sData) setStaff(sData);
+    } catch (err) {
+      console.error('Objects fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [profile?.id, objects.length]);
 
   useEffect(() => {
     fetchData();
@@ -77,14 +88,20 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
   const handleSaveObject = async (e: React.FormEvent) => {
     e.preventDefault(); setLoading(true);
     const payload = { ...formData, updated_by: profile.id, updated_at: new Date().toISOString() };
-    let error;
-    if (editingObject) error = (await supabase.from('objects').update(payload).eq('id', editingObject.id)).error;
-    else error = (await supabase.from('objects').insert([{ ...payload, created_by: profile.id, current_stage: 'negotiation', current_status: 'in_work' }])).error;
-    if (!error) {
-      setToast({ message: editingObject ? 'Объект обновлен' : 'Объект создан', type: 'success' });
-      setIsModalOpen(false); setEditingObject(null); fetchData();
-    } else setToast({ message: 'Ошибка при сохранении', type: 'error' });
-    setLoading(false);
+    try {
+      let error;
+      if (editingObject) error = (await supabase.from('objects').update(payload).eq('id', editingObject.id)).error;
+      else error = (await supabase.from('objects').insert([{ ...payload, created_by: profile.id, current_stage: 'negotiation', current_status: 'in_work' }])).error;
+      
+      if (!error) {
+        setToast({ message: editingObject ? 'Объект обновлен' : 'Объект создан', type: 'success' });
+        setIsModalOpen(false); setEditingObject(null); fetchData(true);
+      } else {
+        setToast({ message: 'Ошибка при сохранении', type: 'error' });
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleDeleteConfirm = async () => {
@@ -96,7 +113,8 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
       await supabase.from('tasks').update({ is_deleted: true, deleted_at: now }).eq('object_id', deleteConfirm.id);
       await supabase.from('transactions').update({ deleted_at: now }).eq('object_id', deleteConfirm.id);
       setToast({ message: 'Объект и связанные данные перенесены в корзину', type: 'success' });
-      setDeleteConfirm({ open: false, id: null }); fetchData();
+      setDeleteConfirm({ open: false, id: null }); 
+      fetchData(true);
     } catch (err) { setToast({ message: 'Ошибка при удалении', type: 'error' }); }
     setLoading(false);
   };
@@ -116,7 +134,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
 
   if (selectedObjectId) {
     const selectedObject = objects.find(o => o.id === selectedObjectId);
-    if (selectedObject) return <ObjectWorkflow object={selectedObject} profile={profile} initialStageId={initialStageId} onBack={() => { setSelectedObjectId(null); if (onClearInitialId) onClearInitialId(); fetchData(); }} />;
+    if (selectedObject) return <ObjectWorkflow object={selectedObject} profile={profile} initialStageId={initialStageId} onBack={() => { setSelectedObjectId(null); if (onClearInitialId) onClearInitialId(); fetchData(true); }} />;
   }
 
   return (
@@ -125,7 +143,15 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
-          <h2 className="text-3xl font-medium text-[#1c1b1f]">Объекты</h2>
+          <h2 className="text-3xl font-medium text-[#1c1b1f] flex items-center gap-3">
+            Объекты
+            {loading && objects.length > 0 && (
+              <div className="flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full animate-pulse">
+                <span className="material-icons-round text-sm">sync</span>
+                ОБНОВЛЕНИЕ...
+              </div>
+            )}
+          </h2>
           <p className="text-slate-500 text-sm mt-1">Управление проектами и этапами работ</p>
         </div>
         <Button onClick={() => { setEditingObject(null); setFormData({name:'', address:'', client_id:'', responsible_id:'', comment:''}); setIsModalOpen(true); }} icon="add_business">Создать объект</Button>
@@ -160,7 +186,10 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
       </div>
 
       {loading && objects.length === 0 ? (
-        <div className="flex justify-center py-20"><div className="w-8 h-8 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div></div>
+        <div className="flex flex-col items-center justify-center py-20">
+          <div className="w-8 h-8 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Загрузка объектов...</p>
+        </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {filteredObjects.map(obj => {
@@ -243,7 +272,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
         </div>
       )}
 
-      {/* Модальное окно просмотра (только чтение) */}
+      {/* Модальные окна остаются без изменений */}
       <Modal isOpen={!!viewingDetails} onClose={() => setViewingDetails(null)} title="Информация об объекте">
         {viewingDetails && (
           <div className="space-y-6">

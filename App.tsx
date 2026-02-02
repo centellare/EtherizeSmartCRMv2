@@ -64,8 +64,9 @@ const App: React.FC = () => {
     window.location.reload();
   };
 
-  // 1. Сначала проверяем общую загрузку (Auth + Profile Fetching)
-  if (loading) {
+  // 1. Показываем загрузку ТОЛЬКО если идет процесс и профиля еще нет в памяти.
+  // Это предотвращает "вылет" на экран загрузки при фоновом обновлении токена (visibility change).
+  if (loading && !profile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
         <div className="flex flex-col items-center gap-4">
@@ -76,11 +77,11 @@ const App: React.FC = () => {
     );
   }
 
-  // 2. Если загрузка завершена и сессии нет — показываем вход
-  if (!session) return <Auth />;
+  // 2. Если загрузка не идет и сессии нет — показываем вход
+  if (!loading && !session) return <Auth />;
 
-  // 3. Если сессия есть, но после завершения загрузки профиль всё еще null — ошибка
-  if (!profile) {
+  // 3. Если загрузка завершена, а профиль всё еще null (но сессия была) — показываем ошибку профиля
+  if (!loading && !profile) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8fafc] p-6 text-center animate-in fade-in duration-500">
         <div className="w-16 h-16 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mb-4">
@@ -98,7 +99,7 @@ const App: React.FC = () => {
     );
   }
 
-  // 4. Всё готово — рендерим приложение
+  // 4. Если профиль есть — рендерим приложение, даже если loading=true в фоне
   return (
     <Layout 
       profile={profile} 

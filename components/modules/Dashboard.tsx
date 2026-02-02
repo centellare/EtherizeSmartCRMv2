@@ -37,35 +37,40 @@ const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
 
   const fetchData = async () => {
     if (!profile?.id) return;
-    setLoading(true);
+    
+    // Показываем блокирующий лоадер только если данных нет вообще
+    const isInitial = tasks.length === 0 && transactions.length === 0 && objects.length === 0;
+    if (isInitial) setLoading(true);
     
     const startTime = performance.now();
     
-    // Замеряем каждый запрос отдельно для детального отчета
-    const promises = [
-      measureQuery(supabase.from('tasks').select('*, executor:profiles!assigned_to(full_name), objects(name)').is('is_deleted', false)),
-      measureQuery(supabase.from('transactions').select('*, objects(name, responsible_id)').is('deleted_at', null)),
-      measureQuery(supabase.from('objects').select('*, responsible:profiles!responsible_id(full_name)').is('is_deleted', false))
-    ];
+    try {
+      const promises = [
+        measureQuery(supabase.from('tasks').select('*, executor:profiles!assigned_to(full_name), objects(name)').is('is_deleted', false)),
+        measureQuery(supabase.from('transactions').select('*, objects(name, responsible_id)').is('deleted_at', null)),
+        measureQuery(supabase.from('objects').select('*, responsible:profiles!responsible_id(full_name)').is('is_deleted', false))
+      ];
 
-    const results = await Promise.all(promises);
-    const endTime = performance.now();
-    
-    setLatency(Math.round(endTime - startTime));
-    
-    // Сохраняем статистику по таблицам
-    const stats = [
-      { table: 'Задачи', time: results[0].duration },
-      { table: 'Финансы', time: results[1].duration },
-      { table: 'Объекты', time: results[2].duration }
-    ];
-    setQueryStats(stats);
+      const results = await Promise.all(promises);
+      const endTime = performance.now();
+      
+      setLatency(Math.round(endTime - startTime));
+      
+      const stats = [
+        { table: 'Задачи', time: results[0].duration },
+        { table: 'Финансы', time: results[1].duration },
+        { table: 'Объекты', time: results[2].duration }
+      ];
+      setQueryStats(stats);
 
-    setTasks(results[0].data || []);
-    setTransactions(results[1].data || []);
-    setObjects(results[2].data || []);
-    
-    setLoading(false);
+      if (results[0].data) setTasks(results[0].data);
+      if (results[1].data) setTransactions(results[1].data);
+      if (results[2].data) setObjects(results[2].data);
+    } catch (err) {
+      console.error('Dashboard fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchData(); }, [profile?.id]);
@@ -114,9 +119,12 @@ const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
               </div>
             )}
           </h2>
-          <p className="text-sm text-slate-500 mt-1">
-            {loading ? 'Синхронизация...' : `Данные актуальны на ${new Date().toLocaleTimeString()}`}
-          </p>
+          <div className="flex items-center gap-2 mt-1">
+            <p className="text-sm text-slate-500">
+              {loading ? 'Синхронизация...' : `Данные актуальны на ${new Date().toLocaleTimeString()}`}
+            </p>
+            {loading && <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>}
+          </div>
         </div>
         <div className="flex items-center gap-2 bg-white p-2 rounded-2xl border border-slate-200 shadow-sm">
            <span className="material-icons-round text-slate-400 ml-2">calendar_today</span>
@@ -136,7 +144,7 @@ const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
         </div>
       </div>
 
-      {loading ? (
+      {(loading && tasks.length === 0) ? (
         <div className="flex flex-col items-center justify-center py-40">
            <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
            <p className="text-slate-400 font-medium animate-pulse">Проверка скорости ответа БД...</p>
@@ -161,7 +169,6 @@ const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
             )}
           </div>
 
-          {/* Performance Report Section */}
           <div className="bg-white p-8 rounded-[32px] border border-[#e1e2e1] shadow-sm relative overflow-hidden">
             <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none">
               <span className="material-icons-round text-9xl">analytics</span>
@@ -174,10 +181,11 @@ const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
               </div>
               <button 
                 onClick={fetchData}
-                className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-blue-600 hover:text-white transition-all"
+                disabled={loading}
+                className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-slate-500 hover:bg-blue-600 hover:text-white transition-all disabled:opacity-50"
                 title="Перезапустить замер"
               >
-                <span className="material-icons-round">refresh</span>
+                <span className={`material-icons-round ${loading ? 'animate-spin' : ''}`}>refresh</span>
               </button>
             </div>
 

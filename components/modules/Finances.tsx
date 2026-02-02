@@ -72,7 +72,10 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
 
   const fetchData = useCallback(async (silent = false) => {
     if (!profile?.id) return;
-    if (!silent) setLoading(true);
+    
+    const isInitial = transactions.length === 0 && !silent;
+    if (isInitial) setLoading(true);
+    
     try {
       let query = supabase
         .from('transactions')
@@ -95,26 +98,31 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       const result = await measureQuery(query.order('created_at', { ascending: false }));
       if (result.error) throw result.error;
 
-      const mappedTrans = (result.data || []).map((t: any) => {
-        const payments = (t.payments || []).map((p: any) => ({
-          ...p,
-          created_by_name: p.creator?.full_name || 'Неизвестно'
-        })).sort((a: any, b: any) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime());
+      if (result.data) {
+        const mappedTrans = result.data.map((t: any) => {
+          const payments = (t.payments || []).map((p: any) => ({
+            ...p,
+            created_by_name: p.creator?.full_name || 'Неизвестно'
+          })).sort((a: any, b: any) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime());
 
-        return { 
-          ...t, 
-          payments, 
-          created_by_name: t.creator?.full_name || 'Система',
-          processor_name: t.processor?.full_name || null
-        } as Transaction;
-      });
+          return { 
+            ...t, 
+            payments, 
+            created_by_name: t.creator?.full_name || 'Система',
+            processor_name: t.processor?.full_name || null
+          } as Transaction;
+        });
+        setTransactions(mappedTrans);
+      }
 
       const { data: objData } = await supabase.from('objects').select('id, name').is('is_deleted', false);
-      setTransactions(mappedTrans);
-      setObjects(objData || []);
-    } catch (error) { console.error('Finance fetch error:', error); }
-    if (!silent) setLoading(false);
-  }, [profile?.id, isSpecialist]);
+      if (objData) setObjects(objData);
+    } catch (error) { 
+      console.error('Finance fetch error:', error); 
+    } finally {
+      setLoading(false);
+    }
+  }, [profile?.id, isSpecialist, transactions.length]);
 
   useEffect(() => {
     fetchData();
@@ -165,23 +173,26 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const handleCreateTransaction = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const amount = Number(formData.amount);
-    const { error } = await supabase.from('transactions').insert([{ 
-      ...formData, 
-      amount: amount,
-      planned_amount: amount,
-      requested_amount: amount,
-      planned_date: formData.type === 'income' ? formData.planned_date : null,
-      status: 'pending',
-      created_by: profile.id 
-    }]);
-    if (!error) { 
-      setIsMainModalOpen(false); 
-      setFormData({ object_id: '', amount: '', planned_date: new Date().toISOString().split('T')[0], type: 'income', category: '', description: '', doc_link: '', doc_name: '' }); 
-      setToast({message: 'Запись создана', type: 'success'});
-      fetchData(); 
-    } else setToast({message: 'Ошибка: ' + error.message, type: 'error'});
-    setLoading(false);
+    try {
+      const amount = Number(formData.amount);
+      const { error } = await supabase.from('transactions').insert([{ 
+        ...formData, 
+        amount: amount,
+        planned_amount: amount,
+        requested_amount: amount,
+        planned_date: formData.type === 'income' ? formData.planned_date : null,
+        status: 'pending',
+        created_by: profile.id 
+      }]);
+      if (!error) { 
+        setIsMainModalOpen(false); 
+        setFormData({ object_id: '', amount: '', planned_date: new Date().toISOString().split('T')[0], type: 'income', category: '', description: '', doc_link: '', doc_name: '' }); 
+        setToast({message: 'Запись создана', type: 'success'});
+        await fetchData(true); 
+      } else setToast({message: 'Ошибка: ' + error.message, type: 'error'});
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleAddPayment = async (e: React.FormEvent) => {
@@ -192,50 +203,67 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     if (amountToAdd > balanceLeft + 0.01) { setToast({message: 'Сумма превышает остаток!', type: 'error'}); return; }
     
     setLoading(true);
-    const { error: pError } = await supabase.from('transaction_payments').insert([{ transaction_id: selectedTrans.id, amount: amountToAdd, comment: paymentComment, created_by: profile.id }]);
-    if (!pError) {
-      const newFact = (selectedTrans.fact_amount || 0) + amountToAdd;
-      await supabase.from('transactions').update({ status: newFact >= selectedTrans.amount - 0.01 ? 'approved' : 'partial', fact_amount: newFact }).eq('id', selectedTrans.id);
-      setIsPaymentModalOpen(false); setPaymentAmount(''); setPaymentComment(''); setToast({message: 'Платеж зафиксирован', type: 'success'});
-      fetchData();
+    try {
+      const { error: pError } = await supabase.from('transaction_payments').insert([{ transaction_id: selectedTrans.id, amount: amountToAdd, comment: paymentComment, created_by: profile.id }]);
+      if (!pError) {
+        const newFact = (selectedTrans.fact_amount || 0) + amountToAdd;
+        await supabase.from('transactions').update({ status: newFact >= selectedTrans.amount - 0.01 ? 'approved' : 'partial', fact_amount: newFact }).eq('id', selectedTrans.id);
+        setIsPaymentModalOpen(false); setPaymentAmount(''); setPaymentComment(''); setToast({message: 'Платеж зафиксирован', type: 'success'});
+        await fetchData(true);
+      }
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleApproveExpense = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTrans) return;
     setLoading(true);
-    const { error } = await supabase.from('transactions').update({ status: 'approved', amount: Number(approvalAmount), requested_amount: selectedTrans.requested_amount || selectedTrans.amount, processed_by: profile.id, processed_at: new Date().toISOString() }).eq('id', selectedTrans.id);
-    if (!error) { setIsApprovalModalOpen(false); setSelectedTrans(null); setToast({message: 'Расход утвержден', type: 'success'}); fetchData(); }
-    setLoading(false);
+    try {
+      const { error } = await supabase.from('transactions').update({ status: 'approved', amount: Number(approvalAmount), requested_amount: selectedTrans.requested_amount || selectedTrans.amount, processed_by: profile.id, processed_at: new Date().toISOString() }).eq('id', selectedTrans.id);
+      if (!error) { setIsApprovalModalOpen(false); setSelectedTrans(null); setToast({message: 'Расход утвержден', type: 'success'}); await fetchData(true); }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleRejectExpense = async () => {
     if (!selectedTrans) return;
     setLoading(true);
-    const { error } = await supabase.from('transactions').update({ status: 'rejected', processed_by: profile.id, processed_at: new Date().toISOString() }).eq('id', selectedTrans.id);
-    if (!error) { setIsRejectConfirmOpen(false); setSelectedTrans(null); setToast({message: 'Заявка отклонена', type: 'success'}); fetchData(); }
-    setLoading(false);
+    try {
+      const { error } = await supabase.from('transactions').update({ status: 'rejected', processed_by: profile.id, processed_at: new Date().toISOString() }).eq('id', selectedTrans.id);
+      if (!error) { setIsRejectConfirmOpen(false); setSelectedTrans(null); setToast({message: 'Заявка отклонена', type: 'success'}); await fetchData(true); }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleFinalizeIncome = async () => {
     if (!selectedTrans) return;
     setLoading(true);
-    await supabase.from('transactions').update({ status: 'approved', amount: selectedTrans.fact_amount || 0, processed_by: profile.id, processed_at: new Date().toISOString(), description: (selectedTrans.description || '') + ' (Закрыто вручную)' }).eq('id', selectedTrans.id);
-    setIsFinalizeConfirmOpen(false); setSelectedTrans(null); setToast({message: 'Приход завершен', type: 'success'}); fetchData();
-    setLoading(false);
+    try {
+      await supabase.from('transactions').update({ status: 'approved', amount: selectedTrans.fact_amount || 0, processed_by: profile.id, processed_at: new Date().toISOString(), description: (selectedTrans.description || '') + ' (Закрыто вручную)' }).eq('id', selectedTrans.id);
+      setIsFinalizeConfirmOpen(false); setSelectedTrans(null); setToast({message: 'Приход завершен', type: 'success'}); await fetchData(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSoftDelete = async () => {
     if (!selectedTrans) return;
     setLoading(true);
-    await supabase.from('transactions').update({ deleted_at: new Date().toISOString() }).eq('id', selectedTrans.id);
-    setIsDeleteConfirmOpen(false); setSelectedTrans(null); setToast({message: 'Транзакция удалена', type: 'success'}); fetchData();
-    setLoading(false);
+    try {
+      await supabase.from('transactions').update({ deleted_at: new Date().toISOString() }).eq('id', selectedTrans.id);
+      setIsDeleteConfirmOpen(false); setSelectedTrans(null); setToast({message: 'Транзакция удалена', type: 'success'}); await fetchData(true);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const toggleRow = (id: string, e: React.MouseEvent) => { e.stopPropagation(); setExpandedRows(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; }); };
+
+  const showBlockingLoader = loading && transactions.length === 0;
 
   return (
     <div className="animate-in fade-in duration-500">
@@ -243,7 +271,15 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
         <div>
-          <h2 className="text-3xl font-medium text-[#1c1b1f]">Финансы (BYN)</h2>
+          <h2 className="text-3xl font-medium text-[#1c1b1f] flex items-center gap-3">
+            Финансы (BYN)
+            {loading && !showBlockingLoader && (
+              <div className="flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full animate-pulse">
+                <span className="material-icons-round text-sm">sync</span>
+                ОБНОВЛЕНИЕ...
+              </div>
+            )}
+          </h2>
           {!isSpecialist && (
             <div className="flex gap-2 mt-3">
                <button onClick={() => { setTypeFilter('all'); setSummaryFilter(null); }} className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase border transition-all ${typeFilter === 'all' && !summaryFilter ? 'bg-[#005ac1] border-[#005ac1] text-white shadow-md' : 'bg-white border-slate-200 text-slate-500 hover:border-slate-300'}`}>Все</button>
@@ -286,112 +322,120 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         </div>
       )}
 
-      <div className="bg-white rounded-[32px] border border-[#e1e2e1] overflow-hidden shadow-sm">
-        <table className="w-full text-left">
-          <thead className="bg-slate-50 border-b">
-            <tr>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Тип / Дата</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Объект / Описание</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Сумма (Запрос)</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Факт / Утв.</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Статус</th>
-              <th className="p-5 text-right"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filteredTransactions.map((t: Transaction) => {
-              const isExpanded = expandedRows.has(t.id);
-              return (
-                <React.Fragment key={t.id}>
-                  <tr className={`hover:bg-slate-50 transition-colors ${isExpanded ? 'bg-slate-50' : ''}`}>
-                    <td className="p-5">
-                      <Badge color={t.type === 'income' ? 'emerald' : 'red'}>{t.type === 'income' ? 'ПРИХОД' : 'РАСХОД'}</Badge>
-                      <p className="text-[10px] text-slate-400 font-bold mt-1.5">{new Date(t.created_at).toLocaleDateString()}</p>
-                    </td>
-                    <td className="p-5">
-                      <p className="font-bold text-slate-900">{t.objects?.name || 'Без объекта'}</p>
-                      <p className="text-xs text-slate-400 truncate max-w-[200px]">{t.category}: {t.description}</p>
-                    </td>
-                    <td className="p-5 font-bold">{formatBYN(t.type === 'expense' ? (t.requested_amount || t.amount) : t.amount)}</td>
-                    <td className="p-5">
-                      {t.type === 'income' ? (
-                        <div className="flex items-center gap-2">
-                           <span className="font-bold text-sm">{formatBYN(t.fact_amount || 0)}</span>
-                           <button onClick={(e) => toggleRow(t.id, e)} className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-200 transition-all">
-                              <span className="material-icons-round text-sm">{isExpanded ? 'expand_less' : 'history'}</span>
-                           </button>
-                        </div>
-                      ) : (
-                        <span className="font-bold text-sm text-slate-700">{t.status === 'approved' ? formatBYN(t.amount) : '—'}</span>
-                      )}
-                    </td>
-                    <td className="p-5">
-                      <Badge color={t.status === 'approved' ? 'emerald' : t.status === 'partial' ? 'blue' : t.status === 'rejected' ? 'red' : 'amber'}>{t.status?.toUpperCase()}</Badge>
-                      {t.processor_name && (
-                        <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 tracking-tighter">
-                          {t.status === 'approved' ? 'Утв: ' : 'Откл: '} {t.processor_name.split(' ')[0]}
-                        </p>
-                      )}
-                    </td>
-                    <td className="p-5 text-right">
-                       <div className="flex justify-end gap-1.5">
-                          {t.type === 'income' && t.status !== 'approved' && !isSpecialist && (
-                            <>
-                              <button onClick={() => { setSelectedTrans(t); setPaymentAmount(''); setPaymentComment(''); setIsPaymentModalOpen(true); }} className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all" title="Внести платеж"><span className="material-icons-round text-sm">add_card</span></button>
-                              <button onClick={() => { setSelectedTrans(t); setIsFinalizeConfirmOpen(true); }} className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all" title="Завершить приход"><span className="material-icons-round text-sm">done_all</span></button>
-                            </>
-                          )}
-                          {t.type === 'expense' && t.status === 'pending' && canApprove(t) && (
-                            <>
-                              <button onClick={() => { setSelectedTrans(t); setApprovalAmount((t.requested_amount || t.amount).toString()); setIsApprovalModalOpen(true); }} className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all" title="Утвердить"><span className="material-icons-round text-sm">check</span></button>
-                              <button onClick={() => { setSelectedTrans(t); setIsRejectConfirmOpen(true); }} className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all" title="Отклонить"><span className="material-icons-round text-sm">close</span></button>
-                            </>
-                          )}
-                          {isAdmin && (
-                            <button onClick={() => { setSelectedTrans(t); setIsDeleteConfirmOpen(true); }} className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all" title="Удалить"><span className="material-icons-round text-sm">delete</span></button>
-                          )}
-                       </div>
-                    </td>
-                  </tr>
-                  {isExpanded && (
-                    <tr className="bg-slate-50/50">
-                      <td colSpan={6} className="p-4 pl-16">
-                         <div className="space-y-2">
-                            {t.payments && t.payments.length > 0 ? t.payments.map((p: any) => (
-                              <div key={p.id} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm max-w-4xl">
-                                <div className="flex flex-col">
-                                  <span className="text-sm font-bold text-emerald-700">+{formatBYN(p.amount)}</span>
-                                  {p.comment && <p className="text-[11px] text-slate-600 bg-slate-50 px-2 py-0.5 rounded mt-1">«{p.comment}»</p>}
-                                </div>
-                                <div className="text-right">
-                                   <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">{p.created_by_name}</p>
-                                   <p className="text-[9px] text-slate-300 font-bold uppercase">{new Date(p.payment_date).toLocaleString()}</p>
-                                </div>
-                              </div>
-                            )) : (
-                              <p className="text-xs text-slate-400 italic">Оплат по этой записи нет</p>
+      {showBlockingLoader ? (
+        <div className="flex flex-col items-center justify-center py-40">
+           <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+           <p className="text-slate-400 font-medium animate-pulse">Загрузка финансов...</p>
+        </div>
+      ) : (
+        <div className="bg-white rounded-[32px] border border-[#e1e2e1] overflow-hidden shadow-sm">
+          <table className="w-full text-left">
+            <thead className="bg-slate-50 border-b">
+              <tr>
+                <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Тип / Дата</th>
+                <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Объект / Описание</th>
+                <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Сумма (Запрос)</th>
+                <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Факт / Утв.</th>
+                <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Статус</th>
+                <th className="p-5 text-right"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredTransactions.map((t: Transaction) => {
+                const isExpanded = expandedRows.has(t.id);
+                return (
+                  <React.Fragment key={t.id}>
+                    <tr className={`hover:bg-slate-50 transition-colors ${isExpanded ? 'bg-slate-50' : ''}`}>
+                      <td className="p-5">
+                        <Badge color={t.type === 'income' ? 'emerald' : 'red'}>{t.type === 'income' ? 'ПРИХОД' : 'РАСХОД'}</Badge>
+                        <p className="text-[10px] text-slate-400 font-bold mt-1.5">{new Date(t.created_at).toLocaleDateString()}</p>
+                      </td>
+                      <td className="p-5">
+                        <p className="font-bold text-slate-900">{t.objects?.name || 'Без объекта'}</p>
+                        <p className="text-xs text-slate-400 truncate max-w-[200px]">{t.category}: {t.description}</p>
+                      </td>
+                      <td className="p-5 font-bold">{formatBYN(t.type === 'expense' ? (t.requested_amount || t.amount) : t.amount)}</td>
+                      <td className="p-5">
+                        {t.type === 'income' ? (
+                          <div className="flex items-center gap-2">
+                             <span className="font-bold text-sm">{formatBYN(t.fact_amount || 0)}</span>
+                             <button onClick={(e) => toggleRow(t.id, e)} className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-200 transition-all">
+                                <span className="material-icons-round text-sm">{isExpanded ? 'expand_less' : 'history'}</span>
+                             </button>
+                          </div>
+                        ) : (
+                          <span className="font-bold text-sm text-slate-700">{t.status === 'approved' ? formatBYN(t.amount) : '—'}</span>
+                        )}
+                      </td>
+                      <td className="p-5">
+                        <Badge color={t.status === 'approved' ? 'emerald' : t.status === 'partial' ? 'blue' : t.status === 'rejected' ? 'red' : 'amber'}>{t.status?.toUpperCase()}</Badge>
+                        {t.processor_name && (
+                          <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 tracking-tighter">
+                            {t.status === 'approved' ? 'Утв: ' : 'Откл: '} {t.processor_name.split(' ')[0]}
+                          </p>
+                        )}
+                      </td>
+                      <td className="p-5 text-right">
+                         <div className="flex justify-end gap-1.5">
+                            {t.type === 'income' && t.status !== 'approved' && !isSpecialist && (
+                              <>
+                                <button onClick={() => { setSelectedTrans(t); setPaymentAmount(''); setPaymentComment(''); setIsPaymentModalOpen(true); }} className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all" title="Внести платеж"><span className="material-icons-round text-sm">add_card</span></button>
+                                <button onClick={() => { setSelectedTrans(t); setIsFinalizeConfirmOpen(true); }} className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all" title="Завершить приход"><span className="material-icons-round text-sm">done_all</span></button>
+                              </>
+                            )}
+                            {t.type === 'expense' && t.status === 'pending' && canApprove(t) && (
+                              <>
+                                <button onClick={() => { setSelectedTrans(t); setApprovalAmount((t.requested_amount || t.amount).toString()); setIsApprovalModalOpen(true); }} className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all" title="Утвердить"><span className="material-icons-round text-sm">check</span></button>
+                                <button onClick={() => { setSelectedTrans(t); setIsRejectConfirmOpen(true); }} className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all" title="Отклонить"><span className="material-icons-round text-sm">close</span></button>
+                              </>
+                            )}
+                            {isAdmin && (
+                              <button onClick={() => { setSelectedTrans(t); setIsDeleteConfirmOpen(true); }} className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all" title="Удалить"><span className="material-icons-round text-sm">delete</span></button>
                             )}
                          </div>
                       </td>
                     </tr>
-                  )}
-                </React.Fragment>
-              );
-            })}
-            {filteredTransactions.length === 0 && (
-              <tr>
-                <td colSpan={6} className="p-20 text-center">
-                   <div className="flex flex-col items-center opacity-20">
-                      <span className="material-icons-round text-6xl mb-2">account_balance_wallet</span>
-                      <p className="text-lg font-medium italic">Записей не найдено</p>
-                   </div>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+                    {isExpanded && (
+                      <tr className="bg-slate-50/50">
+                        <td colSpan={6} className="p-4 pl-16">
+                           <div className="space-y-2">
+                              {t.payments && t.payments.length > 0 ? t.payments.map((p: any) => (
+                                <div key={p.id} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm max-w-4xl">
+                                  <div className="flex flex-col">
+                                    <span className="text-sm font-bold text-emerald-700">+{formatBYN(p.amount)}</span>
+                                    {p.comment && <p className="text-[11px] text-slate-600 bg-slate-50 px-2 py-0.5 rounded mt-1">«{p.comment}»</p>}
+                                  </div>
+                                  <div className="text-right">
+                                     <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">{p.created_by_name}</p>
+                                     <p className="text-[9px] text-slate-300 font-bold uppercase">{new Date(p.payment_date).toLocaleString()}</p>
+                                  </div>
+                                </div>
+                              )) : (
+                                <p className="text-xs text-slate-400 italic">Оплат по этой записи нет</p>
+                              )}
+                           </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+              {filteredTransactions.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="p-20 text-center">
+                     <div className="flex flex-col items-center opacity-20">
+                        <span className="material-icons-round text-6xl mb-2">account_balance_wallet</span>
+                        <p className="text-lg font-medium italic">Записей не найдено</p>
+                     </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
+      {/* Модальные окна остаются без изменений */}
       <Modal isOpen={isMainModalOpen} onClose={() => setIsMainModalOpen(false)} title={formData.type === 'income' ? 'План прихода' : 'Заявка на расход'}>
         <form onSubmit={handleCreateTransaction} className="space-y-4">
           <Select label="Объект" required value={formData.object_id} onChange={(e:any) => setFormData({ ...formData, object_id: e.target.value })} options={[{value: '', label: 'Выберите объект'}, ...objects.map(o => ({value: o.id, label: o.name}))]} icon="business" />
