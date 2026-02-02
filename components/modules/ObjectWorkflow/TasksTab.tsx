@@ -118,8 +118,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({
       id: task.id,
       title: task.title,
       assigned_to: task.assigned_to,
-      start_date: task.start_date || new Date().toISOString().split('T')[0],
-      deadline: task.deadline || '',
+      start_date: (task.start_date || '').split('T')[0] || new Date().toISOString().split('T')[0],
+      deadline: (task.deadline || '').split('T')[0] || '',
       comment: task.comment || '',
       doc_link: task.doc_link || '',
       doc_name: task.doc_name || ''
@@ -215,6 +215,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     if (task.status === 'completed') return isAdmin;
     return isAdmin || isDirector || isCreator;
   };
+
+  const isInvalidDates = taskForm.deadline && new Date(taskForm.deadline) < new Date(taskForm.start_date);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -339,13 +341,16 @@ export const TasksTab: React.FC<TasksTabProps> = ({
           />
           <div className="grid grid-cols-2 gap-4">
             <Input label="Дата старта" type="date" required value={taskForm.start_date} onChange={(e:any) => setTaskForm({...taskForm, start_date: e.target.value})} />
-            <Input label="Дедлайн" type="date" value={taskForm.deadline} onChange={(e:any) => setTaskForm({...taskForm, deadline: e.target.value})} />
+            <Input label="Дедлайн" type="date" value={taskForm.deadline} onChange={(e:any) => setTaskForm({...taskForm, deadline: e.target.value})} className={isInvalidDates ? 'border-red-500 ring-red-50' : ''} />
           </div>
+          {isInvalidDates && (
+            <p className="text-[10px] text-red-600 font-bold uppercase ml-1 animate-pulse">Срок не может быть раньше начала</p>
+          )}
           <div className="w-full">
             <label className="block text-xs font-medium text-[#444746] mb-1.5 ml-1">Описание / ТЗ</label>
             <textarea className="w-full bg-white border border-slate-200 rounded-xl p-4 text-sm outline-none focus:border-blue-500 shadow-inner" rows={3} value={taskForm.comment} onChange={(e) => setTaskForm({...taskForm, comment: e.target.value})} />
           </div>
-          <Button type="submit" className="w-full h-12" loading={loading}>{isEditMode ? 'Сохранить изменения' : 'Создать задачу'}</Button>
+          <Button type="submit" className="w-full h-12" loading={loading} disabled={isInvalidDates}>{isEditMode ? 'Сохранить изменения' : 'Создать задачу'}</Button>
         </form>
       </Modal>
 
