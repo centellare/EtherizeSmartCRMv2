@@ -9,12 +9,16 @@ export const useAuth = () => {
   
   const profileRef = useRef<any>(null);
   const isFetchingProfile = useRef(false);
+  const initialLoadDone = useRef(false);
 
   const fetchProfile = useCallback(async (userId: string, silent = false) => {
     if (isFetchingProfile.current) return;
     isFetchingProfile.current = true;
 
-    if (!silent) setLoading(true);
+    // Показываем экран загрузки только если это первый вход или если мы явно не просили "тихий" режим
+    // и при этом у нас еще нет данных профиля в памяти.
+    const shouldShowLoading = !silent && !initialLoadDone.current;
+    if (shouldShowLoading) setLoading(true);
     
     try {
       const { data, error } = await supabase
@@ -27,7 +31,8 @@ export const useAuth = () => {
         const isAborted = error.name === 'AbortError' || error.message?.toLowerCase().includes('aborted');
         if (!isAborted) {
           console.error('Database error fetching profile:', error.message);
-          if (!silent) setProfile(null);
+          // Не сбрасываем профиль в null при фоновых ошибках, чтобы не "выбивало" из приложения
+          if (shouldShowLoading) setProfile(null);
         }
       } else if (data) {
         if (data.deleted_at) {
@@ -38,8 +43,10 @@ export const useAuth = () => {
         } else {
           setProfile(data);
           profileRef.current = data;
+          initialLoadDone.current = true;
         }
       } else {
+        // Если данных нет вовсе (например, запись в таблице профилей отсутствует)
         setProfile(null);
         profileRef.current = null;
       }
@@ -47,11 +54,11 @@ export const useAuth = () => {
       const isAborted = err.name === 'AbortError' || err.message?.toLowerCase().includes('aborted');
       if (!isAborted) {
         console.error('Critical auth error:', err);
-        if (!silent) setProfile(null);
+        if (shouldShowLoading) setProfile(null);
       }
     } finally {
       isFetchingProfile.current = false;
-      if (!silent) setLoading(false);
+      if (shouldShowLoading) setLoading(false);
     }
   }, []);
 
@@ -66,7 +73,8 @@ export const useAuth = () => {
         if (isMounted) {
           setSession(initialSession);
           if (initialSession) {
-            await fetchProfile(initialSession.user.id);
+            // Первая загрузка - не silent
+            await fetchProfile(initialSession.user.id, false);
           } else {
             setLoading(false);
           }
@@ -79,17 +87,22 @@ export const useAuth = () => {
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
         if (!isMounted) return;
         
+        // Ключевой момент: если профиль уже есть (profileRef.current), 
+        // любое событие обновления сессии должно проходить в silent режиме.
+        const isSilent = !!profileRef.current;
+
         switch (event) {
           case 'SIGNED_IN':
             setSession(currentSession);
-            if (currentSession) await fetchProfile(currentSession.user.id);
+            if (currentSession) {
+              await fetchProfile(currentSession.user.id, isSilent);
+            }
             break;
             
           case 'TOKEN_REFRESHED':
             setSession(currentSession);
             if (currentSession) {
-              const isSilent = !!profileRef.current;
-              await fetchProfile(currentSession.user.id, isSilent);
+              await fetchProfile(currentSession.user.id, true); // Всегда silent для рефреша
             }
             break;
             
@@ -97,6 +110,7 @@ export const useAuth = () => {
             setSession(null);
             setProfile(null);
             profileRef.current = null;
+            initialLoadDone.current = false;
             setLoading(false);
             break;
             
@@ -110,6 +124,7 @@ export const useAuth = () => {
 
     initialize();
 
+    // Защитный таймер: если за 10 секунд ничего не произошло, убираем лоадер
     const timeout = setTimeout(() => {
       if (isMounted && loading) {
         setLoading(false);
