@@ -70,10 +70,23 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   }, [tasks, viewedStageId, object.id]);
 
   const isViewingHistory = viewedStageId !== object.current_stage;
-  const isAdmin = profile.role === 'admin';
+  const isAdmin = profile.role === 'admin' || profile.role === 'director';
   const isDirector = profile.role === 'director';
   const isSpecialist = profile.role === 'specialist';
+  const isManager = profile.role === 'manager';
   const canJumpForward = !!object.rolled_back_from;
+
+  const availableExecutors = useMemo(() => {
+    if (!profile) return [];
+    if (isAdmin || isDirector) return staff;
+    if (isManager) {
+      return staff.filter(s => ['specialist', 'manager', 'director'].includes(s.role));
+    }
+    if (isSpecialist) {
+      return staff.filter(s => s.id === profile.id || s.role === 'manager');
+    }
+    return [];
+  }, [staff, profile]);
 
   useEffect(() => {
     if (forceOpenTaskModal) {
@@ -121,7 +134,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
   const handleSaveTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (new Date(taskForm.deadline) < new Date(taskForm.start_date)) {
+    if (taskForm.deadline && new Date(taskForm.deadline) < new Date(taskForm.start_date)) {
       alert("Ошибка: Дата дедлайна не может быть раньше даты начала.");
       return;
     }
@@ -132,7 +145,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
         title: taskForm.title,
         assigned_to: taskForm.assigned_to,
         start_date: taskForm.start_date,
-        deadline: taskForm.deadline,
+        deadline: taskForm.deadline || null,
         comment: taskForm.comment,
         doc_link: taskForm.doc_link,
         doc_name: taskForm.doc_name,
@@ -142,7 +155,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
       
       if (!error) {
         setIsTaskModalOpen(false);
-        refreshData();
+        await refreshData();
       }
     } else {
       const { error } = await supabase.rpc('create_task_safe', {
@@ -150,7 +163,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
         p_title: taskForm.title,
         p_assigned_to: taskForm.assigned_to,
         p_start_date: taskForm.start_date,
-        p_deadline: taskForm.deadline,
+        p_deadline: taskForm.deadline || null,
         p_comment: taskForm.comment,
         p_doc_link: taskForm.doc_link || null,
         p_doc_name: taskForm.doc_name || null,
@@ -159,7 +172,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
       if (!error) {
         setIsTaskModalOpen(false);
-        refreshData();
+        await refreshData();
       } else { alert(error.message); }
     }
     setLoading(false);
@@ -171,7 +184,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     const { error } = await supabase.from('tasks').update({ is_deleted: true }).eq('id', deleteConfirm.id);
     if (!error) {
       setDeleteConfirm({ open: false, id: null });
-      refreshData();
+      await refreshData();
     }
     setLoading(false);
   };
@@ -192,7 +205,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
       setIsTaskCloseModalOpen(false);
       setIsTaskDetailsModalOpen(false);
       setCloseForm({ comment: '', link: '', doc_name: '' });
-      refreshData();
+      await refreshData();
     }
     setLoading(false);
   };
@@ -270,11 +283,11 @@ export const TasksTab: React.FC<TasksTabProps> = ({
             return (
               <div key={task.id} onClick={() => { setSelectedTask(task); setIsTaskDetailsModalOpen(true); }}
                 className={`bg-white p-5 rounded-3xl border transition-all flex items-center justify-between group cursor-pointer hover:border-blue-300 ${task.status === 'completed' ? 'border-slate-100 opacity-60' : 'border-slate-200 shadow-sm'}`}>
-                <div className="flex items-center gap-4 flex-grow min-w-0">
+                <div className="flex items-center gap-4 flex-grow min-w-0 pr-4">
                     <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${task.status === 'completed' ? 'bg-emerald-50 text-emerald-500' : 'bg-blue-50 text-blue-500'}`}>
                       <span className="material-icons-round text-2xl">{task.status === 'completed' ? 'check_circle' : 'pending'}</span>
                     </div>
-                    <div className="flex flex-col min-w-0 pr-4">
+                    <div className="flex flex-col min-w-0 flex-grow">
                       <div className="flex items-center gap-2">
                         <p className={`font-medium truncate text-base ${task.status === 'completed' ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{task.title}</p>
                         {hasFiles && <span className="material-icons-round text-sm text-slate-400">attach_file</span>}
@@ -290,7 +303,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                       </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 shrink-0">
                   {canEditDelete(task) && (
                     <>
                       <button onClick={(e) => handleOpenEditModal(task, e)} className="w-10 h-10 rounded-2xl bg-white border border-slate-100 flex items-center justify-center hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-all">
@@ -313,104 +326,71 @@ export const TasksTab: React.FC<TasksTabProps> = ({
          )}
       </div>
 
-      <Modal isOpen={isTaskDetailsModalOpen} onClose={() => setIsTaskDetailsModalOpen(false)} title="Карточка задачи">
-        {selectedTask && (
-          <div className="space-y-6">
-            <h4 className="text-xl font-medium text-[#1c1b1f] leading-snug">{selectedTask.title}</h4>
-            <div className="grid grid-cols-2 gap-4 py-5 border-y border-[#f2f3f5]">
-               <div className="space-y-1">
-                 <p className="text-[10px] uppercase font-bold text-slate-400">Поставил / Срок</p>
-                 <p className="text-sm font-medium">{selectedTask.creator?.full_name || 'Система'} — {selectedTask.deadline ? new Date(selectedTask.deadline).toLocaleDateString() : '—'}</p>
-                 <p className="text-[9px] text-slate-300 font-bold uppercase tracking-tight">Создана: {new Date(selectedTask.created_at).toLocaleDateString()}</p>
-               </div>
-               <div className="space-y-1">
-                 <p className="text-[10px] uppercase font-bold text-slate-400">Исполнитель</p>
-                 <p className="text-sm font-bold text-[#005ac1]">{selectedTask.executor?.full_name}</p>
-               </div>
-            </div>
-            
-            {(selectedTask.comment || selectedTask.doc_link) && (
-              <div className="space-y-3">
-                {selectedTask.comment && (
-                  <div>
-                    <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Постановка</p>
-                    <p className="text-sm text-slate-600 italic">"{selectedTask.comment}"</p>
-                  </div>
-                )}
-                {selectedTask.doc_link && (
-                  <a href={selectedTask.doc_link} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 bg-blue-50 border border-blue-100 rounded-xl hover:bg-blue-100 transition-colors group">
-                    <span className="material-icons-round text-blue-600">link</span>
-                    <div className="min-w-0">
-                      <p className="text-xs font-bold text-blue-700 uppercase tracking-tighter">Входящий документ</p>
-                      <p className="text-sm font-medium text-blue-900 truncate">{selectedTask.doc_name || 'Открыть ссылку'}</p>
-                    </div>
-                  </a>
-                )}
-              </div>
-            )}
-
-            {selectedTask.status === 'completed' && (
-              <div className="p-5 bg-emerald-50 rounded-2xl border border-emerald-100 shadow-inner space-y-3">
-                <p className="text-[10px] uppercase font-bold text-emerald-700">Отчет исполнителя</p>
-                <p className="text-sm text-emerald-900 italic break-words leading-relaxed">
-                  {selectedTask.completion_comment || "Результат зафиксирован без комментария"}
-                </p>
-                {selectedTask.completion_doc_link && (
-                   <a href={selectedTask.completion_doc_link} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 bg-emerald-100/50 rounded-xl hover:bg-emerald-100 transition-colors">
-                      <span className="material-icons-round text-emerald-600">description</span>
-                      <span className="text-xs font-bold text-emerald-800 uppercase">{selectedTask.completion_doc_name || 'Результат'}</span>
-                   </a>
-                )}
-              </div>
-            )}
-            
-            <div className="flex gap-2 pt-4">
-              <Button variant="tonal" className="flex-1" onClick={() => setIsTaskDetailsModalOpen(false)}>Закрыть</Button>
-              {(selectedTask.executor?.id === profile.id || isAdmin) && selectedTask.status !== 'completed' && (
-                <Button variant="primary" className="flex-1" icon="done_all" onClick={() => setIsTaskCloseModalOpen(true)}>Сдать работу</Button>
-              )}
-            </div>
-          </div>
-        )}
-      </Modal>
-
-      <Modal isOpen={isTaskModalOpen} onClose={() => setIsTaskModalOpen(false)} title={isEditMode ? "Редактирование задачи" : "Постановка задачи"}>
-        <form onSubmit={handleSaveTask} className="space-y-5 px-1 pb-4">
-          <Input label="Что нужно сделать?" required value={taskForm.title} onChange={(e:any) => setTaskForm({...taskForm, title: e.target.value})} icon="edit_note" />
+      {/* Task Creation/Editing Modal */}
+      <Modal isOpen={isTaskModalOpen} onClose={() => setIsTaskModalOpen(false)} title={isEditMode ? "Редактирование задачи" : "Новая задача"}>
+        <form onSubmit={handleSaveTask} className="space-y-4">
+          <Input label="Что сделать?" required value={taskForm.title} onChange={(e:any) => setTaskForm({...taskForm, title: e.target.value})} />
+          <Select 
+            label="Исполнитель" 
+            required 
+            value={taskForm.assigned_to} 
+            onChange={(e:any) => setTaskForm({...taskForm, assigned_to: e.target.value})}
+            options={[{value: '', label: 'Выбрать исполнителя'}, ...availableExecutors.map(s => ({value: s.id, label: s.full_name}))]}
+          />
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Дата старта" type="date" required value={taskForm.start_date} onChange={(e:any) => setTaskForm({...taskForm, start_date: e.target.value})} icon="calendar_today" />
-            <Input label="Дедлайн" type="date" required value={taskForm.deadline} onChange={(e:any) => setTaskForm({...taskForm, deadline: e.target.value})} icon="event" />
+            <Input label="Дата старта" type="date" required value={taskForm.start_date} onChange={(e:any) => setTaskForm({...taskForm, start_date: e.target.value})} />
+            <Input label="Дедлайн" type="date" value={taskForm.deadline} onChange={(e:any) => setTaskForm({...taskForm, deadline: e.target.value})} />
           </div>
-          <Select label="Исполнитель" required value={taskForm.assigned_to} onChange={(e:any) => setTaskForm({...taskForm, assigned_to: e.target.value})} options={[{value:'', label:'Выберите сотрудника'}, ...staff.map(s => ({value: s.id, label: s.full_name}))]} icon="person_search" />
-          
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-4">
-             <p className="text-[10px] font-bold text-slate-400 uppercase ml-1">Входящая документация</p>
-             <Input label="Название документа" value={taskForm.doc_name} onChange={(e:any) => setTaskForm({...taskForm, doc_name: e.target.value})} icon="description" />
-             <Input label="URL-ссылка" value={taskForm.doc_link} onChange={(e:any) => setTaskForm({...taskForm, doc_link: e.target.value})} icon="link" />
-          </div>
-
           <div className="w-full">
             <label className="block text-xs font-medium text-[#444746] mb-1.5 ml-1">Описание / ТЗ</label>
             <textarea className="w-full bg-white border border-slate-200 rounded-xl p-4 text-sm outline-none focus:border-blue-500 shadow-inner" rows={3} value={taskForm.comment} onChange={(e) => setTaskForm({...taskForm, comment: e.target.value})} />
           </div>
-          <Button type="submit" className="w-full h-14" icon="save" loading={loading}>
-            {isEditMode ? 'Сохранить изменения' : 'Создать задачу'}
-          </Button>
+          <Button type="submit" className="w-full h-12" loading={loading}>{isEditMode ? 'Сохранить изменения' : 'Создать задачу'}</Button>
         </form>
       </Modal>
 
-      <Modal isOpen={isTaskCloseModalOpen} onClose={() => setIsTaskCloseModalOpen(false)} title="Завершение работы">
-        <form onSubmit={handleCloseTask} className="space-y-4 px-1">
-           <div className="w-full">
-            <label className="block text-xs font-medium text-[#444746] mb-1.5 ml-1">Отчет исполнителя</label>
-            <textarea required className="w-full bg-white border border-slate-200 rounded-xl p-4 text-sm outline-none focus:border-blue-500 shadow-inner" rows={4} value={closeForm.comment} onChange={(e) => setCloseForm({...closeForm, comment: e.target.value})} />
-           </div>
-           <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100 space-y-4">
-             <p className="text-[10px] font-bold text-emerald-700 uppercase ml-1">Результат (ссылка)</p>
-             <Input label="Название файла" value={closeForm.doc_name} onChange={(e:any) => setCloseForm({...closeForm, doc_name: e.target.value})} icon="description" />
-             <Input label="Ссылка" value={closeForm.link} onChange={(e:any) => setCloseForm({...closeForm, link: e.target.value})} icon="link" />
-           </div>
-           <Button type="submit" className="w-full h-14" icon="task_alt" loading={loading}>Зафиксировать результат</Button>
+      {/* Task Details Modal */}
+      <Modal isOpen={isTaskDetailsModalOpen} onClose={() => setIsTaskDetailsModalOpen(false)} title="Карточка задачи">
+        {selectedTask && (
+          <div className="space-y-6">
+            <h4 className="text-xl font-bold">{selectedTask.title}</h4>
+            <div className="grid grid-cols-2 gap-4 py-4 border-y border-slate-100">
+               <div>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase">Исполнитель</p>
+                 <p className="text-sm font-medium">{selectedTask.executor?.full_name}</p>
+               </div>
+               <div>
+                 <p className="text-[10px] font-bold text-slate-400 uppercase">Срок</p>
+                 <p className="text-sm font-medium">{selectedTask.deadline ? new Date(selectedTask.deadline).toLocaleDateString() : 'Бессрочно'}</p>
+               </div>
+            </div>
+            {selectedTask.comment && (
+              <div className="p-4 bg-slate-50 rounded-xl">
+                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Описание</p>
+                <p className="text-sm text-slate-600 italic whitespace-pre-wrap leading-relaxed">{selectedTask.comment}</p>
+              </div>
+            )}
+            {selectedTask.status === 'completed' && selectedTask.completion_comment && (
+              <div className="p-4 bg-emerald-50 rounded-xl border border-emerald-100">
+                <p className="text-[10px] font-bold text-emerald-700 uppercase mb-2">Отчет исполнителя</p>
+                <p className="text-sm text-emerald-900 italic whitespace-pre-wrap leading-relaxed">{selectedTask.completion_comment}</p>
+              </div>
+            )}
+            <Button variant="tonal" className="w-full" onClick={() => setIsTaskDetailsModalOpen(false)}>Закрыть</Button>
+          </div>
+        )}
+      </Modal>
+
+      {/* Task Completion Modal */}
+      <Modal isOpen={isTaskCloseModalOpen} onClose={() => setIsTaskCloseModalOpen(false)} title="Отчет о выполнении">
+        <form onSubmit={handleCloseTask} className="space-y-4">
+          <div className="w-full">
+            <label className="block text-xs font-medium text-[#444746] mb-1.5 ml-1">Комментарий к результату</label>
+            <textarea required className="w-full bg-white border border-slate-200 rounded-xl p-4 text-sm outline-none focus:border-blue-500 shadow-inner" rows={3} value={closeForm.comment} onChange={(e:any) => setCloseForm({...closeForm, comment: e.target.value})} placeholder="Что было сделано..." />
+          </div>
+          <Input label="Ссылка на документ/результат" value={closeForm.link} onChange={(e:any) => setCloseForm({...closeForm, link: e.target.value})} placeholder="URL (Google Drive, Telegram, etc.)" />
+          <Input label="Название документа" value={closeForm.doc_name} onChange={(e:any) => setCloseForm({...closeForm, doc_name: e.target.value})} placeholder="Напр: Акт скрытых работ" />
+          <Button type="submit" className="w-full h-12" loading={loading} variant="primary">Завершить задачу</Button>
         </form>
       </Modal>
 
@@ -419,8 +399,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({
         onClose={() => setDeleteConfirm({ open: false, id: null })} 
         onConfirm={handleDeleteConfirm} 
         title="Удаление задачи" 
-        message="Вы уверены, что хотите удалить задачу?" 
-        loading={loading} 
+        message="Вы уверены, что хотите удалить эту задачу? Действие нельзя отменить." 
+        loading={loading}
       />
     </div>
   );

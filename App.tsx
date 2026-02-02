@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
+import { supabase } from './lib/supabase';
 import Auth from './components/Auth';
 import Layout from './components/Layout';
 import MainContent from './components/MainContent';
@@ -57,6 +58,12 @@ const App: React.FC = () => {
     }
   };
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.hash = 'dashboard';
+    window.location.reload();
+  };
+
   // 1. Сначала проверяем общую загрузку (Auth + Profile Fetching)
   if (loading) {
     return (
@@ -75,15 +82,18 @@ const App: React.FC = () => {
   // 3. Если сессия есть, но после завершения загрузки профиль всё еще null — ошибка
   if (!profile) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8fafc] p-6 text-center">
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8fafc] p-6 text-center animate-in fade-in duration-500">
         <div className="w-16 h-16 bg-red-50 text-red-600 rounded-2xl flex items-center justify-center mb-4">
           <span className="material-icons-round text-3xl">account_circle_off</span>
         </div>
         <h2 className="text-xl font-medium text-slate-900 mb-2">Профиль не найден</h2>
-        <p className="text-slate-500 max-w-xs mb-6">
-          Не удалось загрузить данные вашего аккаунта. Попробуйте обновить страницу или обратитесь к администратору.
+        <p className="text-slate-500 max-w-xs mb-8 leading-relaxed">
+          Не удалось загрузить данные вашего аккаунта. Возможно, он был деактивирован администратором или возникла техническая ошибка.
         </p>
-        <Button onClick={() => window.location.reload()} icon="refresh">Обновить страницу</Button>
+        <div className="flex flex-col gap-3 w-full max-w-[240px]">
+          <Button onClick={() => window.location.reload()} icon="refresh" className="w-full">Обновить страницу</Button>
+          <Button variant="ghost" onClick={handleLogout} icon="logout" className="w-full">Выйти из системы</Button>
+        </div>
       </div>
     );
   }

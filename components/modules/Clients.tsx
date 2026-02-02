@@ -49,6 +49,8 @@ const Clients: React.FC<{ profile: any; setActiveModule: (m: Module) => void; on
     manager_id: profile?.id || ''
   });
 
+  const canManage = profile?.role === 'admin' || profile?.role === 'director' || profile?.role === 'manager';
+
   const fetchData = async () => {
     if (!profile?.id) return;
     setLoading(true);
@@ -120,7 +122,14 @@ const Clients: React.FC<{ profile: any; setActiveModule: (m: Module) => void; on
     setLoading(false);
   };
 
-  const openEdit = (client: any) => {
+  const openView = (client: any, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setViewingClient(client);
+    setIsDetailsOpen(true);
+  };
+
+  const openEdit = (client: any, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
     setEditingClient(client);
     setFormData({
       name: client.name,
@@ -203,12 +212,31 @@ const Clients: React.FC<{ profile: any; setActiveModule: (m: Module) => void; on
                   <Badge color={client.type === 'company' ? 'emerald' : 'blue'}>
                     {client.type === 'company' ? 'Компания' : 'Физлицо'}
                   </Badge>
-                  {activeObjects.length > 0 && (
-                    <div className="flex items-center gap-1 text-[10px] font-bold text-[#005ac1] bg-[#d3e4ff] px-2 py-0.5 rounded-full">
-                      <span className="material-icons-round text-xs">home_work</span>
-                      {activeObjects.length}
+                  
+                  <div className="flex items-center gap-2">
+                    {activeObjects.length > 0 && (
+                      <div className="flex items-center gap-1 text-[10px] font-bold text-[#005ac1] bg-[#d3e4ff] px-2 py-0.5 rounded-full">
+                        <span className="material-icons-round text-xs">home_work</span>
+                        {activeObjects.length}
+                      </div>
+                    )}
+                    
+                    <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={(e) => openView(client, e)} className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 hover:text-blue-600 flex items-center justify-center transition-all" title="Просмотр">
+                        <span className="material-icons-round text-lg">visibility</span>
+                      </button>
+                      {canManage && (
+                        <>
+                          <button onClick={(e) => openEdit(client, e)} className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 hover:text-blue-600 flex items-center justify-center transition-all" title="Редактировать">
+                            <span className="material-icons-round text-lg">edit</span>
+                          </button>
+                          <button onClick={(e) => { e.stopPropagation(); setDeleteModal({ open: true, id: client.id }); }} className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 hover:text-red-600 flex items-center justify-center transition-all" title="Удалить">
+                            <span className="material-icons-round text-lg">delete</span>
+                          </button>
+                        </>
+                      )}
                     </div>
-                  )}
+                  </div>
                 </div>
                 
                 <h4 className="text-xl font-medium text-[#1c1b1f] mb-1 group-hover:text-[#005ac1] transition-colors line-clamp-2">{client.name}</h4>
@@ -243,19 +271,9 @@ const Clients: React.FC<{ profile: any; setActiveModule: (m: Module) => void; on
       <Modal isOpen={isDetailsOpen} onClose={() => setIsDetailsOpen(false)} title="Информация о клиенте">
         {viewingClient && (
           <div className="space-y-6">
-            <div className="flex justify-between items-start">
-              <div className="min-w-0 flex-grow pr-4">
-                <h3 className="text-2xl font-medium text-[#1c1b1f] leading-tight break-words">{viewingClient.name}</h3>
-                <p className="text-sm text-[#444746] mt-1">{viewingClient.type === 'company' ? 'Юридическое лицо' : 'Частное лицо'}</p>
-              </div>
-              <div className="flex gap-1 shrink-0">
-                <button onClick={() => openEdit(viewingClient)} className="p-2.5 rounded-full hover:bg-blue-50 text-[#005ac1] transition-colors">
-                  <span className="material-icons-round">edit</span>
-                </button>
-                <button onClick={() => setDeleteModal({ open: true, id: viewingClient.id })} className="p-2.5 rounded-full hover:bg-red-50 text-[#ba1a1a] transition-colors">
-                  <span className="material-icons-round">delete</span>
-                </button>
-              </div>
+            <div className="min-w-0">
+              <h3 className="text-2xl font-medium text-[#1c1b1f] leading-tight break-words">{viewingClient.name}</h3>
+              <p className="text-sm text-[#444746] mt-1">{viewingClient.type === 'company' ? 'Юридическое лицо' : 'Частное лицо'}</p>
             </div>
 
             {viewingClient.type === 'company' && (viewingClient.contact_person || viewingClient.contact_position) && (
@@ -287,6 +305,16 @@ const Clients: React.FC<{ profile: any; setActiveModule: (m: Module) => void; on
                   <p className="text-sm font-medium truncate">{viewingClient.email || '—'}</p>
                 </div>
                 {viewingClient.email && <CopyButton text={viewingClient.email} />}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">Ответственный менеджер</p>
+                <div className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center gap-3">
+                  <span className="material-icons-round text-slate-400">support_agent</span>
+                  <span className="text-sm text-slate-700 font-medium">{viewingClient.manager?.full_name || 'Не назначен'}</span>
+                </div>
               </div>
             </div>
 
@@ -331,6 +359,8 @@ const Clients: React.FC<{ profile: any; setActiveModule: (m: Module) => void; on
                 <p className="text-sm text-amber-900 italic break-words">{viewingClient.comment}</p>
               </div>
             )}
+
+            <Button onClick={() => setIsDetailsOpen(false)} className="w-full h-12" variant="tonal">Закрыть</Button>
           </div>
         )}
       </Modal>

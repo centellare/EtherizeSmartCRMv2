@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 import { Button, Input, Select, Modal, Badge, ConfirmModal, Toast } from '../ui';
 import { Transaction } from '../../types';
@@ -16,15 +16,16 @@ const getDefaultDates = () => {
   const now = new Date();
   const year = now.getFullYear();
   const month = now.getMonth();
-  const firstDay = new Date(year, month, 1);
-  const lastDay = new Date(year, month + 1, 0);
   const formatDate = (d: Date) => {
     const y = d.getFullYear();
     const m = String(d.getMonth() + 1).padStart(2, '0');
     const day = String(d.getDate()).padStart(2, '0');
     return `${y}-${m}-${day}`;
   };
-  return { start: formatDate(firstDay), end: formatDate(lastDay) };
+  return { 
+    start: formatDate(new Date(year, month, 1)), 
+    end: formatDate(new Date(year, month + 1, 0)) 
+  };
 };
 
 const Finances: React.FC<{ profile: any }> = ({ profile }) => {
@@ -69,15 +70,9 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const isManager = profile?.role === 'manager';
   const isSpecialist = profile?.role === 'specialist';
 
-  const canApprove = (t: Transaction) => {
-    if (isAdmin || isDirector) return true;
-    if (isManager && t.objects?.responsible_id === profile.id) return true;
-    return false;
-  };
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async (silent = false) => {
     if (!profile?.id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       let query = supabase
         .from('transactions')
@@ -118,10 +113,24 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       setTransactions(mappedTrans);
       setObjects(objData || []);
     } catch (error) { console.error('Finance fetch error:', error); }
-    setLoading(false);
-  };
+    if (!silent) setLoading(false);
+  }, [profile?.id, isSpecialist]);
 
-  useEffect(() => { fetchData(); }, [profile?.id]);
+  useEffect(() => {
+    fetchData();
+    // Realtime Subscriptions
+    const tChannel = supabase.channel('finances_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => fetchData(true))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transaction_payments' }, () => fetchData(true))
+      .subscribe();
+    return () => { supabase.removeChannel(tChannel); };
+  }, [fetchData]);
+
+  const canApprove = (t: Transaction) => {
+    if (isAdmin || isDirector) return true;
+    if (isManager && t.objects?.responsible_id === profile.id) return true;
+    return false;
+  };
 
   const filteredTransactions = useMemo(() => {
     if (!profile?.id) return [];
@@ -169,21 +178,10 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     }]);
     if (!error) { 
       setIsMainModalOpen(false); 
-      setFormData({
-        object_id: '',
-        amount: '',
-        planned_date: new Date().toISOString().split('T')[0],
-        type: 'income',
-        category: '',
-        description: '',
-        doc_link: '',
-        doc_name: ''
-      }); 
+      setFormData({ object_id: '', amount: '', planned_date: new Date().toISOString().split('T')[0], type: 'income', category: '', description: '', doc_link: '', doc_name: '' }); 
       setToast({message: 'Запись создана', type: 'success'});
-      await fetchData(); 
-    } else {
-      setToast({message: 'Ошибка: ' + error.message, type: 'error'});
-    }
+      fetchData(); 
+    } else setToast({message: 'Ошибка: ' + error.message, type: 'error'});
     setLoading(false);
   };
 
@@ -192,33 +190,15 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     if (!selectedTrans) return;
     const amountToAdd = Number(paymentAmount);
     const balanceLeft = selectedTrans.amount - (selectedTrans.fact_amount || 0);
-    if (amountToAdd > balanceLeft + 0.01) {
-      setToast({message: 'Сумма превышает остаток!', type: 'error'});
-      return;
-    }
+    if (amountToAdd > balanceLeft + 0.01) { setToast({message: 'Сумма превышает остаток!', type: 'error'}); return; }
     
     setLoading(true);
-    const { error: pError } = await supabase.from('transaction_payments').insert([{ 
-      transaction_id: selectedTrans.id, 
-      amount: amountToAdd, 
-      comment: paymentComment,
-      created_by: profile.id 
-    }]);
-
+    const { error: pError } = await supabase.from('transaction_payments').insert([{ transaction_id: selectedTrans.id, amount: amountToAdd, comment: paymentComment, created_by: profile.id }]);
     if (!pError) {
       const newFact = (selectedTrans.fact_amount || 0) + amountToAdd;
-      await supabase.from('transactions').update({ 
-        status: newFact >= selectedTrans.amount - 0.01 ? 'approved' : 'partial', 
-        fact_amount: newFact 
-      }).eq('id', selectedTrans.id);
-      
-      setIsPaymentModalOpen(false); 
-      setPaymentAmount(''); 
-      setPaymentComment(''); 
-      setToast({message: 'Платеж зафиксирован', type: 'success'});
-      await fetchData();
-    } else {
-      setToast({message: 'Ошибка платежа: ' + pError.message, type: 'error'});
+      await supabase.from('transactions').update({ status: newFact >= selectedTrans.amount - 0.01 ? 'approved' : 'partial', fact_amount: newFact }).eq('id', selectedTrans.id);
+      setIsPaymentModalOpen(false); setPaymentAmount(''); setPaymentComment(''); setToast({message: 'Платеж зафиксирован', type: 'success'});
+      fetchData();
     }
     setLoading(false);
   };
@@ -227,81 +207,28 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     e.preventDefault();
     if (!selectedTrans) return;
     setLoading(true);
-    const finalAmount = Number(approvalAmount);
-    const { error } = await supabase.from('transactions').update({ 
-      status: 'approved', 
-      amount: finalAmount,
-      requested_amount: selectedTrans.requested_amount || selectedTrans.amount,
-      processed_by: profile.id,
-      processed_at: new Date().toISOString()
-    }).eq('id', selectedTrans.id);
-    if (!error) { 
-      setIsApprovalModalOpen(false); 
-      setSelectedTrans(null); 
-      setToast({message: 'Расход утвержден', type: 'success'});
-      await fetchData(); 
-    }
+    const { error } = await supabase.from('transactions').update({ status: 'approved', amount: Number(approvalAmount), requested_amount: selectedTrans.requested_amount || selectedTrans.amount, processed_by: profile.id, processed_at: new Date().toISOString() }).eq('id', selectedTrans.id);
+    if (!error) { setIsApprovalModalOpen(false); setSelectedTrans(null); setToast({message: 'Расход утвержден', type: 'success'}); fetchData(); }
     setLoading(false);
   };
 
   const handleRejectExpense = async () => {
     if (!selectedTrans) return;
     setLoading(true);
-    const { error } = await supabase.from('transactions').update({ 
-      status: 'rejected',
-      processed_by: profile.id,
-      processed_at: new Date().toISOString()
-    }).eq('id', selectedTrans.id);
-    if (!error) { 
-      setIsRejectConfirmOpen(false); 
-      setSelectedTrans(null); 
-      setToast({message: 'Заявка отклонена', type: 'success'});
-      await fetchData(); 
-    }
+    const { error } = await supabase.from('transactions').update({ status: 'rejected', processed_by: profile.id, processed_at: new Date().toISOString() }).eq('id', selectedTrans.id);
+    if (!error) { setIsRejectConfirmOpen(false); setSelectedTrans(null); setToast({message: 'Заявка отклонена', type: 'success'}); fetchData(); }
     setLoading(false);
   };
 
   const handleFinalizeIncome = async () => {
     if (!selectedTrans) return;
     setLoading(true);
-    const { error } = await supabase.from('transactions').update({ 
-      status: 'approved', 
-      amount: selectedTrans.fact_amount || 0,
-      description: (selectedTrans.description || '') + ' (Закрыто вручную)',
-      processed_by: profile.id,
-      processed_at: new Date().toISOString()
-    }).eq('id', selectedTrans.id);
-    if (!error) { 
-      setIsFinalizeConfirmOpen(false); 
-      setSelectedTrans(null); 
-      setToast({message: 'Приход завершен', type: 'success'});
-      await fetchData(); 
-    }
+    await supabase.from('transactions').update({ status: 'approved', amount: selectedTrans.fact_amount || 0, processed_by: profile.id, processed_at: new Date().toISOString() }).eq('id', selectedTrans.id);
+    setIsFinalizeConfirmOpen(false); setSelectedTrans(null); setToast({message: 'Приход завершен', type: 'success'}); fetchData();
     setLoading(false);
   };
 
-  const handleSoftDelete = async () => {
-    if (!selectedTrans) return;
-    setLoading(true);
-    const { error } = await supabase.from('transactions').update({ deleted_at: new Date().toISOString() }).eq('id', selectedTrans.id);
-    if (!error) { 
-      setIsDeleteConfirmOpen(false); 
-      setSelectedTrans(null); 
-      setToast({message: 'Перенесено в корзину', type: 'success'});
-      await fetchData(); 
-    }
-    setLoading(false);
-  };
-
-  const toggleRow = (id: string, e: React.MouseEvent) => { 
-    e.stopPropagation(); 
-    setExpandedRows(prev => { 
-      const next = new Set(prev); 
-      if (next.has(id)) next.delete(id); 
-      else next.add(id); 
-      return next; 
-    }); 
-  };
+  const toggleRow = (id: string, e: React.MouseEvent) => { e.stopPropagation(); setExpandedRows(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; }); };
 
   return (
     <div className="animate-in fade-in duration-500">
@@ -373,86 +300,22 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
                     <td className="p-5 text-xs text-slate-500">{new Date(t.created_at).toLocaleDateString()}</td>
                     <td className="p-5">
                       <p className="font-bold text-slate-900">{t.objects?.name}</p>
-                      <div className="flex items-center gap-2">
-                        <p className="text-xs text-slate-400 truncate max-w-[200px]">{t.category}: {t.description}</p>
-                        {t.doc_link && (
-                          <a href={t.doc_link} target="_blank" rel="noreferrer" className="text-blue-500 hover:text-blue-700" title={t.doc_name || 'Открыть документ'}>
-                            <span className="material-icons-round text-sm">attach_file</span>
-                          </a>
-                        )}
-                      </div>
+                      <p className="text-xs text-slate-400 truncate max-w-[200px]">{t.category}: {t.description}</p>
                     </td>
-                    <td className="p-5">
-                      <span className={`font-bold ${t.type === 'income' ? 'text-emerald-700' : 'text-red-700'}`}>
-                        {formatBYN(t.type === 'expense' ? (t.requested_amount || t.amount) : t.amount)}
-                      </span>
-                    </td>
-                    <td className="p-5">
-                      {t.type === 'income' ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold">{formatBYN(t.fact_amount || 0)}</span>
-                          <button onClick={(e) => toggleRow(t.id, e)} className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-400 hover:bg-slate-200 transition-all">
-                             <span className="material-icons-round text-sm">{isExpanded ? 'expand_less' : 'history'}</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <span className="text-sm font-bold text-slate-700">
-                          {t.status === 'approved' ? formatBYN(t.amount) : '—'}
-                        </span>
-                      )}
-                    </td>
-                    <td className="p-5">
-                      <Badge color={t.status === 'approved' ? 'emerald' : t.status === 'partial' ? 'blue' : t.status === 'rejected' ? 'red' : 'amber'}>
-                        {t.status?.toUpperCase()}
-                      </Badge>
-                      {t.processor_name && (
-                        <p className="text-[9px] text-slate-400 font-bold uppercase mt-1 tracking-tighter">
-                          {t.status === 'approved' ? 'Утв: ' : 'Откл: '} {t.processor_name.split(' ')[0]}
-                        </p>
-                      )}
-                    </td>
+                    <td className="p-5 font-bold">{formatBYN(t.type === 'expense' ? (t.requested_amount || t.amount) : t.amount)}</td>
+                    <td className="p-5 font-bold">{t.type === 'income' ? formatBYN(t.fact_amount || 0) : (t.status === 'approved' ? formatBYN(t.amount) : '—')}</td>
+                    <td className="p-5"><Badge color={t.status === 'approved' ? 'emerald' : t.status === 'partial' ? 'blue' : t.status === 'rejected' ? 'red' : 'amber'}>{t.status?.toUpperCase()}</Badge></td>
                     <td className="p-5 text-right">
                        <div className="flex justify-end gap-1.5">
                           {t.type === 'income' && t.status !== 'approved' && !isSpecialist && (
-                            <>
-                              <button onClick={() => { setSelectedTrans(t); setPaymentAmount(''); setPaymentComment(''); setIsPaymentModalOpen(true); }} className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all" title="Внести платеж"><span className="material-icons-round text-sm">add_card</span></button>
-                              <button onClick={() => { setSelectedTrans(t); setIsFinalizeConfirmOpen(true); }} className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all" title="Завершить как итог"><span className="material-icons-round text-sm">done_all</span></button>
-                            </>
+                            <button onClick={() => { setSelectedTrans(t); setIsPaymentModalOpen(true); }} className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all"><span className="material-icons-round text-sm">add_card</span></button>
                           )}
                           {t.type === 'expense' && t.status === 'pending' && canApprove(t) && (
-                            <>
-                              <button onClick={() => { setSelectedTrans(t); setApprovalAmount((t.requested_amount || t.amount).toString()); setIsApprovalModalOpen(true); }} className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all" title="Утвердить"><span className="material-icons-round text-sm">check</span></button>
-                              <button onClick={() => { setSelectedTrans(t); setIsRejectConfirmOpen(true); }} className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all" title="Отклонить"><span className="material-icons-round text-sm">close</span></button>
-                            </>
-                          )}
-                          {isAdmin && (
-                            <button onClick={() => { setSelectedTrans(t); setIsDeleteConfirmOpen(true); }} className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all" title="Удалить"><span className="material-icons-round text-sm">delete</span></button>
+                            <button onClick={() => { setSelectedTrans(t); setApprovalAmount((t.requested_amount || t.amount).toString()); setIsApprovalModalOpen(true); }} className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all"><span className="material-icons-round text-sm">check</span></button>
                           )}
                        </div>
                     </td>
                   </tr>
-                  {isExpanded && (
-                    <tr className="bg-slate-50/50">
-                      <td colSpan={6} className="p-4 pl-16">
-                         <div className="space-y-2">
-                            {t.payments && t.payments.length > 0 ? t.payments.map((p: any) => (
-                              <div key={p.id} className="flex justify-between items-center bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
-                                <div className="flex flex-col">
-                                   <span className="text-sm font-bold text-emerald-700">+{formatBYN(p.amount)}</span>
-                                   {p.comment && <p className="text-[11px] text-slate-600 bg-slate-50 px-2 py-0.5 rounded mt-1">«{p.comment}»</p>}
-                                </div>
-                                <div className="text-right">
-                                   <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tight">{p.created_by_name}</p>
-                                   <p className="text-[9px] text-slate-300 font-bold uppercase">{new Date(p.payment_date).toLocaleString()}</p>
-                                </div>
-                              </div>
-                            )) : (
-                              <p className="text-xs text-slate-400 italic">Оплат по этой записи нет</p>
-                            )}
-                         </div>
-                      </td>
-                    </tr>
-                  )}
                 </React.Fragment>
               );
             })}
@@ -460,77 +323,33 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         </table>
       </div>
 
-      {/* Модальное окно создания ТРАНЗАКЦИИ (Расход/Приход) */}
       <Modal isOpen={isMainModalOpen} onClose={() => setIsMainModalOpen(false)} title={formData.type === 'income' ? 'План прихода' : 'Заявка на расход'}>
         <form onSubmit={handleCreateTransaction} className="space-y-4">
           <Select label="Объект" required value={formData.object_id} onChange={(e:any) => setFormData({ ...formData, object_id: e.target.value })} options={[{value: '', label: 'Выберите объект'}, ...objects.map(o => ({value: o.id, label: o.name}))]} icon="business" />
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="Сумма" type="number" step="0.01" required value={formData.amount} onChange={(e:any) => setFormData({ ...formData, amount: e.target.value })} icon="payments" />
-            <Input label="Дата плана" type="date" value={formData.planned_date} onChange={(e:any) => setFormData({ ...formData, planned_date: e.target.value })} icon="calendar_today" />
-          </div>
+          <Input label="Сумма" type="number" step="0.01" required value={formData.amount} onChange={(e:any) => setFormData({ ...formData, amount: e.target.value })} icon="payments" />
+          <Input label="Дата плана" type="date" value={formData.planned_date} onChange={(e:any) => setFormData({ ...formData, planned_date: e.target.value })} icon="calendar_today" />
           <Input label="Категория" required value={formData.category} onChange={(e:any) => setFormData({ ...formData, category: e.target.value })} icon="category" />
-          <Input label="Описание / Детали" value={formData.description} onChange={(e:any) => setFormData({ ...formData, description: e.target.value })} icon="notes" />
-          
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-4">
-             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Документация (опц.)</p>
-             <div className="grid grid-cols-2 gap-4">
-               <Input label="Имя документа" value={formData.doc_name} onChange={(e:any) => setFormData({ ...formData, doc_name: e.target.value })} icon="description" />
-               <Input label="Ссылка" value={formData.doc_link} onChange={(e:any) => setFormData({ ...formData, doc_link: e.target.value })} icon="link" />
-             </div>
-          </div>
+          <Input label="Описание" value={formData.description} onChange={(e:any) => setFormData({ ...formData, description: e.target.value })} icon="notes" />
           <Button type="submit" className="w-full h-14" loading={loading} icon="save">Создать операцию</Button>
         </form>
       </Modal>
 
-      {/* Модальное окно внесения ОПЛАТЫ */}
-      <Modal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} title="Внести оплату по приходу">
+      <Modal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} title="Внести оплату">
         {selectedTrans && (
           <form onSubmit={handleAddPayment} className="space-y-4">
-             {(() => {
-                const balanceLeft = selectedTrans.amount - (selectedTrans.fact_amount || 0);
-                const currentVal = Number(paymentAmount) || 0;
-                const isOverpaid = currentVal > balanceLeft + 0.01;
-                return (
-                  <>
-                    <div className={`p-4 rounded-2xl mb-4 transition-colors ${isOverpaid ? 'bg-red-50 border-red-100' : 'bg-emerald-50 border-emerald-100'}`}>
-                        <p className={`text-xs font-medium ${isOverpaid ? 'text-red-800' : 'text-emerald-800'}`}>Остаток по плану: <span className="font-bold">{formatBYN(balanceLeft)}</span></p>
-                        {isOverpaid && <p className="text-[10px] text-red-600 font-bold uppercase mt-1">Ошибка: Сумма превышает план!</p>}
-                    </div>
-                    <div className="relative">
-                        <Input label="Сумма оплаты" type="number" step="0.01" required value={paymentAmount} onChange={(e:any) => setPaymentAmount(e.target.value)} icon="account_balance_wallet" className={isOverpaid ? '!border-red-500' : ''} />
-                        <button 
-                          type="button" 
-                          onClick={() => setPaymentAmount(balanceLeft.toFixed(2))}
-                          className="absolute right-3 top-9 px-3 py-1 bg-emerald-600 text-white text-[10px] font-bold uppercase rounded-lg hover:bg-emerald-700 transition-all"
-                        >
-                          Вся сумма
-                        </button>
-                    </div>
-                    <Input label="Заметка (нал/безнал/коммент)" value={paymentComment} onChange={(e:any) => setPaymentComment(e.target.value)} icon="comment" />
-                    <Button type="submit" className="w-full h-12" loading={loading} icon="check" disabled={isOverpaid || currentVal <= 0}>Зафиксировать платеж</Button>
-                  </>
-                );
-             })()}
+            <Input label="Сумма оплаты" type="number" step="0.01" required value={paymentAmount} onChange={(e:any) => setPaymentAmount(e.target.value)} icon="account_balance_wallet" />
+            <Input label="Комментарий" value={paymentComment} onChange={(e:any) => setPaymentComment(e.target.value)} icon="comment" />
+            <Button type="submit" className="w-full h-12" loading={loading} icon="check">Подтвердить</Button>
           </form>
         )}
       </Modal>
 
       <Modal isOpen={isApprovalModalOpen} onClose={() => setIsApprovalModalOpen(false)} title="Утвердить расход">
-        {selectedTrans && (
-          <form onSubmit={handleApproveExpense} className="space-y-4">
-             <div className="p-4 bg-blue-50 rounded-2xl">
-                <p className="text-xs text-blue-800 font-bold uppercase mb-1">Запрошено:</p>
-                <p className="text-xl font-bold text-blue-900">{formatBYN(selectedTrans.requested_amount || selectedTrans.amount)}</p>
-             </div>
-             <Input label="Сумма к выдаче" type="number" step="0.01" required value={approvalAmount} onChange={(e:any) => setApprovalAmount(e.target.value)} icon="fact_check" />
-             <Button type="submit" className="w-full h-12" loading={loading} icon="done">Подтвердить</Button>
-          </form>
-        )}
+        <form onSubmit={handleApproveExpense} className="space-y-4">
+          <Input label="Сумма к выдаче" type="number" step="0.01" required value={approvalAmount} onChange={(e:any) => setApprovalAmount(e.target.value)} icon="fact_check" />
+          <Button type="submit" className="w-full h-12" loading={loading} icon="done">Подтвердить</Button>
+        </form>
       </Modal>
-
-      <ConfirmModal isOpen={isRejectConfirmOpen} onClose={() => setIsRejectConfirmOpen(false)} onConfirm={handleRejectExpense} title="Отклонить заявку?" message="Расход будет помечен как отклоненный." confirmVariant="danger" loading={loading} />
-      <ConfirmModal isOpen={isFinalizeConfirmOpen} onClose={() => setIsFinalizeConfirmOpen(false)} onConfirm={handleFinalizeIncome} title="Завершить приход?" message="План будет приравнен к фактической сумме. Долг закроется." confirmVariant="tonal" loading={loading} />
-      <ConfirmModal isOpen={isDeleteConfirmOpen} onClose={() => setIsDeleteConfirmOpen(false)} onConfirm={handleSoftDelete} title="Удалить операцию?" message="Запись будет перемещена в корзину." loading={loading} />
     </div>
   );
 };

@@ -8,6 +8,8 @@ export const useAuth = () => {
   const [loading, setLoading] = useState(true);
 
   const fetchProfile = useCallback(async (userId: string) => {
+    // Включаем лоадер перед запросом профиля
+    setLoading(true);
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -21,12 +23,15 @@ export const useAuth = () => {
       } else if (data) {
         if (data.deleted_at) {
           console.warn('Access denied: Profile deactivated');
-          await supabase.auth.signOut();
+          // Если профиль удален, разлогиниваем пользователя и сбрасываем локальное состояние
           setProfile(null);
+          setSession(null);
+          await supabase.auth.signOut();
         } else {
           setProfile(data);
         }
       } else {
+        // Профиль не найден в таблице profiles
         setProfile(null);
       }
     } catch (err) {
@@ -65,6 +70,9 @@ export const useAuth = () => {
         console.debug(`[Auth Event] ${event}`);
 
         if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          // КРИТИЧЕСКИ ВАЖНО: ставим loading в true ДО обновления сессии, 
+          // чтобы App.tsx при ререндере показал спиннер, а не ошибку "профиль не найден"
+          setLoading(true);
           setSession(currentSession);
           if (currentSession) {
             await fetchProfile(currentSession.user.id);
@@ -73,6 +81,10 @@ export const useAuth = () => {
           setSession(null);
           setProfile(null);
           setLoading(false);
+        } else if (event === 'USER_UPDATED') {
+          if (currentSession) {
+            await fetchProfile(currentSession.user.id);
+          }
         }
       });
       authSubscription = subscription;
@@ -80,13 +92,13 @@ export const useAuth = () => {
 
     initialize();
 
-    // Страховочный таймаут: если инициализация зависла более чем на 6 секунд
+    // Страховочный таймаут: если инициализация зависла более чем на 10 секунд
     const timeout = setTimeout(() => {
       if (isMounted && loading) {
         console.warn('[Auth] Loading state forced to false due to timeout');
         setLoading(false);
       }
-    }, 6000);
+    }, 10000);
 
     return () => {
       isMounted = false;
