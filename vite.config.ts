@@ -5,13 +5,11 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   server: {
-    port: Number(process.env.PORT) || 3000,
+    port: 3000,
     host: true,
-    allowedHosts: true // Разрешаем все хосты для облачной среды
+    allowedHosts: ['etherizesmartcrmv2-production.up.railway.app']
   },
   build: {
     outDir: 'dist',
-    emptyOutDir: true,
-    sourcemap: false
   }
 });
