@@ -9,7 +9,14 @@ export default defineConfig({
     host: true,
     allowedHosts: ['etherizesmartcrmv2-production.up.railway.app']
   },
+  preview: {
+    port: Number(process.env.PORT) || 3000,
+    host: true,
+    allowedHosts: ['etherizesmartcrmv2-production.up.railway.app']
+  },
   build: {
     outDir: 'dist',
+    emptyOutDir: true,
+    sourcemap: false
   }
 });
