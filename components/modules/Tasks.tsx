@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase, measureQuery } from '../../lib/supabase';
 import { Button, Input, Select, Badge, Modal } from '../ui';
 import { Task } from '../../types';
+import { formatDate, getMinskISODate } from '../../lib/dateUtils';
 
 type FilterMode = 'all' | 'mine' | 'created';
 type TaskTab = 'active' | 'today' | 'week' | 'overdue' | 'team' | 'archive';
@@ -21,7 +22,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
   const [archiveTotal, setArchiveTotal] = useState(0);
   const [archiveDates, setArchiveDates] = useState({
     start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    end: new Date().toISOString().split('T')[0]
+    end: getMinskISODate()
   });
 
   const [staff, setStaff] = useState<any[]>([]);
@@ -34,7 +35,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
   const isFetching = useRef(false);
 
   const [createForm, setCreateForm] = useState({
-    object_id: '', title: '', assigned_to: '', start_date: new Date().toISOString().split('T')[0], deadline: '', comment: '', doc_link: '', doc_name: ''
+    object_id: '', title: '', assigned_to: '', start_date: getMinskISODate(), deadline: '', comment: '', doc_link: '', doc_name: ''
   });
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'director';
@@ -117,17 +118,17 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
   }, [activeTab, fetchData, fetchArchive]);
 
   const overdueCount = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
-    return tasks.filter((t: Task) => t.deadline && t.deadline < today).length;
+    const todayStr = getMinskISODate();
+    return tasks.filter((t: Task) => t.deadline && t.deadline < todayStr).length;
   }, [tasks]);
 
   const filteredTasks = useMemo(() => {
     if (activeTab === 'archive') return archiveTasks;
 
-    const today = new Date().toISOString().split('T')[0];
+    const todayStr = getMinskISODate();
     const nextWeek = new Date();
     nextWeek.setDate(nextWeek.getDate() + 7);
-    const nextWeekStr = nextWeek.toISOString().split('T')[0];
+    const nextWeekStr = getMinskISODate(nextWeek);
 
     let list = tasks;
 
@@ -138,9 +139,9 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     }
 
     switch (activeTab) {
-      case 'today': return list.filter((t: Task) => t.deadline === today);
-      case 'week': return list.filter((t: Task) => t.deadline && t.deadline >= today && t.deadline <= nextWeekStr);
-      case 'overdue': return list.filter((t: Task) => t.deadline && t.deadline < today);
+      case 'today': return list.filter((t: Task) => t.deadline === todayStr);
+      case 'week': return list.filter((t: Task) => t.deadline && t.deadline >= todayStr && t.deadline <= nextWeekStr);
+      case 'overdue': return list.filter((t: Task) => t.deadline && t.deadline < todayStr);
       default: return list;
     }
   }, [tasks, archiveTasks, activeTab, filterMode, profile.id]);
@@ -164,7 +165,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
       }]);
       if (!error) {
         setIsCreateModalOpen(false);
-        setCreateForm({ object_id: '', title: '', assigned_to: '', start_date: new Date().toISOString().split('T')[0], deadline: '', comment: '', doc_link: '', doc_name: '' });
+        setCreateForm({ object_id: '', title: '', assigned_to: '', start_date: getMinskISODate(), deadline: '', comment: '', doc_link: '', doc_name: '' });
         await fetchData(true);
       }
     } finally {
@@ -298,7 +299,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
               </div>
               <div className="px-4 pb-6 space-y-2 flex-grow">
                 {member.tasks.map((task: Task) => {
-                  const isOverdue = task.deadline && new Date(task.deadline) < new Date();
+                  const isOverdue = task.deadline && task.deadline < getMinskISODate();
                   return (
                     <div 
                       key={task.id} 
@@ -309,7 +310,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
                       <div className="flex justify-between items-center mt-2">
                         <span className="text-[10px] font-bold text-slate-400 uppercase">{(task as any).objects?.name}</span>
                         <span className={`text-[10px] font-bold ${isOverdue ? 'text-red-500' : 'text-slate-400'}`}>
-                          {task.deadline ? new Date(task.deadline).toLocaleDateString() : ''}
+                          {task.deadline ? formatDate(task.deadline) : ''}
                         </span>
                       </div>
                     </div>
@@ -333,7 +334,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
                </div>
              ) : (
                filteredTasks.map((task: Task) => {
-                 const isOverdue = task.deadline && new Date(task.deadline) < new Date() && task.status !== 'completed';
+                 const isOverdue = task.deadline && task.deadline < getMinskISODate() && task.status !== 'completed';
                  const isCompleted = task.status === 'completed';
                  return (
                    <div key={task.id} onClick={() => { setSelectedTask(task); setIsTaskDetailsModalOpen(true); }} className={`bg-white p-5 rounded-[28px] border transition-all cursor-pointer group flex items-center justify-between ${isCompleted ? 'border-slate-100 opacity-75' : 'border-slate-200 hover:border-blue-400 hover:shadow-md'}`}>
@@ -352,7 +353,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
                             <span className="px-2.5 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-bold uppercase rounded-lg tracking-tight">{(task as any).objects?.name || 'Объект'}</span>
                             <span className="text-[10px] font-bold text-slate-400 uppercase">Исполнитель: {(task as any).executor?.full_name}</span>
                             {isCompleted && task.completed_at && (
-                              <span className="text-[9px] font-bold text-emerald-500 uppercase ml-2 bg-emerald-50 px-2 py-0.5 rounded">Завершено {new Date(task.completed_at).toLocaleDateString()}</span>
+                              <span className="text-[9px] font-bold text-emerald-500 uppercase ml-2 bg-emerald-50 px-2 py-0.5 rounded">Завершено {formatDate(task.completed_at)}</span>
                             )}
                           </div>
                         </div>
@@ -361,7 +362,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
                         {!isCompleted && task.deadline && (
                           <div className="text-right">
                             <p className={`text-xs font-bold ${isOverdue ? 'text-red-500' : 'text-slate-700'}`}>
-                              {new Date(task.deadline).toLocaleDateString()}
+                              {formatDate(task.deadline)}
                             </p>
                             <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Дедлайн</p>
                           </div>
@@ -408,7 +409,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         </>
       )}
 
-      {/* Модальные окна остаются без изменений */}
+      {/* Модальные окна */}
       <Modal isOpen={isCreateModalOpen} onClose={() => setIsCreateModalOpen(false)} title="Новая задача">
         <form onSubmit={handleCreateTask} className="space-y-4">
           <Input label="Что нужно сделать?" required value={createForm.title} onChange={(e:any) => setCreateForm({...createForm, title: e.target.value})} />
@@ -449,8 +450,8 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
                </div>
                <div>
                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Срок</p>
-                 <p className={`text-sm font-bold ${selectedTask.deadline && new Date(selectedTask.deadline) < new Date() && selectedTask.status !== 'completed' ? 'text-red-500' : 'text-slate-700'}`}>
-                   {selectedTask.deadline ? new Date(selectedTask.deadline).toLocaleDateString() : 'Бессрочно'}
+                 <p className={`text-sm font-bold ${selectedTask.deadline && selectedTask.deadline < getMinskISODate() && selectedTask.status !== 'completed' ? 'text-red-500' : 'text-slate-700'}`}>
+                   {selectedTask.deadline ? formatDate(selectedTask.deadline) : 'Бессрочно'}
                  </p>
                </div>
             </div>

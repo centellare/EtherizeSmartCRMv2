@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { Button, Modal, Input, Select, ConfirmModal, Badge } from '../../ui';
+import { formatDate, getMinskISODate } from '../../../lib/dateUtils';
 
 const STAGES = [
   { id: 'negotiation', label: 'Переговоры' },
@@ -57,7 +58,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     id: '',
     title: '', 
     assigned_to: '', 
-    start_date: new Date().toISOString().split('T')[0],
+    start_date: getMinskISODate(),
     deadline: '', 
     comment: '', 
     doc_link: '', 
@@ -124,7 +125,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
       id: '',
       title: '', 
       assigned_to: '', 
-      start_date: new Date().toISOString().split('T')[0], 
+      start_date: getMinskISODate(), 
       deadline: '', 
       comment: '', 
       doc_link: '', 
@@ -142,8 +143,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({
       id: task.id,
       title: task.title,
       assigned_to: task.assigned_to,
-      start_date: (task.start_date || '').split('T')[0] || new Date().toISOString().split('T')[0],
-      deadline: (task.deadline || '').split('T')[0] || '',
+      start_date: getMinskISODate(task.start_date),
+      deadline: task.deadline ? getMinskISODate(task.deadline) : '',
       comment: task.comment || '',
       doc_link: task.doc_link || '',
       doc_name: task.doc_name || '',
@@ -174,7 +175,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
   const handleSaveTask = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (taskForm.deadline && new Date(taskForm.deadline) < new Date(taskForm.start_date)) {
+    if (taskForm.deadline && taskForm.deadline < taskForm.start_date) {
       alert("Ошибка: Дата дедлайна не может быть раньше даты начала.");
       return;
     }
@@ -312,7 +313,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     return isAdmin || isDirector || isCreator;
   };
 
-  const isInvalidDates = !!(taskForm.deadline && new Date(taskForm.deadline) < new Date(taskForm.start_date));
+  const isInvalidDates = !!(taskForm.deadline && taskForm.deadline < taskForm.start_date);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -396,8 +397,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                           </div>
                         )}
                         {task.deadline && (
-                           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${new Date(task.deadline) < new Date() && task.status !== 'completed' ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-500'}`}>
-                             До {new Date(task.deadline).toLocaleDateString()}
+                           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${task.deadline < getMinskISODate() && task.status !== 'completed' ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-500'}`}>
+                             До {formatDate(task.deadline)}
                            </span>
                         )}
                       </div>
@@ -482,7 +483,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
             <h4 className="text-xl font-bold">{selectedTask.title}</h4>
             <div className="grid grid-cols-2 gap-4 py-4 border-y border-slate-100">
                <div><p className="text-[10px] font-bold text-slate-400 uppercase">Исполнитель</p><p className="text-sm font-medium">{selectedTask.executor?.full_name}</p></div>
-               <div><p className="text-[10px] font-bold text-slate-400 uppercase">Срок</p><p className="text-sm font-medium">{selectedTask.deadline ? new Date(selectedTask.deadline).toLocaleDateString() : 'Бессрочно'}</p></div>
+               <div><p className="text-[10px] font-bold text-slate-400 uppercase">Срок</p><p className="text-sm font-medium">{selectedTask.deadline ? formatDate(selectedTask.deadline) : 'Бессрочно'}</p></div>
             </div>
 
             {selectedTask.checklist && selectedTask.checklist.length > 0 && (
@@ -548,3 +549,5 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     </div>
   );
 };
+
+export default TasksTab;

@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, measureQuery } from '../../lib/supabase';
 import { Button, Input, Select, Modal, Badge, ConfirmModal, Toast } from '../ui';
 import { Transaction } from '../../types';
+import { formatDate, getMinskISODate } from '../../lib/dateUtils';
 
 const formatBYN = (amount: number = 0) => {
   return new Intl.NumberFormat('ru-BY', {
@@ -51,7 +52,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const [docDate, setDocDate] = useState('');
   const [approvalAmount, setApprovalAmount] = useState('');
   
-  const today = new Date().toISOString().split('T')[0];
+  const today = getMinskISODate();
 
   const [formData, setFormData] = useState({ 
     object_id: '', 
@@ -140,16 +141,16 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
 
   const filteredTransactions = useMemo(() => {
     return transactions.filter((t: any) => {
-      const tDate = new Date(t.created_at);
-      const matchesStart = !startDate || tDate >= new Date(startDate);
-      const matchesEnd = !endDate || tDate <= new Date(endDate + 'T23:59:59');
+      const tDateStr = getMinskISODate(t.created_at);
+      const matchesStart = !startDate || tDateStr >= startDate;
+      const matchesEnd = !endDate || tDateStr <= endDate;
       if (!matchesStart || !matchesEnd) return false;
 
       const searchLower = docSearchQuery.toLowerCase();
       const matchesDocSearch = !docSearchQuery || t.payments?.some((p: any) => 
         (p.doc_number?.toLowerCase().includes(searchLower)) ||
         (p.doc_type?.toLowerCase().includes(searchLower)) ||
-        (p.doc_date?.includes(docSearchQuery))
+        (p.doc_date && formatDate(p.doc_date).includes(docSearchQuery))
       );
       if (!matchesDocSearch) return false;
 
@@ -167,8 +168,8 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
 
   const totals = useMemo(() => {
     const data = transactions.filter(t => {
-      const d = new Date(t.created_at);
-      return (!startDate || d >= new Date(startDate)) && (!endDate || d <= new Date(endDate + 'T23:59:59'));
+      const tDateStr = getMinskISODate(t.created_at);
+      return (!startDate || tDateStr >= startDate) && (!endDate || tDateStr <= endDate);
     });
     const factIncome = data.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
     const planIncome = data.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
@@ -200,7 +201,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     if (!selectedPayment) return;
     setLoading(true);
     
-    // Если документ не требуется, очищаем поля
     const payload = {
       requires_doc: requiresDoc,
       doc_type: requiresDoc ? docType : null,
@@ -369,7 +369,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
                     </td>
                     <td className="p-5">
                       <Badge color={t.type === 'income' ? 'emerald' : 'red'}>{t.type === 'income' ? 'ПРИХОД' : 'РАСХОД'}</Badge>
-                      <p className="text-[10px] text-slate-400 font-bold mt-1">{new Date(t.created_at).toLocaleDateString()}</p>
+                      <p className="text-[10px] text-slate-400 font-bold mt-1">{formatDate(t.created_at)}</p>
                     </td>
                     <td className="p-5 cursor-pointer" onClick={() => { setSelectedTrans(t); setIsDetailsModalOpen(true); }}>
                       <p className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{t.objects?.name || '—'}</p>
@@ -431,7 +431,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
                             <tbody className="divide-y divide-slate-50">
                               {t.payments.map((p: any) => (
                                 <tr key={p.id}>
-                                  <td className="py-2">{new Date(p.payment_date).toLocaleDateString()}</td>
+                                  <td className="py-2">{formatDate(p.payment_date)}</td>
                                   <td className="py-2 font-bold text-emerald-600">{formatBYN(p.amount)}</td>
                                   <td className="py-2">
                                     <button 
@@ -499,7 +499,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
                      </div>
                      <div>
                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Дата платежа</p>
-                       <p className="text-sm font-medium text-slate-700">{new Date(selectedPayment.payment_date).toLocaleDateString()}</p>
+                       <p className="text-sm font-medium text-slate-700">{formatDate(selectedPayment.payment_date)}</p>
                      </div>
                   </div>
                 </div>
@@ -568,7 +568,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
                     </div>
                     <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-100/50">
                       <p className="text-[9px] font-bold text-blue-400 uppercase mb-0.5 tracking-widest">Дата документа</p>
-                      <p className="text-sm font-bold text-blue-900">{docDate ? new Date(docDate).toLocaleDateString() : '—'}</p>
+                      <p className="text-sm font-bold text-blue-900">{formatDate(docDate)}</p>
                     </div>
                   </div>
                 )
@@ -615,7 +615,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
             <div className="space-y-4">
               <DetailItem label="Объект" val={selectedTrans.objects?.name} icon="business" />
               <DetailItem label="Создал" val={selectedTrans.created_by_name} icon="person" />
-              {selectedTrans.planned_date && <DetailItem label="Планируемая дата" val={new Date(selectedTrans.planned_date).toLocaleDateString()} icon="event" />}
+              {selectedTrans.planned_date && <DetailItem label="Планируемая дата" val={formatDate(selectedTrans.planned_date)} icon="event" />}
               {selectedTrans.description && <DetailItem label="Описание" val={selectedTrans.description} icon="notes" />}
               {selectedTrans.doc_link && (
                 <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-2xl border border-blue-100">

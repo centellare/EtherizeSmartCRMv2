@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { Button, Badge } from '../../ui';
+import { formatDate } from '../../../lib/dateUtils';
 
 const STATUSES = [
   { id: 'in_work', label: 'В работе', icon: 'play_arrow' },
@@ -118,7 +119,7 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Создан</p>
           <div className="flex items-center gap-2 overflow-hidden">
             <span className="material-icons-round text-slate-400 text-lg shrink-0">calendar_today</span>
-            <p className="text-sm font-bold text-slate-700">{new Date(object.created_at).toLocaleDateString()}</p>
+            <p className="text-sm font-bold text-slate-700">{formatDate(object.created_at)}</p>
           </div>
         </div>
 
@@ -132,9 +133,9 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
             )}
           </div>
           <p className="text-xs font-medium text-slate-600 truncate">
-            {startDate ? new Date(startDate).toLocaleDateString() : '—'} 
+            {startDate ? formatDate(startDate) : '—'} 
             <span className="mx-1 text-slate-300">→</span>
-            <span className="font-bold text-slate-900">{deadlineDate ? new Date(deadlineDate).toLocaleDateString() : 'Не задан'}</span>
+            <span className="font-bold text-slate-900">{deadlineDate ? formatDate(deadlineDate) : 'Не задан'}</span>
           </p>
         </div>
       </div>

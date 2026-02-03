@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase, measureQuery } from '../../lib/supabase';
 import { Badge, Input } from '../ui';
+import { formatDate, getMinskISODate } from '../../lib/dateUtils';
 
 const getDefaultDates = () => {
   const now = new Date();
@@ -9,13 +10,11 @@ const getDefaultDates = () => {
   const month = now.getMonth();
   const firstDay = new Date(year, month, 1);
   const lastDay = new Date(year, month + 1, 0);
-  const formatDate = (d: Date) => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`;
+  
+  return { 
+    start: getMinskISODate(firstDay), 
+    end: getMinskISODate(lastDay) 
   };
-  return { start: formatDate(firstDay), end: formatDate(lastDay) };
 };
 
 const formatCurrency = (val: number) => 
@@ -38,7 +37,6 @@ const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
   const fetchData = async () => {
     if (!profile?.id) return;
     
-    // Показываем блокирующий лоадер только если данных нет вообще
     const isInitial = tasks.length === 0 && transactions.length === 0 && objects.length === 0;
     if (isInitial) setLoading(true);
     
@@ -77,11 +75,11 @@ const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
 
   const isWithinRange = (dateStr: string) => {
     if (!dateStr) return false;
-    const d = dateStr.split('T')[0];
+    const d = getMinskISODate(dateStr);
     return d >= dateRange.start && d <= dateRange.end;
   };
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getMinskISODate();
 
   const specialistMetrics = useMemo(() => {
     const myTasks = tasks.filter(t => t.assigned_to === profile.id);
@@ -91,7 +89,7 @@ const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
       today: active.filter(t => t.deadline === todayStr).length,
       overdue: active.filter(t => t.deadline && t.deadline < todayStr).length
     };
-  }, [tasks, profile.id]);
+  }, [tasks, profile.id, todayStr]);
 
   const directorMetrics = useMemo(() => {
     const periodTrans = transactions.filter(tr => isWithinRange(tr.created_at));
@@ -121,7 +119,7 @@ const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
           </h2>
           <div className="flex items-center gap-2 mt-1">
             <p className="text-sm text-slate-500">
-              {loading ? 'Синхронизация...' : `Данные актуальны на ${new Date().toLocaleTimeString()}`}
+              {loading ? 'Синхронизация...' : `Данные актуальны на ${formatDate(new Date(), true)}`}
             </p>
             {loading && <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>}
           </div>
