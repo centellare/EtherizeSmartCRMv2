@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { Button } from './Button';
 
@@ -26,7 +27,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
 }) => {
   if (!isOpen) return null;
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#1c1b1f]/30 backdrop-blur-[1px] animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-[1100] flex items-center justify-center p-4 bg-[#1c1b1f]/30 backdrop-blur-[1px] animate-in fade-in duration-200">
       <div className="bg-[#fffbff] w-full max-w-sm p-8 rounded-[32px] shadow-2xl animate-in zoom-in-95 duration-200">
         <div className="flex justify-center mb-6">
           <div className={`w-16 h-16 rounded-full flex items-center justify-center ${confirmVariant === 'danger' ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'}`}>

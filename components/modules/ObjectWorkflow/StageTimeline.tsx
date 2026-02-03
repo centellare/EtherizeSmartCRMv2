@@ -1,3 +1,4 @@
+
 import React from 'react';
 
 const STAGES = [
@@ -27,9 +28,11 @@ export const StageTimeline: React.FC<StageTimelineProps> = ({
   const currentStageIndex = STAGES.findIndex(s => s.id === object.current_stage);
 
   return (
-    <div className="relative pt-6 pb-2 px-2">
-       <div className="absolute top-[42px] left-0 w-full h-[2px] bg-slate-100"></div>
-       <div className="relative flex justify-between gap-2 overflow-x-auto scrollbar-hide">
+    <div className="relative pt-12 pb-4 px-2 overflow-visible">
+       {/* Линия-трек: позиция скорректирована под увеличенный pt */}
+       <div className="absolute top-[66px] left-0 w-full h-[2px] bg-slate-100 z-0"></div>
+       
+       <div className="relative flex justify-between items-center gap-2 overflow-x-auto scrollbar-hide py-4 -my-4 overflow-y-visible">
          {STAGES.map((s, idx) => {
            const stageRecord = allStagesData.find(record => record.stage_name === s.id);
            const isRealCurrent = s.id === object.current_stage;
@@ -45,7 +48,7 @@ export const StageTimeline: React.FC<StageTimelineProps> = ({
               key={s.id} 
               type="button"
               onClick={() => isClickable && setViewedStageId(s.id)}
-              className={`flex flex-col items-center z-10 group outline-none transition-all relative shrink-0 min-w-[70px] ${!isClickable ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer hover:scale-105'}`}
+              className={`flex flex-col items-center z-0 group outline-none transition-all relative shrink-0 min-w-[90px] ${!isClickable ? 'opacity-30 cursor-not-allowed' : 'cursor-pointer hover:scale-105'}`}
              >
                <div className={`w-10 h-10 rounded-full flex items-center justify-center text-[11px] font-bold border-2 transition-all duration-300 relative ${
                  isViewed ? 'ring-[6px] ring-blue-50 shadow-md scale-110' : ''
@@ -57,15 +60,20 @@ export const StageTimeline: React.FC<StageTimelineProps> = ({
                }`}>
                  {isRolledBack ? <span className="material-icons-round text-sm">priority_high</span> : 
                   isCompleted ? <span className="material-icons-round text-sm">check</span> : idx + 1}
+                 
+                 {/* Индикатор текущего активного этапа, если он не выбран для просмотра */}
                  {isRealCurrent && !isViewed && (
                     <div className="absolute -top-1 -right-1 w-3 h-3 bg-red-500 rounded-full border-2 border-white animate-bounce"></div>
                  )}
                </div>
-               <span className={`text-[9px] mt-3 uppercase font-bold tracking-tight transition-colors text-center leading-tight max-w-[80px] ${isViewed ? 'text-blue-600' : 'text-slate-400'}`}>
+               
+               <span className={`text-[9px] mt-3 uppercase font-bold tracking-tight transition-colors text-center leading-tight max-w-[85px] ${isViewed ? 'text-blue-600' : 'text-slate-400'}`}>
                 {s.label}
                </span>
+
+               {/* Бейдж "Сейчас" — теперь не обрезается благодаря pt-12 */}
                {isRealCurrent && (
-                 <div className="absolute -top-6 px-2 py-0.5 bg-blue-600 text-white text-[8px] font-bold rounded uppercase tracking-tighter shadow-sm animate-in fade-in slide-in-from-top-1">
+                 <div className="absolute -top-7 px-2 py-0.5 bg-blue-600 text-white text-[8px] font-bold rounded uppercase tracking-tighter shadow-sm animate-in fade-in slide-in-from-top-1">
                    Сейчас
                  </div>
                )}
