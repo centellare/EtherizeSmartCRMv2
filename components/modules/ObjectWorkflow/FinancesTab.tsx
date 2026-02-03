@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { Button, Modal, Input, Badge, Select, ConfirmModal, Toast } from '../../ui';
 import { Transaction } from '../../../types';
+import { formatDate } from '../../../lib/dateUtils';
 
 const formatBYN = (amount: number = 0) => {
   return new Intl.NumberFormat('ru-BY', {
@@ -538,15 +539,35 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
       <Modal isOpen={isDetailsModalOpen} onClose={() => setIsDetailsModalOpen(false)} title="Детали операции">
         {selectedTrans && (
           <div className="space-y-6">
-            <Badge color={selectedTrans.type === 'income' ? 'emerald' : 'red'}>{selectedTrans.type === 'income' ? 'ПРИХОД' : 'РАСХОД'}</Badge>
-            <h3 className="text-2xl font-bold">{selectedTrans.category}</h3>
-            <div className="grid grid-cols-2 gap-4 bg-slate-50 p-5 rounded-3xl border border-slate-100">
-              <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Запрос</p><p className="text-lg font-bold">{formatBYN(selectedTrans.requested_amount || selectedTrans.amount)}</p></div>
-              <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Факт</p><p className="text-lg font-bold text-emerald-600">{formatBYN(selectedTrans.fact_amount || (selectedTrans.status === 'approved' ? selectedTrans.amount : 0))}</p></div>
+            <div className="flex justify-between items-start">
+              <div>
+                <Badge color={selectedTrans.type === 'income' ? 'emerald' : 'red'}>{selectedTrans.type === 'income' ? 'ПРИХОД' : 'РАСХОД'}</Badge>
+                <h3 className="text-2xl font-bold mt-2">{selectedTrans.category}</h3>
+              </div>
+              <div className="text-right">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Статус</p>
+                <Badge color={selectedTrans.status === 'approved' ? 'emerald' : selectedTrans.status === 'rejected' ? 'red' : 'amber'}>{selectedTrans.status?.toUpperCase()}</Badge>
+              </div>
             </div>
-            {selectedTrans.description && <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Описание</p><p className="text-sm text-slate-600 italic">{selectedTrans.description}</p></div>}
-            {selectedTrans.planned_date && <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100"><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Планируемая дата</p><p className="text-sm font-medium">{new Date(selectedTrans.planned_date).toLocaleDateString()}</p></div>}
-            {selectedTrans.doc_link && <div className="p-4 bg-blue-50 rounded-2xl border border-blue-100 flex items-center gap-3"><span className="material-icons-round text-blue-600">attach_file</span><a href={selectedTrans.doc_link} target="_blank" className="text-sm font-bold text-blue-700 underline truncate">{selectedTrans.doc_name || 'Просмотр документа'}</a></div>}
+
+            <div className="grid grid-cols-2 gap-4 bg-white p-5 rounded-3xl border border-slate-100">
+              <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Сумма запроса</p><p className="text-lg font-bold">{formatBYN(selectedTrans.requested_amount || selectedTrans.amount)}</p></div>
+              <div><p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Фактически</p><p className="text-lg font-bold text-emerald-600">{formatBYN(selectedTrans.fact_amount || (selectedTrans.status === 'approved' ? selectedTrans.amount : 0))}</p></div>
+            </div>
+
+            <div className="space-y-4">
+              <DetailItem label="Объект" val={object.name} icon="business" />
+              <DetailItem label="Создал" val={selectedTrans.created_by_name} icon="person" />
+              {selectedTrans.planned_date && <DetailItem label="Планируемая дата" val={formatDate(selectedTrans.planned_date)} icon="event" />}
+              {selectedTrans.description && <DetailItem label="Описание" val={selectedTrans.description} icon="notes" />}
+              {selectedTrans.doc_link && (
+                <div className="flex items-center gap-3 p-4 bg-blue-50 rounded-2xl border border-blue-100">
+                  <span className="material-icons-round text-blue-600">attach_file</span>
+                  <a href={selectedTrans.doc_link} target="_blank" className="text-sm font-bold text-blue-700 underline truncate">{selectedTrans.doc_name || 'Прикрепленный документ'}</a>
+                </div>
+              )}
+            </div>
+
             <Button variant="tonal" className="w-full" onClick={() => setIsDetailsModalOpen(false)}>Закрыть</Button>
           </div>
         )}
@@ -673,5 +694,15 @@ const StatCard = ({ label, val, subVal, color, active, onClick }: any) => (
     <p className="text-[10px] font-bold text-slate-400 uppercase mb-1 tracking-widest">{label}</p>
     <p className={`text-lg font-bold ${active ? 'text-[#001d3d]' : color === 'emerald' ? 'text-emerald-600' : color === 'red' ? 'text-red-600' : color === 'blue' ? 'text-blue-600' : 'text-slate-900'}`}>{val}</p>
     {subVal && <p className={`text-[9px] font-bold uppercase mt-1 ${active ? 'text-[#005ac1]/70' : 'text-slate-400'}`}>{subVal}</p>}
+  </div>
+);
+
+const DetailItem = ({ label, val, icon }: any) => (
+  <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
+    <span className="material-icons-round text-slate-400 text-lg">{icon}</span>
+    <div className="min-w-0 flex-grow">
+      <p className="text-[9px] font-bold text-slate-400 uppercase tracking-tight">{label}</p>
+      <p className="text-sm text-slate-700 font-medium truncate">{val || '—'}</p>
+    </div>
   </div>
 );
