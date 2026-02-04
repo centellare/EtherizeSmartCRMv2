@@ -177,7 +177,11 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transaction_payments' }, async (payload) => {
         // Find transaction ID from payment
-        const tid = payload.new.transaction_id || payload.old.transaction_id;
+        // Casting to any to avoid TS errors on payload.new/old properties
+        const newRecord = payload.new as any;
+        const oldRecord = payload.old as any;
+        const tid = newRecord.transaction_id || oldRecord.transaction_id;
+        
         if (tid) {
            const updatedTrans = await fetchSingleTransaction(tid);
            if (updatedTrans) setTransactions(prev => prev.map(t => t.id === updatedTrans.id ? updatedTrans : t));

@@ -149,7 +149,11 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_checklists' }, async (payload) => {
         // When a checklist item changes, we need to refresh the parent task to show correct progress/items
-        const taskId = payload.new.task_id || payload.old.task_id;
+        // Casting to any to avoid TS errors on payload.new/old properties
+        const newRecord = payload.new as any;
+        const oldRecord = payload.old as any;
+        const taskId = newRecord.task_id || oldRecord.task_id;
+        
         if (taskId) {
            const updatedTask = await fetchSingleTask(taskId);
            // Only update if the task is currently in our list
