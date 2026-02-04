@@ -114,21 +114,31 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
   const handleDeleteCatalog = async () => {
     if (!selectedItem || !window.confirm('Вы уверены, что хотите удалить этот тип оборудования?')) return;
     
+    console.log('Deleting catalog type:', selectedItem.id);
     setLoading(true);
-    // Check for existing items
-    const { count } = await supabase.from('inventory_items')
-      .select('*', { count: 'exact', head: true })
-      .eq('catalog_id', selectedItem.id);
     
-    if (count && count > 0) {
-      alert(`Невозможно удалить: на складе или объектах числится ${count} единиц этого типа.`);
-      setLoading(false);
-      return;
-    }
+    try {
+        // Check for existing items
+        const { count } = await supabase.from('inventory_items')
+          .select('*', { count: 'exact', head: true })
+          .eq('catalog_id', selectedItem.id);
+        
+        if (count && count > 0) {
+          alert(`Невозможно удалить: на складе или объектах числится ${count} единиц этого типа. Сначала удалите или спишите их.`);
+          setLoading(false);
+          return;
+        }
 
-    const { error } = await supabase.from('inventory_catalog').delete().eq('id', selectedItem.id);
-    setLoading(false);
-    if (!error) onSuccess();
+        const { error } = await supabase.from('inventory_catalog').delete().eq('id', selectedItem.id);
+        if (error) throw error;
+        
+        onSuccess();
+    } catch (e: any) {
+        console.error('Error deleting catalog:', e);
+        alert('Ошибка при удалении: ' + e.message);
+    } finally {
+        setLoading(false);
+    }
   };
 
   const handleAddItem = async (e: React.FormEvent) => {
@@ -174,14 +184,26 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
 
   const handleDeleteItem = async () => {
     if (!selectedItem || !window.confirm('Вы уверены? История движения этой единицы будет удалена.')) return;
+    
+    console.log('Deleting item:', selectedItem.id);
     setLoading(true);
     
-    // Manual Cascade: Delete history first
-    await supabase.from('inventory_history').delete().eq('item_id', selectedItem.id);
-    
-    const { error } = await supabase.from('inventory_items').delete().eq('id', selectedItem.id);
-    setLoading(false);
-    if (!error) onSuccess();
+    try {
+        // 1. Manual Cascade: Delete history first
+        const { error: histError } = await supabase.from('inventory_history').delete().eq('item_id', selectedItem.id);
+        if (histError) throw histError;
+        
+        // 2. Delete the item
+        const { error: itemError } = await supabase.from('inventory_items').delete().eq('id', selectedItem.id);
+        if (itemError) throw itemError;
+
+        onSuccess();
+    } catch (e: any) {
+        console.error('Error deleting item:', e);
+        alert('Ошибка при удалении: ' + e.message);
+    } finally {
+        setLoading(false);
+    }
   };
 
   const handleDeployItem = async (e: React.FormEvent) => {
