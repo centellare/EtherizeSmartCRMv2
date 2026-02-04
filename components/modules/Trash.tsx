@@ -101,7 +101,6 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
     const field = (table === 'clients' || table === 'transactions') ? 'deleted_at' : 'is_deleted';
     const value = (table === 'clients' || table === 'transactions') ? null : false;
     
-    // For inventory, we also want to clear deleted_at timestamp if we use is_deleted
     const updates: any = { [field]: value };
     if (field === 'is_deleted') {
        updates.deleted_at = null;
@@ -115,9 +114,19 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
   const handleHardDelete = async (id: string, table: string) => {
     setLoading(true);
     
-    // CRITICAL: Cleanup for inventory items (delete related history first to avoid FK constraint)
+    // Cleanup for inventory items
     if (table === 'inventory_items') {
       await supabase.from('inventory_history').delete().eq('item_id', id);
+    }
+
+    // Cleanup for inventory catalog
+    if (table === 'inventory_catalog') {
+      const { data: items } = await supabase.from('inventory_items').select('id').eq('catalog_id', id);
+      if (items?.length) {
+        const itemIds = items.map(i => i.id);
+        await supabase.from('inventory_history').delete().in('item_id', itemIds);
+        await supabase.from('inventory_items').delete().in('id', itemIds);
+      }
     }
 
     await supabase.from(table).delete().eq('id', id);
@@ -148,9 +157,18 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
 
         await supabase.from(table).update(updates).in('id', ids);
       } else {
-        // CRITICAL: Cleanup for inventory items history
+        // Cleanup for inventory items
         if (table === 'inventory_items') {
            await supabase.from('inventory_history').delete().in('item_id', ids);
+        }
+        // Cleanup for inventory catalog
+        if (table === 'inventory_catalog') {
+            const { data: items } = await supabase.from('inventory_items').select('id').in('catalog_id', ids);
+            if (items?.length) {
+                const itemIds = items.map(i => i.id);
+                await supabase.from('inventory_history').delete().in('item_id', itemIds);
+                await supabase.from('inventory_items').delete().in('id', itemIds);
+            }
         }
         await supabase.from(table).delete().in('id', ids);
       }
@@ -171,9 +189,18 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
     });
 
     for (const table in grouped) {
-      // CRITICAL: Cleanup for inventory items history
+      // Cleanup for inventory items
       if (table === 'inventory_items') {
          await supabase.from('inventory_history').delete().in('item_id', grouped[table]);
+      }
+      // Cleanup for inventory catalog
+      if (table === 'inventory_catalog') {
+          const { data: items } = await supabase.from('inventory_items').select('id').in('catalog_id', grouped[table]);
+          if (items?.length) {
+              const itemIds = items.map(i => i.id);
+              await supabase.from('inventory_history').delete().in('item_id', itemIds);
+              await supabase.from('inventory_items').delete().in('id', itemIds);
+          }
       }
       await supabase.from(table).delete().in('id', grouped[table]);
     }
