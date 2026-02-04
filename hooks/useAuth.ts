@@ -1,127 +1,144 @@
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '../lib/supabase';
+import { Session } from '@supabase/supabase-js';
 
 export const useAuth = () => {
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   
-  const profileRef = useRef<any>(null);
-  const isFetchingProfile = useRef(false);
-  const initialLoadDone = useRef(false);
+  // Флаг для предотвращения обновлений стейта на размонтированном компоненте
+  const mounted = useRef(true);
 
-  const fetchProfile = useCallback(async (userId: string, silent = false) => {
-    // Если вкладка скрыта, не инициируем новый запрос профиля, чтобы не плодить Pending-статусы
-    if (document.visibilityState === 'hidden') return;
-    if (isFetchingProfile.current) return;
-    
-    isFetchingProfile.current = true;
-    const shouldShowLoading = !silent && !initialLoadDone.current;
-    if (shouldShowLoading) setLoading(true);
-    
+  // Функция загрузки профиля - отделена от эффектов
+  const loadProfile = async (userId: string) => {
     try {
-      // Используем AbortController для возможности отмены при таймауте на уровне браузера
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .maybeSingle();
-      
+
+      if (!mounted.current) return;
+
       if (error) {
-        console.error('Auth check error:', error.message);
-        // Не сбрасываем профиль в null при фоновых ошибках (silent=true)
-        if (!silent) setProfile(null);
-      } else if (data) {
-        if (data.deleted_at) {
-          setProfile(null);
-          profileRef.current = null;
-          setSession(null);
-          await supabase.auth.signOut();
-        } else {
-          setProfile(data);
-          profileRef.current = data;
-          initialLoadDone.current = true;
-        }
+        console.error('Error fetching profile:', error);
+        // Не сбрасываем сессию при ошибке сети, только при явной ошибке доступа
+        return null;
       }
-    } catch (err: any) {
-      console.error('Critical auth exception:', err);
-    } finally {
-      isFetchingProfile.current = false;
-      if (shouldShowLoading) setLoading(false);
+      
+      return data;
+    } catch (err) {
+      console.error('Profile fetch exception:', err);
+      return null;
     }
-  }, []);
+  };
 
-  useEffect(() => {
-    let isMounted = true;
-    let authSubscription: any = null;
+  // Главная функция инициализации и восстановления
+  const initializeAuth = async () => {
+    if (!mounted.current) return;
+    
+    // Не ставим setLoading(true) здесь, чтобы не вызывать "мерцание" интерфейса при ревалидации
+    // setLoading используется только для ПЕРВИЧНОЙ загрузки
+    
+    try {
+      // 1. Явно проверяем сессию через getSession()
+      // Это гарантирует, что мы получим актуальный токен, даже если вкладка спала
+      const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
 
-    const initialize = async () => {
-      try {
-        const { data: { session: initialSession } } = await supabase.auth.getSession();
+      if (sessionError || !currentSession) {
+        if (mounted.current) {
+          setSession(null);
+          setProfile(null);
+          setLoading(false);
+        }
+        return;
+      }
+
+      if (mounted.current) setSession(currentSession);
+
+      // 2. Если профиля нет или сменился пользователь - грузим профиль
+      if (!profile || profile.id !== currentSession.user.id) {
+        const userProfile = await loadProfile(currentSession.user.id);
         
-        if (isMounted) {
-          setSession(initialSession);
-          if (initialSession) {
-            await fetchProfile(initialSession.user.id, false);
+        if (mounted.current) {
+          if (userProfile) {
+             // Проверка на мягкое удаление
+             if (userProfile.deleted_at) {
+               await supabase.auth.signOut();
+               setSession(null);
+               setProfile(null);
+             } else {
+               setProfile(userProfile);
+             }
           } else {
-            setLoading(false);
+            // Профиль не найден в БД, но сессия есть (странная ситуация, но возможная)
+            // Не разлогиниваем сразу, даем шанс интерфейсу обработать
+            setProfile(null);
           }
         }
-      } catch (err) {
-        if (isMounted) setLoading(false);
       }
+    } catch (err) {
+      console.error('Auth initialization error:', err);
+    } finally {
+      if (mounted.current) setLoading(false);
+    }
+  };
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
-        if (!isMounted) return;
-        
-        const isSilent = !!profileRef.current;
+  useEffect(() => {
+    mounted.current = true;
+    initializeAuth();
 
-        switch (event) {
-          case 'SIGNED_IN':
-            setSession(currentSession);
-            if (currentSession) await fetchProfile(currentSession.user.id, isSilent);
-            break;
-            
-          case 'TOKEN_REFRESHED':
-            setSession(currentSession);
-            break;
-            
-          case 'SIGNED_OUT':
-            setSession(null);
-            setProfile(null);
-            profileRef.current = null;
-            initialLoadDone.current = false;
-            setLoading(false);
-            break;
-            
-          case 'USER_UPDATED':
-            if (currentSession) await fetchProfile(currentSession.user.id, true);
-            break;
+    // Подписка на изменения авторизации (вход, выход, обновление токена)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      if (!mounted.current) return;
+
+      // При обновлении токена или входе просто обновляем сессию в стейте
+      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+        setSession(newSession);
+        // Если профиля еще нет, пробуем загрузить
+        if (newSession && !profile) {
+          initializeAuth();
         }
-      });
-      authSubscription = subscription;
+      } 
+      
+      if (event === 'SIGNED_OUT') {
+        setSession(null);
+        setProfile(null);
+        setLoading(false);
+      }
+    });
+
+    // Обработчик фокуса окна - САМОЕ ВАЖНОЕ для "просыпания"
+    const handleFocus = () => {
+      if (document.visibilityState === 'visible') {
+        // Принудительная ревалидация при возвращении на вкладку
+        console.debug('Tab active, revalidating auth...');
+        initializeAuth();
+      }
     };
 
-    initialize();
-
-    const timeout = setTimeout(() => {
-      if (isMounted && loading) setLoading(false);
-    }, 8000);
+    document.addEventListener('visibilitychange', handleFocus);
+    window.addEventListener('focus', handleFocus);
 
     return () => {
-      isMounted = false;
-      if (authSubscription) authSubscription.unsubscribe();
-      clearTimeout(timeout);
+      mounted.current = false;
+      subscription.unsubscribe();
+      document.removeEventListener('visibilitychange', handleFocus);
+      window.removeEventListener('focus', handleFocus);
     };
-  }, [fetchProfile]);
+  }, []); // Пустой массив зависимостей - эффект запускается один раз
 
   return { 
     session, 
     profile, 
     loading, 
     refreshProfile: async () => {
-      if (session?.user?.id) await fetchProfile(session.user.id, true);
+      if (session?.user?.id) {
+        const data = await loadProfile(session.user.id);
+        if (mounted.current && data) setProfile(data);
+      }
     } 
   };
 };
