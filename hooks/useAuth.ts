@@ -29,12 +29,7 @@ export const useAuth = () => {
       
       if (error) {
         console.error('Error fetching profile:', error.message);
-        // ВАЖНО: При ошибке сети мы НЕ сбрасываем profile в null, если он уже был загружен.
-        // Сбрасываем только если это первая загрузка, чтобы показать ошибку.
-        if (!profileRef.current) {
-           // Можно добавить стейт error, но пока оставим как есть, 
-           // App.tsx обработает это, но мы не будем делать ложный setProfile(null)
-        }
+        // Если ошибка авторизации (401), это обработает recoverSession или initSession
       } else if (data) {
         if (data.deleted_at) {
           // Пользователь удален администратором
@@ -48,7 +43,6 @@ export const useAuth = () => {
           profileRef.current = data;
         }
       } else {
-        // Данных нет, но и ошибки нет (странный кейс, возможно новый юзер без профиля)
         console.warn('No profile data found');
         setProfile(null);
         profileRef.current = null;
@@ -57,7 +51,8 @@ export const useAuth = () => {
       console.error('Critical auth exception:', err);
     } finally {
       isFetchingProfile.current = false;
-      setLoading(false);
+      // Снимаем лоадер только если это была первичная загрузка, чтобы показать интерфейс (или ошибку)
+      if (!isBackgroundUpdate) setLoading(false);
     }
   }, []);
 
@@ -69,16 +64,33 @@ export const useAuth = () => {
     try {
       const { data, error } = await supabase.auth.refreshSession();
       if (error || !data.session) {
-        throw new Error('Refresh failed');
+        throw new Error(error?.message || 'Refresh failed');
       }
       setSession(data.session);
       if (data.session.user) {
         await fetchProfile(data.session.user.id, true);
       }
       console.log('✅ Session recovered');
-    } catch (e) {
-      console.warn('❌ Session recovery failed:', e);
-      // Не делаем logout автоматически, даем пользователю шанс нажать кнопку "Обновить"
+    } catch (e: any) {
+      console.warn('❌ Session recovery failed:', e.message);
+      
+      // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ:
+      // Если обновление токена не удалось (токен протух или отозван),
+      // мы должны принудительно разлогинить пользователя, иначе он зависнет на лоадере.
+      const isFatalError = e.message === 'Refresh failed' || 
+                           e.message?.includes('invalid_grant') || 
+                           e.message?.includes('not_found');
+
+      if (isFatalError || !profileRef.current) {
+         console.warn('Force clearing invalid session to prevent stuck loading');
+         setSession(null);
+         setProfile(null);
+         profileRef.current = null;
+         setLoading(false); // Убираем спиннер, показываем Auth
+         
+         // Пытаемся почистить состояние SDK
+         try { await supabase.auth.signOut(); } catch {}
+      }
     } finally {
       setIsRecovering(false);
     }
@@ -89,19 +101,31 @@ export const useAuth = () => {
 
     const initSession = async () => {
       try {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
+        // Добавляем проверку error при инициализации
+        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
+        
+        if (error) {
+          throw error;
+        }
         
         if (isMounted) {
-          setSession(currentSession);
           if (currentSession?.user) {
+            setSession(currentSession);
             await fetchProfile(currentSession.user.id);
           } else {
+            // Сессии нет - показываем вход
+            setSession(null);
             setLoading(false);
           }
         }
       } catch (err) {
         console.error('Init session error:', err);
-        setLoading(false);
+        // При ошибке инициализации (например, битый токен) сбрасываем все
+        if (isMounted) {
+          setSession(null);
+          setProfile(null);
+          setLoading(false);
+        }
       }
     };
 
