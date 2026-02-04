@@ -285,8 +285,14 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
       } else {
         // При создании удаляем ID из объекта, чтобы Supabase сгенерировал UUID автоматически
         const { id, checklist, ...insertData } = createForm;
+        
+        // FIX: Находим объект и его текущий этап
+        const selectedObj = objects.find(o => o.id === createForm.object_id);
+        const stageId = selectedObj?.current_stage || null;
+
         const { data, error } = await supabase.from('tasks').insert([{
           ...insertData,
+          stage_id: stageId, // Присваиваем этап, чтобы задача появилась на доске объекта
           created_by: profile.id,
           status: 'pending'
         }]).select('id').single();
