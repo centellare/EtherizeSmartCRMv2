@@ -33,6 +33,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const [docSearchQuery, setDocSearchQuery] = useState('');
 
   const [isMainModalOpen, setIsMainModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isPaymentDetailsModalOpen, setIsPaymentDetailsModalOpen] = useState(false);
   const [isEditingDoc, setIsEditingDoc] = useState(false);
@@ -40,6 +41,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const [isFinalizeConfirmOpen, setIsFinalizeConfirmOpen] = useState(false);
   const [isRejectConfirmOpen, setIsRejectConfirmOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
   
   const [selectedTrans, setSelectedTrans] = useState<any>(null);
   const [selectedPayment, setSelectedPayment] = useState<any>(null);
@@ -75,6 +77,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       doc_link: '', 
       doc_name: '' 
     });
+    setIsEditMode(false);
   };
 
   const isAdmin = profile?.role === 'admin';
@@ -82,6 +85,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const isManager = profile?.role === 'manager';
   const isSpecialist = profile?.role === 'specialist';
   const canApprove = isAdmin || isDirector || isManager;
+  const canEditDelete = isAdmin || isDirector;
 
   const fetchSingleTransaction = async (id: string) => {
     const { data } = await supabase
@@ -156,7 +160,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     }
   }, [profile?.id, isSpecialist, transactions.length]);
 
-  // Триггер обновления №1: Любое изменение значений в компонентах фильтров
   useEffect(() => {
     fetchData();
   }, [fetchData, typeFilter, startDate, endDate, summaryFilter, unclosedDocsOnly, docSearchQuery]);
@@ -234,17 +237,68 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     e.preventDefault();
     setLoading(true);
     const amount = Number(formData.amount);
-    const { error } = await supabase.from('transactions').insert([{ 
-      ...formData, 
-      amount, planned_amount: amount, requested_amount: amount,
-      planned_date: formData.type === 'income' ? formData.planned_date : null,
-      status: 'pending', created_by: profile.id 
-    }]);
-    if (!error) { 
-      setIsMainModalOpen(false); 
-      resetForm();
-      setToast({message: 'Запись создана', type: 'success'}); 
-      // Триггер обновления №2: Успешное завершение функций добавления/редактирования
+    
+    if (isEditMode && selectedTrans) {
+      const { error } = await supabase.from('transactions').update({ 
+        ...formData, 
+        amount, 
+        planned_amount: formData.type === 'income' ? amount : null,
+        requested_amount: formData.type === 'expense' ? amount : null,
+        planned_date: formData.type === 'income' ? formData.planned_date : null
+      }).eq('id', selectedTrans.id);
+      
+      if (!error) {
+        setIsMainModalOpen(false);
+        resetForm();
+        setToast({message: 'Запись обновлена', type: 'success'});
+        await fetchData(true);
+      }
+    } else {
+      const { error } = await supabase.from('transactions').insert([{ 
+        ...formData, 
+        amount, planned_amount: amount, requested_amount: amount,
+        planned_date: formData.type === 'income' ? formData.planned_date : null,
+        status: 'pending', created_by: profile.id 
+      }]);
+      if (!error) { 
+        setIsMainModalOpen(false); 
+        resetForm();
+        setToast({message: 'Запись создана', type: 'success'}); 
+        await fetchData(true);
+      }
+    }
+    setLoading(false);
+  };
+
+  const handleEditInit = (trans: any) => {
+    setSelectedTrans(trans);
+    setFormData({
+      object_id: trans.object_id,
+      amount: (trans.type === 'expense' ? (trans.requested_amount || trans.amount) : trans.amount).toString(),
+      planned_date: trans.planned_date ? getMinskISODate(trans.planned_date) : today,
+      type: trans.type,
+      category: trans.category,
+      description: trans.description || '',
+      doc_link: trans.doc_link || '',
+      doc_name: trans.doc_name || ''
+    });
+    setIsEditMode(true);
+    setIsDetailsModalOpen(false);
+    setIsMainModalOpen(true);
+  };
+
+  const handleDeleteTransaction = async () => {
+    if (!deleteConfirm.id) return;
+    setLoading(true);
+    const { error } = await supabase
+      .from('transactions')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', deleteConfirm.id);
+    
+    if (!error) {
+      setToast({ message: 'Запись удалена', type: 'success' });
+      setDeleteConfirm({ open: false, id: null });
+      setIsDetailsModalOpen(false);
       await fetchData(true);
     }
     setLoading(false);
@@ -271,7 +325,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       setIsEditingDoc(false);
       setIsPaymentDetailsModalOpen(false);
       setToast({message: 'Данные платежа успешно обновлены', type: 'success'});
-      // Триггер обновления №2
       await fetchData(true);
     } else {
       console.error('Update Payment Error:', error);
@@ -299,7 +352,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     if (!error) {
       setIsApprovalModalOpen(false);
       setToast({message: 'Расход утвержден', type: 'success'});
-      // Триггер обновления №2
       await fetchData(true);
     }
     setLoading(false);
@@ -317,7 +369,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     if (!error) {
       setIsRejectConfirmOpen(false);
       setToast({message: 'Заявка отклонена', type: 'success'});
-      // Триггер обновления №2
       await fetchData(true);
     }
     setLoading(false);
@@ -334,7 +385,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     if (!error) {
       setIsFinalizeConfirmOpen(false);
       setToast({message: 'Приход финализирован по факту', type: 'success'});
-      // Триггер обновления №2
       await fetchData(true);
     }
     setLoading(false);
@@ -659,9 +709,29 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
                 <Badge color={selectedTrans.type === 'income' ? 'emerald' : 'red'}>{selectedTrans.type === 'income' ? 'ПРИХОД' : 'РАСХОД'}</Badge>
                 <h3 className="text-2xl font-bold mt-2">{selectedTrans.category}</h3>
               </div>
-              <div className="text-right">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Статус</p>
-                <Badge color={selectedTrans.status === 'approved' ? 'emerald' : selectedTrans.status === 'rejected' ? 'red' : 'amber'}>{selectedTrans.status?.toUpperCase()}</Badge>
+              <div className="flex flex-col items-end gap-3">
+                {canEditDelete && (
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={() => handleEditInit(selectedTrans)}
+                      className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all shadow-sm"
+                      title="Редактировать"
+                    >
+                      <span className="material-icons-round text-sm">edit</span>
+                    </button>
+                    <button 
+                      onClick={() => setDeleteConfirm({ open: true, id: selectedTrans.id })}
+                      className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all shadow-sm"
+                      title="Удалить"
+                    >
+                      <span className="material-icons-round text-sm">delete</span>
+                    </button>
+                  </div>
+                )}
+                <div className="text-right">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Статус</p>
+                  <Badge color={selectedTrans.status === 'approved' ? 'emerald' : selectedTrans.status === 'rejected' ? 'red' : 'amber'}>{selectedTrans.status?.toUpperCase()}</Badge>
+                </div>
               </div>
             </div>
 
@@ -688,13 +758,13 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         )}
       </Modal>
 
-      <Modal isOpen={isMainModalOpen} onClose={() => setIsMainModalOpen(false)} title={formData.type === 'income' ? 'План прихода' : 'Заявка на расход'}>
+      <Modal isOpen={isMainModalOpen} onClose={() => { setIsMainModalOpen(false); resetForm(); }} title={isEditMode ? 'Редактирование записи' : (formData.type === 'income' ? 'План прихода' : 'Заявка на расход')}>
         <form onSubmit={handleCreateTransaction} className="space-y-4">
           <Select label="Объект" required value={formData.object_id} onChange={(e:any) => setFormData({ ...formData, object_id: e.target.value })} options={[{value: '', label: 'Выберите объект'}, ...objects.map(o => ({value: o.id, label: o.name}))]} icon="business" />
           <div className="grid grid-cols-2 gap-4">
             <Input label="Сумма" type="number" step="0.01" required value={formData.amount} onChange={(e:any) => setFormData({ ...formData, amount: e.target.value })} icon="payments" />
             {formData.type === 'income' && (
-              <Input label="Дата плана" type="date" required value={formData.planned_date} onChange={(e:any) => setFormData({ ...formData, planned_date: e.target.value })} icon="event" min={today} />
+              <Input label="Дата плана" type="date" required value={formData.planned_date} onChange={(e:any) => setFormData({ ...formData, planned_date: e.target.value })} icon="event" />
             )}
           </div>
           <Input label="Категория" required value={formData.category} onChange={(e:any) => setFormData({ ...formData, category: e.target.value })} icon="category" />
@@ -711,7 +781,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
             <label className="block text-xs font-medium text-[#444746] mb-1.5 ml-1">Описание</label>
             <textarea className="w-full bg-white border border-slate-200 rounded-2xl p-4 text-sm outline-none focus:border-blue-500" rows={3} value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
           </div>
-          <Button type="submit" className="w-full h-14" loading={loading} icon="save">Создать запись</Button>
+          <Button type="submit" className="w-full h-14" loading={loading} icon="save">{isEditMode ? 'Сохранить изменения' : 'Создать запись'}</Button>
         </form>
       </Modal>
 
@@ -799,6 +869,15 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
 
       <ConfirmModal isOpen={isRejectConfirmOpen} onClose={() => setIsRejectConfirmOpen(false)} onConfirm={handleRejectExpense} title="Отклонить заявку" message="Вы уверены, что хотите отклонить этот расход? Действие нельзя отменить." loading={loading} />
       <ConfirmModal isOpen={isFinalizeConfirmOpen} onClose={() => setIsFinalizeConfirmOpen(false)} onConfirm={handleFinalizeIncome} title="Финализировать приход" message="Клиент больше не будет доплачивать? Статус будет изменен на 'Завершено', а итоговая сумма прихода будет равна фактическим поступлениям." loading={loading} />
+      <ConfirmModal 
+        isOpen={deleteConfirm.open} 
+        onClose={() => setDeleteConfirm({ open: false, id: null })} 
+        onConfirm={handleDeleteTransaction} 
+        title="Удаление записи" 
+        message="Вы уверены, что хотите удалить эту финансовую запись? Она будет перемещена в корзину." 
+        confirmVariant="danger" 
+        loading={loading} 
+      />
     </div>
   );
 };
