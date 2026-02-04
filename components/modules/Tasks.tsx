@@ -206,8 +206,20 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         list = list.filter((t: Task) => t.deadline && t.deadline < todayStr);
         break;
       case 'active':
-        if (activeRange.start) list = list.filter(t => t.deadline && t.deadline >= activeRange.start);
-        if (activeRange.end) list = list.filter(t => t.deadline && t.deadline <= activeRange.end);
+        if (activeRange.start) {
+          list = list.filter(t => {
+            if (!t.deadline) return false;
+            // Нормализуем дату дедлайна до YYYY-MM-DD для корректного сравнения
+            return getMinskISODate(t.deadline) >= activeRange.start;
+          });
+        }
+        if (activeRange.end) {
+          list = list.filter(t => {
+            if (!t.deadline) return false;
+            // Нормализуем дату дедлайна до YYYY-MM-DD для корректного сравнения
+            return getMinskISODate(t.deadline) <= activeRange.end;
+          });
+        }
         break;
     }
     return list;
