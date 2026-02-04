@@ -1,6 +1,5 @@
 
 import React, { useState, useMemo } from 'react';
-import { supabase } from '../../../lib/supabase';
 import { InventoryCatalogItem, InventoryItem } from '../../../types';
 import { Badge, Input, Select } from '../../ui';
 import { formatDate, getMinskISODate } from '../../../lib/dateUtils';
@@ -15,9 +14,14 @@ interface InventoryListProps {
   onReplace: (item: InventoryItem) => void;
   onEdit: (item: any, type: 'catalog' | 'item') => void;
   onRefresh: () => void;
+  onDeleteItem: (id: string) => void;
+  onDeleteCatalog: (id: string) => void;
 }
 
-const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items, loading, profile, onDeploy, onReplace, onEdit, onRefresh }) => {
+const InventoryList: React.FC<InventoryListProps> = ({ 
+  activeTab, catalog, items, loading, profile, 
+  onDeploy, onReplace, onEdit, onRefresh, onDeleteItem, onDeleteCatalog 
+}) => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -25,31 +29,6 @@ const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items
   const [dateTo, setDateTo] = useState('');
 
   const isAdmin = profile?.role === 'admin';
-
-  const handleDeleteItem = async (id: string) => {
-    if (!window.confirm('Вы уверены, что хотите удалить эту единицу товара? Она будет перемещена в корзину.')) return;
-    try {
-      await supabase.from('inventory_items').update({ is_deleted: true }).eq('id', id);
-      onRefresh();
-    } catch (e) {
-      console.error(e);
-      alert('Ошибка при удалении');
-    }
-  };
-
-  const handleDeleteCatalog = async (id: string) => {
-    if (!window.confirm('ВНИМАНИЕ: Вы удаляете тип оборудования из справочника. Все товары этого типа на складе также будут помечены как удаленные. Продолжить?')) return;
-    try {
-      // Cascade soft delete items
-      await supabase.from('inventory_items').update({ is_deleted: true }).eq('catalog_id', id);
-      // Delete catalog item
-      await supabase.from('inventory_catalog').update({ is_deleted: true }).eq('id', id);
-      onRefresh();
-    } catch (e) {
-      console.error(e);
-      alert('Ошибка при удалении');
-    }
-  };
 
   const filteredItems = useMemo(() => {
     let list = items;
@@ -136,7 +115,12 @@ const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items
                     <span className="material-icons-round text-sm">edit</span>
                   </button>
                   <button 
-                    onClick={(e) => { e.stopPropagation(); handleDeleteCatalog(c.id); }}
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      if (window.confirm('ВНИМАНИЕ: Вы удаляете тип оборудования. Все товары этого типа будут скрыты. Продолжить?')) {
+                        onDeleteCatalog(c.id);
+                      }
+                    }}
                     className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center transition-all"
                     title="Удалить"
                   >
@@ -173,54 +157,67 @@ const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col xl:flex-row justify-between items-end gap-4">
-        <div className="flex flex-col xl:flex-row gap-4 flex-grow w-full">
-            <Input 
-            placeholder={activeTab === 'warranty' ? "Поиск по S/N..." : "Название, SKU, S/N, объект..."} 
-            value={search} 
-            onChange={(e: any) => setSearch(e.target.value)} 
-            icon="search" 
-            className="flex-grow"
-            />
-            
-            <div className="flex gap-2 w-full xl:w-auto overflow-x-auto pb-2 xl:pb-0">
-            {activeTab === 'stock' && (
-                <div className="min-w-[140px]">
-                <Select 
-                    value={statusFilter}
-                    onChange={(e: any) => setStatusFilter(e.target.value)}
-                    options={[
-                    { value: 'all', label: 'Все статусы' },
-                    { value: 'in_stock', label: 'На складе' },
-                    { value: 'deployed', label: 'Установлен' },
-                    { value: 'scrapped', label: 'Списан' },
-                    { value: 'maintenance', label: 'В ремонте' }
-                    ]}
+      <div className="flex flex-col xl:flex-row gap-4 items-start xl:items-center justify-between">
+        
+        <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+            {/* Search */}
+            <div className="w-full md:w-80">
+                <Input 
+                    placeholder={activeTab === 'warranty' ? "Поиск по S/N..." : "Название, SKU, S/N..."} 
+                    value={search} 
+                    onChange={(e: any) => setSearch(e.target.value)} 
+                    icon="search" 
+                    className="h-11 !text-sm"
                 />
+            </div>
+            
+            {/* Status Filter */}
+            {activeTab === 'stock' && (
+                <div className="w-full sm:w-auto min-w-[160px]">
+                    <Select 
+                        value={statusFilter}
+                        onChange={(e: any) => setStatusFilter(e.target.value)}
+                        options={[
+                            { value: 'all', label: 'Все статусы' },
+                            { value: 'in_stock', label: 'На складе' },
+                            { value: 'deployed', label: 'Установлен' },
+                            { value: 'scrapped', label: 'Списан' },
+                            { value: 'maintenance', label: 'В ремонте' }
+                        ]}
+                        className="h-11 !py-0 !text-sm truncate pr-8"
+                    />
                 </div>
             )}
-            <div className="min-w-[140px]">
+
+            {/* Type Filter */}
+            <div className="w-full sm:w-auto min-w-[160px]">
                 <Select 
                     value={typeFilter}
                     onChange={(e: any) => setTypeFilter(e.target.value)}
                     options={[
-                    { value: 'all', label: 'Все типы' },
-                    { value: 'product', label: 'Оборудование' },
-                    { value: 'material', label: 'Материалы' }
+                        { value: 'all', label: 'Все типы' },
+                        { value: 'product', label: 'Оборудование' },
+                        { value: 'material', label: 'Материалы' }
                     ]}
+                    className="h-11 !py-0 !text-sm truncate pr-8"
                 />
             </div>
-            <div className="flex items-center gap-2 bg-white rounded-xl border border-slate-200 px-3 min-w-fit h-[50px] xl:h-auto">
-                <Input type="date" value={dateFrom} onChange={(e:any) => setDateFrom(e.target.value)} className="!border-0 !p-0 h-10 w-28 text-xs" />
-                <span className="text-slate-300">-</span>
-                <Input type="date" value={dateTo} onChange={(e:any) => setDateTo(e.target.value)} className="!border-0 !p-0 h-10 w-28 text-xs" />
-            </div>
+
+            {/* Date Range - Compact */}
+            <div className="flex items-center gap-2 bg-white rounded-2xl border border-slate-200 px-3 py-1 shadow-sm shrink-0 h-[44px] w-full sm:w-auto justify-center sm:justify-start">
+                <span className="material-icons-round text-slate-400 text-lg">date_range</span>
+                <Input type="date" value={dateFrom} onChange={(e:any) => setDateFrom(e.target.value)} className="!border-0 !p-0 !h-auto !text-xs w-24 bg-transparent focus:ring-0" />
+                <span className="text-slate-300 font-bold">-</span>
+                <Input type="date" value={dateTo} onChange={(e:any) => setDateTo(e.target.value)} className="!border-0 !p-0 !h-auto !text-xs w-24 bg-transparent focus:ring-0" />
             </div>
         </div>
         
         {/* Total Summary Block */}
-        <div className="bg-blue-50 border border-blue-100 rounded-2xl px-6 py-3 flex flex-col items-end shrink-0 min-w-[200px]">
-            <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Итого (остаток)</span>
+        <div className="bg-blue-50 border border-blue-100 rounded-2xl px-5 py-2 flex items-center justify-between gap-6 shrink-0 w-full xl:w-auto xl:ml-auto shadow-sm">
+            <div className="flex flex-col">
+                <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Итого</span>
+                <span className="text-[10px] font-medium text-blue-300">Стоимость остатка</span>
+            </div>
             <span className="text-xl font-bold text-blue-900">{formatCurrency(totalSum)}</span>
         </div>
       </div>
@@ -350,7 +347,11 @@ const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items
                               <span className="material-icons-round text-sm">edit</span>
                             </button>
                             <button 
-                              onClick={() => handleDeleteItem(item.id)}
+                              onClick={() => {
+                                if (window.confirm('Вы уверены, что хотите удалить эту единицу товара?')) {
+                                  onDeleteItem(item.id);
+                                }
+                              }}
                               className="w-8 h-8 rounded-xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
                               title="Удалить запись"
                             >

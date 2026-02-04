@@ -47,6 +47,33 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
     fetchData();
   }, []);
 
+  const handleDeleteCatalog = async (id: string) => {
+    setLoading(true);
+    try {
+        await supabase.from('inventory_items').update({ is_deleted: true }).eq('catalog_id', id);
+        await supabase.from('inventory_catalog').update({ is_deleted: true }).eq('id', id);
+        setToast({ message: 'Категория и связанные товары удалены', type: 'success' });
+        await fetchData();
+    } catch (e) {
+        console.error(e);
+        setToast({ message: 'Ошибка при удалении', type: 'error' });
+    }
+    setLoading(false);
+  };
+
+  const handleDeleteItem = async (id: string) => {
+    setLoading(true);
+    try {
+        await supabase.from('inventory_items').update({ is_deleted: true }).eq('id', id);
+        setToast({ message: 'Единица товара удалена', type: 'success' });
+        await fetchData();
+    } catch (e) {
+        console.error(e);
+        setToast({ message: 'Ошибка при удалении', type: 'error' });
+    }
+    setLoading(false);
+  };
+
   const openModal = (mode: 'create_catalog' | 'add_item' | 'deploy_item' | 'replace_item' | 'edit_catalog' | 'edit_item', item: any | null = null) => {
     setModalMode(mode);
     setSelectedItem(item);
@@ -94,6 +121,8 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
         onReplace={(item) => openModal('replace_item', item)}
         onEdit={(item, type) => openModal(type === 'catalog' ? 'edit_catalog' : 'edit_item', item)}
         onRefresh={fetchData}
+        onDeleteItem={handleDeleteItem}
+        onDeleteCatalog={handleDeleteCatalog}
       />
 
       <InventoryModal 
