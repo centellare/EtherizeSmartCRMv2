@@ -32,7 +32,12 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
     const channel = supabase.channel('system_status')
       .on('presence', { event: 'sync' }, () => setIsLive(true))
       .subscribe((status) => {
-        setIsLive(status === 'SUBSCRIBED');
+        // Если статус закрыт или ошибка - пробуем считать это потерей связи
+        if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+           setIsLive(false);
+        } else {
+           setIsLive(status === 'SUBSCRIBED');
+        }
       });
     return () => { supabase.removeChannel(channel); };
   }, []);
@@ -67,7 +72,21 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
     setLoading(false);
   };
 
-  const handleLogout = async () => { await supabase.auth.signOut(); };
+  const handleLogout = async () => {
+    try {
+      // Пытаемся выйти штатно
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+    } catch (e) {
+      console.warn('Server logout failed, forcing local cleanup', e);
+      // Если сервер не отвечает или токен протух - чистим локально
+      localStorage.clear(); // Грубая очистка Supabase токенов
+    } finally {
+      // В любом случае перезагружаем приложение на дашборд
+      window.location.hash = 'dashboard';
+      window.location.reload();
+    }
+  };
 
   const userInitials = profile?.full_name 
     ? profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
@@ -121,7 +140,7 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
             </div>
             <div className="flex gap-2">
               <button onClick={() => setIsProfileModalOpen(true)} className="flex-1 h-9 flex items-center justify-center gap-2 rounded-xl border border-[#e1e2e1] text-[#444746] hover:bg-[#f3f5f7] transition-all text-xs font-medium"><span className="material-icons-round text-sm">settings</span>Профиль</button>
-              <button onClick={handleLogout} className="w-9 h-9 flex items-center justify-center rounded-xl border border-[#ffdad6] text-[#ba1a1a] hover:bg-[#ffdad6] transition-all"><span className="material-icons-round text-sm">logout</span></button>
+              <button onClick={handleLogout} className="w-9 h-9 flex items-center justify-center rounded-xl border border-[#ffdad6] text-[#ba1a1a] hover:bg-[#ffdad6] transition-all" title="Выйти (с принудительной очисткой при сбое)"><span className="material-icons-round text-sm">logout</span></button>
             </div>
           </div>
         </div>
@@ -135,8 +154,8 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
           </div>
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 rounded-full border border-slate-100">
-               <div className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
-               <span className={`text-[10px] font-bold uppercase tracking-widest ${isLive ? 'text-emerald-600' : 'text-slate-400'}`}>Live</span>
+               <div className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`}></div>
+               <span className={`text-[10px] font-bold uppercase tracking-widest ${isLive ? 'text-emerald-600' : 'text-red-400'}`}>{isLive ? 'Live' : 'Offline'}</span>
             </div>
             <button onClick={() => setActiveModule('notifications')} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors relative ${activeModule === 'notifications' ? 'bg-[#d3e4ff] text-[#001d3d]' : 'hover:bg-[#f3f5f7] text-[#444746]'}`}>
               <span className="material-icons-round">notifications</span>

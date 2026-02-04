@@ -4,7 +4,13 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = 'https://rlwqwkoihrezbtftmodu.supabase.co';
 const supabaseAnonKey = 'sb_publishable_vu4aaeNtWF_l-u9XwOwVbA_QvygsNnS';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+});
 
 /**
  * Хелпер для замера времени выполнения запроса с защитой от AbortError.
@@ -42,5 +48,18 @@ export const measureQuery = async (query: any) => {
     
     console.error(`[DB Exception] ${duration}ms:`, err);
     return { data: null, error: err, duration, cancelled: false };
+  }
+};
+
+/**
+ * Легковесная проверка соединения с базой.
+ * Использует таблицу profiles, запрашивая 0 строк (HEAD-like request).
+ */
+export const checkConnection = async () => {
+  try {
+    const { error } = await supabase.from('profiles').select('id').limit(1).maybeSingle();
+    return !error;
+  } catch {
+    return false;
   }
 };
