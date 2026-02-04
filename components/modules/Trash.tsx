@@ -102,6 +102,7 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
     const value = (table === 'clients' || table === 'transactions') ? null : false;
     
     const updates: any = { [field]: value };
+    // Для инвентаря тоже сбрасываем deleted_at
     if (field === 'is_deleted') {
        updates.deleted_at = null;
     }
@@ -114,17 +115,19 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
   const handleHardDelete = async (id: string, table: string) => {
     setLoading(true);
     
-    // Cleanup for inventory items
+    // 1. Очистка зависимостей для товара
     if (table === 'inventory_items') {
       await supabase.from('inventory_history').delete().eq('item_id', id);
     }
 
-    // Cleanup for inventory catalog
+    // 2. Очистка зависимостей для каталога (сначала товары, потом их история)
     if (table === 'inventory_catalog') {
       const { data: items } = await supabase.from('inventory_items').select('id').eq('catalog_id', id);
       if (items?.length) {
         const itemIds = items.map(i => i.id);
+        // Сначала история товаров
         await supabase.from('inventory_history').delete().in('item_id', itemIds);
+        // Потом сами товары
         await supabase.from('inventory_items').delete().in('id', itemIds);
       }
     }
@@ -157,11 +160,14 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
 
         await supabase.from(table).update(updates).in('id', ids);
       } else {
-        // Cleanup for inventory items
+        // Очистка зависимостей при массовом удалении
+        
+        // Товары
         if (table === 'inventory_items') {
            await supabase.from('inventory_history').delete().in('item_id', ids);
         }
-        // Cleanup for inventory catalog
+        
+        // Каталог
         if (table === 'inventory_catalog') {
             const { data: items } = await supabase.from('inventory_items').select('id').in('catalog_id', ids);
             if (items?.length) {
@@ -170,6 +176,7 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
                 await supabase.from('inventory_items').delete().in('id', itemIds);
             }
         }
+
         await supabase.from(table).delete().in('id', ids);
       }
     }
@@ -189,20 +196,23 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
     });
 
     for (const table in grouped) {
-      // Cleanup for inventory items
+      const ids = grouped[table];
+
+      // Очистка зависимостей при полной очистке
       if (table === 'inventory_items') {
-         await supabase.from('inventory_history').delete().in('item_id', grouped[table]);
+         await supabase.from('inventory_history').delete().in('item_id', ids);
       }
-      // Cleanup for inventory catalog
+      
       if (table === 'inventory_catalog') {
-          const { data: items } = await supabase.from('inventory_items').select('id').in('catalog_id', grouped[table]);
+          const { data: items } = await supabase.from('inventory_items').select('id').in('catalog_id', ids);
           if (items?.length) {
               const itemIds = items.map(i => i.id);
               await supabase.from('inventory_history').delete().in('item_id', itemIds);
               await supabase.from('inventory_items').delete().in('id', itemIds);
           }
       }
-      await supabase.from(table).delete().in('id', grouped[table]);
+
+      await supabase.from(table).delete().in('id', ids);
     }
 
     setClearAllConfirm(false);
