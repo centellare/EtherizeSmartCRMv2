@@ -76,6 +76,15 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     });
   };
 
+  const fetchSingleTask = async (id: string) => {
+    const { data } = await supabase
+      .from('tasks')
+      .select('*, checklist:task_checklists(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)')
+      .eq('id', id)
+      .single();
+    return data;
+  };
+
   // Базовое получение данных
   const fetchData = useCallback(async (silent = false) => {
     if (!profile?.id || isFetching.current) return;
@@ -112,6 +121,48 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
       setLoading(false);
     }
   }, [profile?.id, isSpecialist, tasks.length]);
+
+  // Realtime Logic
+  useEffect(() => {
+    fetchData();
+
+    const channel = supabase.channel('tasks_smart_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async (payload) => {
+        if (payload.eventType === 'INSERT') {
+          // If new task is pending, add it. If completed, ignore (it goes to archive)
+          if (payload.new.status === 'pending' && !payload.new.is_deleted) {
+             const newTask = await fetchSingleTask(payload.new.id);
+             if (newTask) setTasks(prev => [newTask, ...prev]);
+          }
+        } else if (payload.eventType === 'UPDATE') {
+          if (payload.new.is_deleted || payload.new.status === 'completed') {
+             // If deleted or moved to completed -> remove from active list
+             setTasks(prev => prev.filter(t => t.id !== payload.new.id));
+          } else {
+             // If updated and still pending -> update in place
+             const updatedTask = await fetchSingleTask(payload.new.id);
+             if (updatedTask) setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
+          }
+        } else if (payload.eventType === 'DELETE') {
+           setTasks(prev => prev.filter(t => t.id !== payload.old.id));
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_checklists' }, async (payload) => {
+        // When a checklist item changes, we need to refresh the parent task to show correct progress/items
+        const taskId = payload.new.task_id || payload.old.task_id;
+        if (taskId) {
+           const updatedTask = await fetchSingleTask(taskId);
+           // Only update if the task is currently in our list
+           if (updatedTask && updatedTask.status === 'pending') {
+             setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+           }
+        }
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [fetchData]);
+
 
   const fetchArchive = useCallback(async (page = 0) => {
     if (!profile?.id) return;
@@ -156,10 +207,8 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
   useEffect(() => {
     if (activeTab === 'archive') {
       fetchArchive(0);
-    } else {
-      fetchData();
     }
-  }, [activeTab, fetchData, fetchArchive]);
+  }, [activeTab, fetchArchive]);
 
   const baseVisibleTasks = useMemo(() => {
     if (isAdmin) return tasks;
@@ -342,7 +391,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
       setToast({ message: isEditMode ? 'Задача обновлена' : 'Задача создана', type: 'success' });
       setIsCreateModalOpen(false);
       resetForm();
-      await fetchData(true);
+      // State updates automatically via Realtime
     } catch (err: any) {
       console.error('Save task error:', err);
       setToast({ message: `Ошибка: ${err.message || 'Не удалось сохранить'}`, type: 'error' });
@@ -386,7 +435,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         setToast({ message: 'Задача удалена', type: 'success' });
         setIsTaskDetailsModalOpen(false);
         setDeleteConfirm({ open: false, id: null });
-        await fetchData(true);
+        // Realtime handles state removal
       }
     } finally {
       setLoading(false);
@@ -399,6 +448,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     const isExecutor = task.assigned_to === profile.id;
     if (!isExecutor && !isAdmin) return;
 
+    // Optimistic Update
     const updater = (t: Task) => {
       if (t.id === taskId && t.checklist) {
         return {
@@ -422,6 +472,8 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         )
       });
     }
+    
+    // DB Update (Realtime will confirm)
     await supabase.from('task_checklists').update({ is_completed: !currentStatus }).eq('id', itemId);
   };
 

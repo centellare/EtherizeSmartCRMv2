@@ -164,10 +164,24 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
 ];
 
 export const SUPABASE_SETUP_GUIDE = `
-### Необходимые SQL-функции (RPC)
+### Необходимые SQL-функции (RPC) и Индексы
 Для работы бизнес-логики приложения выполните следующий код в SQL Editor Supabase:
 
 \`\`\`sql
+-- 0. ОПТИМИЗАЦИЯ: Индексы для ускорения запросов
+CREATE INDEX IF NOT EXISTS idx_objects_deleted ON public.objects(is_deleted);
+CREATE INDEX IF NOT EXISTS idx_objects_status ON public.objects(current_status);
+CREATE INDEX IF NOT EXISTS idx_objects_responsible ON public.objects(responsible_id);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_deleted ON public.tasks(is_deleted);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON public.tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_assigned_to ON public.tasks(assigned_to);
+CREATE INDEX IF NOT EXISTS idx_tasks_object_id ON public.tasks(object_id);
+
+CREATE INDEX IF NOT EXISTS idx_transactions_deleted ON public.transactions(deleted_at);
+CREATE INDEX IF NOT EXISTS idx_transactions_type ON public.transactions(type);
+CREATE INDEX IF NOT EXISTS idx_transactions_object ON public.transactions(object_id);
+
 -- 1. Переход на следующий этап объекта
 CREATE OR REPLACE FUNCTION public.transition_object_stage(
   p_object_id UUID,

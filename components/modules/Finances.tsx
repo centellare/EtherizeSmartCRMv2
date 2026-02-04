@@ -84,6 +84,33 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const isSpecialist = profile?.role === 'specialist';
   const canApprove = isAdmin || isDirector || isManager;
 
+  const fetchSingleTransaction = async (id: string) => {
+    const { data } = await supabase
+      .from('transactions')
+      .select(`
+        *, 
+        objects(id, name, responsible_id), 
+        creator:profiles!transactions_created_by_fkey(full_name),
+        processor:profiles!processed_by(full_name),
+        payments:transaction_payments(
+          *,
+          creator:profiles!transaction_payments_created_by_fkey(full_name)
+        )
+      `)
+      .eq('id', id)
+      .single();
+    
+    if (data) {
+       return {
+          ...data,
+          payments: (data.payments || []).sort((a: any, b: any) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()),
+          created_by_name: data.creator?.full_name || 'Система',
+          processor_name: data.processor?.full_name || null
+       };
+    }
+    return null;
+  };
+
   const fetchData = useCallback(async (silent = false) => {
     if (!profile?.id) return;
     const isInitial = transactions.length === 0 && !silent;
@@ -132,9 +159,30 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
 
   useEffect(() => {
     fetchData();
-    const tChannel = supabase.channel('finances_realtime_global')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => fetchData(true))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'transaction_payments' }, () => fetchData(true))
+    const tChannel = supabase.channel('finances_smart_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, async (payload) => {
+        if (payload.eventType === 'INSERT') {
+          const newTrans = await fetchSingleTransaction(payload.new.id);
+          if (newTrans) setTransactions(prev => [newTrans, ...prev]);
+        } else if (payload.eventType === 'UPDATE') {
+          if (payload.new.deleted_at) {
+             setTransactions(prev => prev.filter(t => t.id !== payload.new.id));
+          } else {
+             const updatedTrans = await fetchSingleTransaction(payload.new.id);
+             if (updatedTrans) setTransactions(prev => prev.map(t => t.id === updatedTrans.id ? updatedTrans : t));
+          }
+        } else if (payload.eventType === 'DELETE') {
+           setTransactions(prev => prev.filter(t => t.id !== payload.old.id));
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transaction_payments' }, async (payload) => {
+        // Find transaction ID from payment
+        const tid = payload.new.transaction_id || payload.old.transaction_id;
+        if (tid) {
+           const updatedTrans = await fetchSingleTransaction(tid);
+           if (updatedTrans) setTransactions(prev => prev.map(t => t.id === updatedTrans.id ? updatedTrans : t));
+        }
+      })
       .subscribe();
     return () => { supabase.removeChannel(tChannel); };
   }, [fetchData]);
@@ -191,7 +239,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       setIsMainModalOpen(false); 
       resetForm();
       setToast({message: 'Запись создана', type: 'success'}); 
-      fetchData(true); 
+      // Realtime update handles list refresh
     }
     setLoading(false);
   };
@@ -217,7 +265,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       setIsEditingDoc(false);
       setIsPaymentDetailsModalOpen(false);
       setToast({message: 'Данные платежа успешно обновлены', type: 'success'});
-      await fetchData(true);
+      // Realtime update handles list refresh
     } else {
       console.error('Update Payment Error:', error);
       setToast({message: `Ошибка: ${error.message}. Проверьте права доступа (RLS).`, type: 'error'});
@@ -244,7 +292,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     if (!error) {
       setIsApprovalModalOpen(false);
       setToast({message: 'Расход утвержден', type: 'success'});
-      fetchData(true);
     }
     setLoading(false);
   };
@@ -261,7 +308,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     if (!error) {
       setIsRejectConfirmOpen(false);
       setToast({message: 'Заявка отклонена', type: 'success'});
-      fetchData(true);
     }
     setLoading(false);
   };
@@ -277,7 +323,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     if (!error) {
       setIsFinalizeConfirmOpen(false);
       setToast({message: 'Приход финализирован по факту', type: 'success'});
-      fetchData(true);
     }
     setLoading(false);
   };
@@ -680,7 +725,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
               await supabase.from('transactions').update({ status: newFact >= selectedTrans.amount - 0.01 ? 'approved' : 'partial', fact_amount: newFact }).eq('id', selectedTrans.id);
               setIsPaymentModalOpen(false); 
               setToast({message: 'Платеж внесен', type: 'success'});
-              fetchData(true); 
+              // Realtime handles list refresh
             } else {
               setToast({message: `Ошибка: ${error.message}`, type: 'error'});
             }

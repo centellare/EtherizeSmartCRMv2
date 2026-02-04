@@ -38,10 +38,18 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
 
   const canManageAll = profile?.role === 'admin' || profile?.role === 'director';
 
+  const fetchSingleObject = async (id: string) => {
+    const { data } = await supabase
+      .from('objects')
+      .select('*, client:clients(name), responsible:profiles!responsible_id(full_name)')
+      .eq('id', id)
+      .single();
+    return data;
+  };
+
   const fetchData = useCallback(async (silent = false) => {
     if (!profile?.id) return;
     
-    // Блокируем UI только если данных нет или мы явно попросили (не silent)
     const isInitial = objects.length === 0 && !silent;
     if (isInitial) setLoading(true);
 
@@ -64,9 +72,30 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
 
   useEffect(() => {
     fetchData();
-    const channel = supabase.channel('objects_sync_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'objects' }, () => fetchData(true))
+    const channel = supabase.channel('objects_smart_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'objects' }, async (payload) => {
+        // Smart Realtime: Update local state instead of refetching all
+        if (payload.eventType === 'INSERT') {
+          const newObj = await fetchSingleObject(payload.new.id);
+          if (newObj && !newObj.is_deleted) {
+            setObjects(prev => [newObj, ...prev]);
+          }
+        } else if (payload.eventType === 'UPDATE') {
+           if (payload.new.is_deleted) {
+             setObjects(prev => prev.filter(o => o.id !== payload.new.id));
+           } else {
+             // Optimistically fetch just the one updated row with joins
+             const updatedObj = await fetchSingleObject(payload.new.id);
+             if (updatedObj) {
+               setObjects(prev => prev.map(o => o.id === updatedObj.id ? updatedObj : o));
+             }
+           }
+        } else if (payload.eventType === 'DELETE') {
+           setObjects(prev => prev.filter(o => o.id !== payload.old.id));
+        }
+      })
       .subscribe();
+      
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
 
@@ -95,7 +124,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
       
       if (!error) {
         setToast({ message: editingObject ? 'Объект обновлен' : 'Объект создан', type: 'success' });
-        setIsModalOpen(false); setEditingObject(null); fetchData(true);
+        setIsModalOpen(false); setEditingObject(null);
       } else {
         setToast({ message: 'Ошибка при сохранении', type: 'error' });
       }
@@ -114,7 +143,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
       await supabase.from('transactions').update({ deleted_at: now }).eq('object_id', deleteConfirm.id);
       setToast({ message: 'Объект и связанные данные перенесены в корзину', type: 'success' });
       setDeleteConfirm({ open: false, id: null }); 
-      fetchData(true);
+      // State updates automatically via Realtime
     } catch (err) { setToast({ message: 'Ошибка при удалении', type: 'error' }); }
     setLoading(false);
   };
@@ -134,7 +163,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
 
   if (selectedObjectId) {
     const selectedObject = objects.find(o => o.id === selectedObjectId);
-    if (selectedObject) return <ObjectWorkflow object={selectedObject} profile={profile} initialStageId={initialStageId} onBack={() => { setSelectedObjectId(null); if (onClearInitialId) onClearInitialId(); fetchData(true); }} />;
+    if (selectedObject) return <ObjectWorkflow object={selectedObject} profile={profile} initialStageId={initialStageId} onBack={() => { setSelectedObjectId(null); if (onClearInitialId) onClearInitialId(); }} />;
   }
 
   return (
