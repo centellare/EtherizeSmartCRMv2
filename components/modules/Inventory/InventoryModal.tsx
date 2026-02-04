@@ -111,25 +111,24 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
     if (!error) onSuccess();
   };
 
-  const handleDeleteCatalog = async () => {
-    if (!selectedItem || !window.confirm('Вы уверены, что хотите удалить этот тип оборудования?')) return;
+  const handleDeleteCatalog = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!selectedItem || !window.confirm('Вы уверены, что хотите удалить этот тип оборудования? Все связанные товары на складе также будут удалены (скрыты).')) return;
     
-    console.log('Deleting catalog type:', selectedItem.id);
+    console.log('Начало удаления (Soft Delete)', selectedItem.id);
     setLoading(true);
     
     try {
-        // Check for existing items
-        const { count } = await supabase.from('inventory_items')
-          .select('*', { count: 'exact', head: true })
+        // 1. Cascade Soft Delete: Mark all items of this catalog as deleted
+        await supabase.from('inventory_items')
+          .update({ is_deleted: true })
           .eq('catalog_id', selectedItem.id);
-        
-        if (count && count > 0) {
-          alert(`Невозможно удалить: на складе или объектах числится ${count} единиц этого типа. Сначала удалите или спишите их.`);
-          setLoading(false);
-          return;
-        }
 
-        const { error } = await supabase.from('inventory_catalog').delete().eq('id', selectedItem.id);
+        // 2. Soft Delete the catalog item itself
+        const { error } = await supabase.from('inventory_catalog')
+          .update({ is_deleted: true })
+          .eq('id', selectedItem.id);
+          
         if (error) throw error;
         
         onSuccess();
@@ -182,19 +181,19 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
     if (!error) onSuccess();
   };
 
-  const handleDeleteItem = async () => {
-    if (!selectedItem || !window.confirm('Вы уверены? История движения этой единицы будет удалена.')) return;
+  const handleDeleteItem = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!selectedItem || !window.confirm('Вы уверены? Единица товара будет перемещена в корзину.')) return;
     
-    console.log('Deleting item:', selectedItem.id);
+    console.log('Начало удаления товара (Soft Delete)', selectedItem.id);
     setLoading(true);
     
     try {
-        // 1. Manual Cascade: Delete history first
-        const { error: histError } = await supabase.from('inventory_history').delete().eq('item_id', selectedItem.id);
-        if (histError) throw histError;
-        
-        // 2. Delete the item
-        const { error: itemError } = await supabase.from('inventory_items').delete().eq('id', selectedItem.id);
+        // Soft delete the item
+        const { error: itemError } = await supabase.from('inventory_items')
+          .update({ is_deleted: true })
+          .eq('id', selectedItem.id);
+          
         if (itemError) throw itemError;
 
         onSuccess();

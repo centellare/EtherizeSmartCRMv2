@@ -25,9 +25,10 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
     setLoading(true);
     try {
       const [catRes, itemsRes, objRes] = await Promise.all([
-        supabase.from('inventory_catalog').select('*').order('name'),
+        supabase.from('inventory_catalog').select('*').eq('is_deleted', false).order('name'),
         supabase.from('inventory_items')
           .select('*, catalog:inventory_catalog(*), object:objects(id, name)')
+          .eq('is_deleted', false)
           .order('created_at', { ascending: false }),
         supabase.from('objects').select('id, name').is('is_deleted', false).order('name')
       ]);
