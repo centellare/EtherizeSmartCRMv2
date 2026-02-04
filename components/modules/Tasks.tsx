@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase, measureQuery } from '../../lib/supabase';
 import { Button, Input, Select, Badge, Modal, ConfirmModal, Toast } from '../ui';
@@ -122,24 +121,24 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     }
   }, [profile?.id, isSpecialist, tasks.length]);
 
-  // Realtime Logic
+  // Триггер обновления №1: Любое изменение значений в компонентах фильтров
   useEffect(() => {
     fetchData();
+  }, [fetchData, activeTab, filterMode, activeRange]);
 
+  // Realtime Logic
+  useEffect(() => {
     const channel = supabase.channel('tasks_smart_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async (payload) => {
         if (payload.eventType === 'INSERT') {
-          // If new task is pending, add it. If completed, ignore (it goes to archive)
           if (payload.new.status === 'pending' && !payload.new.is_deleted) {
              const newTask = await fetchSingleTask(payload.new.id);
              if (newTask) setTasks(prev => [newTask, ...prev]);
           }
         } else if (payload.eventType === 'UPDATE') {
           if (payload.new.is_deleted || payload.new.status === 'completed') {
-             // If deleted or moved to completed -> remove from active list
              setTasks(prev => prev.filter(t => t.id !== payload.new.id));
           } else {
-             // If updated and still pending -> update in place
              const updatedTask = await fetchSingleTask(payload.new.id);
              if (updatedTask) setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
           }
@@ -148,15 +147,12 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_checklists' }, async (payload) => {
-        // When a checklist item changes, we need to refresh the parent task to show correct progress/items
-        // Casting to any to avoid TS errors on payload.new/old properties
         const newRecord = payload.new as any;
         const oldRecord = payload.old as any;
         const taskId = newRecord.task_id || oldRecord.task_id;
         
         if (taskId) {
            const updatedTask = await fetchSingleTask(taskId);
-           // Only update if the task is currently in our list
            if (updatedTask && updatedTask.status === 'pending') {
              setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
            }
@@ -206,13 +202,14 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     } finally {
       setLoading(false);
     }
-  }, [profile?.id, isSpecialist, isManager, archiveDates, filterMode, archiveTasks.length]);
+  }, [profile?.id, isSpecialist, isManager, archiveDates, filterMode]);
 
+  // Триггер обновления №1 для архива
   useEffect(() => {
     if (activeTab === 'archive') {
       fetchArchive(0);
     }
-  }, [activeTab, fetchArchive]);
+  }, [activeTab, fetchArchive, archiveDates, filterMode]);
 
   const baseVisibleTasks = useMemo(() => {
     if (isAdmin) return tasks;
@@ -247,7 +244,6 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
       case 'today': 
         list = list.filter((t: Task) => {
           if (!t.deadline) return false;
-          // Используем нормализацию даты (отсекаем время) для корректного сравнения
           const taskDate = getMinskISODate(t.deadline);
           return taskDate === todayStr || taskDate === tomorrowStr;
         });
@@ -262,14 +258,12 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         if (activeRange.start) {
           list = list.filter(t => {
             if (!t.deadline) return false;
-            // Нормализуем дату дедлайна до YYYY-MM-DD для корректного сравнения
             return getMinskISODate(t.deadline) >= activeRange.start;
           });
         }
         if (activeRange.end) {
           list = list.filter(t => {
             if (!t.deadline) return false;
-            // Нормализуем дату дедлайна до YYYY-MM-DD для корректного сравнения
             return getMinskISODate(t.deadline) <= activeRange.end;
           });
         }
@@ -314,7 +308,6 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
   const handleSaveTask = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Валидация
     if (!createForm.object_id) {
       setToast({ message: 'Выберите объект', type: 'error' });
       return;
@@ -348,16 +341,13 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
 
         if (error) throw error;
       } else {
-        // При создании удаляем ID из объекта, чтобы Supabase сгенерировал UUID автоматически
         const { id, checklist, ...insertData } = createForm;
-        
-        // FIX: Находим объект и его текущий этап
         const selectedObj = objects.find(o => o.id === createForm.object_id);
         const stageId = selectedObj?.current_stage || null;
 
         const { data, error } = await supabase.from('tasks').insert([{
           ...insertData,
-          stage_id: stageId, // Присваиваем этап, чтобы задача появилась на доске объекта
+          stage_id: stageId,
           created_by: profile.id,
           status: 'pending'
         }]).select('id').single();
@@ -366,7 +356,6 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         if (data) taskId = data.id;
       }
 
-      // Обработка чек-листа
       if (taskId) {
         if (isEditMode) {
           const currentIds = createForm.checklist.filter(c => c.id).map(c => c.id);
@@ -395,7 +384,8 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
       setToast({ message: isEditMode ? 'Задача обновлена' : 'Задача создана', type: 'success' });
       setIsCreateModalOpen(false);
       resetForm();
-      // State updates automatically via Realtime
+      // Триггер обновления №2: Успешное завершение функций добавления/редактирования
+      await fetchData(true);
     } catch (err: any) {
       console.error('Save task error:', err);
       setToast({ message: `Ошибка: ${err.message || 'Не удалось сохранить'}`, type: 'error' });
@@ -439,7 +429,8 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         setToast({ message: 'Задача удалена', type: 'success' });
         setIsTaskDetailsModalOpen(false);
         setDeleteConfirm({ open: false, id: null });
-        // Realtime handles state removal
+        // Триггер обновления №2
+        await fetchData(true);
       }
     } finally {
       setLoading(false);
@@ -452,7 +443,6 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     const isExecutor = task.assigned_to === profile.id;
     if (!isExecutor && !isAdmin) return;
 
-    // Optimistic Update
     const updater = (t: Task) => {
       if (t.id === taskId && t.checklist) {
         return {
@@ -477,7 +467,6 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
       });
     }
     
-    // DB Update (Realtime will confirm)
     await supabase.from('task_checklists').update({ is_completed: !currentStatus }).eq('id', itemId);
   };
 

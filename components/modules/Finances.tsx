@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, measureQuery } from '../../lib/supabase';
 import { Button, Input, Select, Modal, Badge, ConfirmModal, Toast } from '../ui';
@@ -157,8 +156,12 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     }
   }, [profile?.id, isSpecialist, transactions.length]);
 
+  // Триггер обновления №1: Любое изменение значений в компонентах фильтров
   useEffect(() => {
     fetchData();
+  }, [fetchData, typeFilter, startDate, endDate, summaryFilter, unclosedDocsOnly, docSearchQuery]);
+
+  useEffect(() => {
     const tChannel = supabase.channel('finances_smart_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, async (payload) => {
         if (payload.eventType === 'INSERT') {
@@ -176,8 +179,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transaction_payments' }, async (payload) => {
-        // Find transaction ID from payment
-        // Casting to any to avoid TS errors on payload.new/old properties
         const newRecord = payload.new as any;
         const oldRecord = payload.old as any;
         const tid = newRecord.transaction_id || oldRecord.transaction_id;
@@ -243,7 +244,8 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       setIsMainModalOpen(false); 
       resetForm();
       setToast({message: 'Запись создана', type: 'success'}); 
-      // Realtime update handles list refresh
+      // Триггер обновления №2: Успешное завершение функций добавления/редактирования
+      await fetchData(true);
     }
     setLoading(false);
   };
@@ -269,7 +271,8 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       setIsEditingDoc(false);
       setIsPaymentDetailsModalOpen(false);
       setToast({message: 'Данные платежа успешно обновлены', type: 'success'});
-      // Realtime update handles list refresh
+      // Триггер обновления №2
+      await fetchData(true);
     } else {
       console.error('Update Payment Error:', error);
       setToast({message: `Ошибка: ${error.message}. Проверьте права доступа (RLS).`, type: 'error'});
@@ -296,6 +299,8 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     if (!error) {
       setIsApprovalModalOpen(false);
       setToast({message: 'Расход утвержден', type: 'success'});
+      // Триггер обновления №2
+      await fetchData(true);
     }
     setLoading(false);
   };
@@ -312,6 +317,8 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     if (!error) {
       setIsRejectConfirmOpen(false);
       setToast({message: 'Заявка отклонена', type: 'success'});
+      // Триггер обновления №2
+      await fetchData(true);
     }
     setLoading(false);
   };
@@ -327,6 +334,8 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     if (!error) {
       setIsFinalizeConfirmOpen(false);
       setToast({message: 'Приход финализирован по факту', type: 'success'});
+      // Триггер обновления №2
+      await fetchData(true);
     }
     setLoading(false);
   };
@@ -392,7 +401,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       )}
 
       <div className="bg-white rounded-[32px] border border-[#e1e2e1] overflow-hidden shadow-sm">
-        {/* ADDED: Wrapper for horizontal scroll on mobile */}
         <div className="overflow-x-auto">
           <table className="w-full text-left min-w-[800px]">
             <thead className="bg-slate-50 border-b">
@@ -530,7 +538,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         </div>
       </div>
 
-      {/* Модалка просмотра/редактирования деталей платежа и документа */}
       <Modal isOpen={isPaymentDetailsModalOpen} onClose={() => setIsPaymentDetailsModalOpen(false)} title={isEditingDoc ? "Редактирование данных" : "Детали платежа"}>
         {selectedPayment && (
           <form onSubmit={handleUpdatePaymentDoc} className="space-y-6">
@@ -644,7 +651,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         )}
       </Modal>
 
-      {/* Модалка деталей транзакции */}
       <Modal isOpen={isDetailsModalOpen} onClose={() => setIsDetailsModalOpen(false)} title="Детали финансовой записи">
         {selectedTrans && (
           <div className="space-y-6">
@@ -682,7 +688,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         )}
       </Modal>
 
-      {/* Основная форма создания */}
       <Modal isOpen={isMainModalOpen} onClose={() => setIsMainModalOpen(false)} title={formData.type === 'income' ? 'План прихода' : 'Заявка на расход'}>
         <form onSubmit={handleCreateTransaction} className="space-y-4">
           <Select label="Объект" required value={formData.object_id} onChange={(e:any) => setFormData({ ...formData, object_id: e.target.value })} options={[{value: '', label: 'Выберите объект'}, ...objects.map(o => ({value: o.id, label: o.name}))]} icon="business" />
@@ -710,7 +715,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         </form>
       </Modal>
 
-      {/* Внесение платежа (Приход) */}
       <Modal isOpen={isPaymentModalOpen} onClose={() => setIsPaymentModalOpen(false)} title="Внести оплату">
         {selectedTrans && (
           <form onSubmit={async (e) => {
@@ -732,7 +736,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
               await supabase.from('transactions').update({ status: newFact >= selectedTrans.amount - 0.01 ? 'approved' : 'partial', fact_amount: newFact }).eq('id', selectedTrans.id);
               setIsPaymentModalOpen(false); 
               setToast({message: 'Платеж внесен', type: 'success'});
-              // Realtime handles list refresh
+              await fetchData(true);
             } else {
               setToast({message: `Ошибка: ${error.message}`, type: 'error'});
             }
@@ -783,7 +787,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         )}
       </Modal>
 
-      {/* Утверждение расхода */}
       <Modal isOpen={isApprovalModalOpen} onClose={() => setIsApprovalModalOpen(false)} title="Утверждение расхода">
         {selectedTrans && (
           <form onSubmit={handleApproveExpense} className="space-y-4">
