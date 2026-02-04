@@ -114,6 +114,12 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
 
   const handleHardDelete = async (id: string, table: string) => {
     setLoading(true);
+    
+    // CRITICAL: Cleanup for inventory items (delete related history first to avoid FK constraint)
+    if (table === 'inventory_items') {
+      await supabase.from('inventory_history').delete().eq('item_id', id);
+    }
+
     await supabase.from(table).delete().eq('id', id);
     setDeleteConfirm({ open: false, item: null });
     await fetchDeleted();
@@ -142,6 +148,10 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
 
         await supabase.from(table).update(updates).in('id', ids);
       } else {
+        // CRITICAL: Cleanup for inventory items history
+        if (table === 'inventory_items') {
+           await supabase.from('inventory_history').delete().in('item_id', ids);
+        }
         await supabase.from(table).delete().in('id', ids);
       }
     }
@@ -161,6 +171,10 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
     });
 
     for (const table in grouped) {
+      // CRITICAL: Cleanup for inventory items history
+      if (table === 'inventory_items') {
+         await supabase.from('inventory_history').delete().in('item_id', grouped[table]);
+      }
       await supabase.from(table).delete().in('id', grouped[table]);
     }
 
@@ -222,7 +236,6 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
           </div>
         )}
 
-        {/* ADDED: Wrapper for horizontal scroll on mobile */}
         <div className="overflow-x-auto">
           <table className="w-full text-left min-w-[600px]">
             <thead className="bg-slate-50 border-b">
@@ -306,7 +319,6 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
         </div>
       </div>
 
-      {/* Confirmation Modals */}
       <ConfirmModal 
         isOpen={deleteConfirm.open}
         onClose={() => setDeleteConfirm({ open: false, item: null })}

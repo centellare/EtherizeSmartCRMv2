@@ -53,9 +53,9 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
     
     try {
         const now = new Date().toISOString();
-        // Soft delete items first
+        // Soft delete items first with timestamp
         await supabase.from('inventory_items').update({ is_deleted: true, deleted_at: now }).eq('catalog_id', id);
-        // Soft delete catalog
+        // Soft delete catalog with timestamp
         await supabase.from('inventory_catalog').update({ is_deleted: true, deleted_at: now }).eq('id', id);
         
         setToast({ message: 'Категория и связанные товары перемещены в корзину', type: 'success' });
@@ -71,7 +71,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
     setItems(prev => prev.filter(i => i.id !== id));
 
     try {
-        // Soft delete
+        // Soft delete with explicit timestamp
         await supabase.from('inventory_items')
           .update({ is_deleted: true, deleted_at: new Date().toISOString() })
           .eq('id', id);
