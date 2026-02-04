@@ -93,6 +93,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
         onDeploy={(item) => openModal('deploy_item', item)}
         onReplace={(item) => openModal('replace_item', item)}
         onEdit={(item, type) => openModal(type === 'catalog' ? 'edit_catalog' : 'edit_item', item)}
+        onRefresh={fetchData}
       />
 
       <InventoryModal 

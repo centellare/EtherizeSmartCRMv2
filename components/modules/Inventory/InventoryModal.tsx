@@ -20,7 +20,6 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
   isOpen, onClose, mode, catalog, objects, items, selectedItem, profile, onSuccess 
 }) => {
   const [loading, setLoading] = useState(false);
-  const isAdmin = profile?.role === 'admin';
   
   // Create/Edit Catalog State
   const [catForm, setCatForm] = useState({ 
@@ -111,35 +110,6 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
     if (!error) onSuccess();
   };
 
-  const handleDeleteCatalog = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!selectedItem || !window.confirm('Вы уверены, что хотите удалить этот тип оборудования? Все связанные товары на складе также будут удалены (скрыты).')) return;
-    
-    console.log('Начало удаления (Soft Delete)', selectedItem.id);
-    setLoading(true);
-    
-    try {
-        // 1. Cascade Soft Delete: Mark all items of this catalog as deleted
-        await supabase.from('inventory_items')
-          .update({ is_deleted: true })
-          .eq('catalog_id', selectedItem.id);
-
-        // 2. Soft Delete the catalog item itself
-        const { error } = await supabase.from('inventory_catalog')
-          .update({ is_deleted: true })
-          .eq('id', selectedItem.id);
-          
-        if (error) throw error;
-        
-        onSuccess();
-    } catch (e: any) {
-        console.error('Error deleting catalog:', e);
-        alert('Ошибка при удалении: ' + e.message);
-    } finally {
-        setLoading(false);
-    }
-  };
-
   const handleAddItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!itemForm.catalog_id) return;
@@ -179,30 +149,6 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
     }).eq('id', selectedItem.id);
     setLoading(false);
     if (!error) onSuccess();
-  };
-
-  const handleDeleteItem = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!selectedItem || !window.confirm('Вы уверены? Единица товара будет перемещена в корзину.')) return;
-    
-    console.log('Начало удаления товара (Soft Delete)', selectedItem.id);
-    setLoading(true);
-    
-    try {
-        // Soft delete the item
-        const { error: itemError } = await supabase.from('inventory_items')
-          .update({ is_deleted: true })
-          .eq('id', selectedItem.id);
-          
-        if (itemError) throw itemError;
-
-        onSuccess();
-    } catch (e: any) {
-        console.error('Error deleting item:', e);
-        alert('Ошибка при удалении: ' + e.message);
-    } finally {
-        setLoading(false);
-    }
   };
 
   const handleDeployItem = async (e: React.FormEvent) => {
@@ -380,18 +326,8 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
                     <textarea className="w-full bg-white border border-slate-200 rounded-xl p-4 text-sm" value={catForm.description} onChange={(e) => setCatForm({...catForm, description: e.target.value})} />
                 </div>
                 
-                <div className="flex gap-3 pt-4">
-                    {mode === 'edit_catalog' && isAdmin && (
-                        <button 
-                            type="button" 
-                            className="flex-1 h-12 rounded-full bg-red-50 text-red-600 font-bold text-sm hover:bg-red-600 hover:text-white transition-all" 
-                            disabled={loading}
-                            onClick={handleDeleteCatalog}
-                        >
-                            Удалить тип
-                        </button>
-                    )}
-                    <Button type="submit" className={mode === 'edit_catalog' ? 'flex-[2] h-12' : 'w-full h-12'} loading={loading}>{mode === 'edit_catalog' ? 'Сохранить изменения' : 'Создать'}</Button>
+                <div className="pt-2">
+                    <Button type="submit" className="w-full h-12" loading={loading}>{mode === 'edit_catalog' ? 'Сохранить изменения' : 'Создать'}</Button>
                 </div>
             </form>
         )}
@@ -438,18 +374,8 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
                     placeholder="Необязательно"
                 />
                 
-                <div className="flex gap-3 pt-4">
-                    {mode === 'edit_item' && isAdmin && (
-                        <button 
-                            type="button" 
-                            className="flex-1 h-12 rounded-full bg-red-50 text-red-600 font-bold text-sm hover:bg-red-600 hover:text-white transition-all" 
-                            disabled={loading}
-                            onClick={handleDeleteItem}
-                        >
-                            Удалить запись
-                        </button>
-                    )}
-                    <Button type="submit" className={mode === 'edit_item' ? 'flex-[2] h-12' : 'w-full h-12'} loading={loading}>{mode === 'edit_item' ? 'Сохранить изменения' : 'Принять'}</Button>
+                <div className="pt-2">
+                    <Button type="submit" className="w-full h-12" loading={loading}>{mode === 'edit_item' ? 'Сохранить изменения' : 'Принять'}</Button>
                 </div>
             </form>
         )}

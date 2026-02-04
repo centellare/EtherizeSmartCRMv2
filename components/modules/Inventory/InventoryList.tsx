@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
+import { supabase } from '../../../lib/supabase';
 import { InventoryCatalogItem, InventoryItem } from '../../../types';
 import { Badge, Input, Select } from '../../ui';
 import { formatDate, getMinskISODate } from '../../../lib/dateUtils';
@@ -13,9 +14,10 @@ interface InventoryListProps {
   onDeploy: (item: InventoryItem) => void;
   onReplace: (item: InventoryItem) => void;
   onEdit: (item: any, type: 'catalog' | 'item') => void;
+  onRefresh: () => void;
 }
 
-const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items, loading, profile, onDeploy, onReplace, onEdit }) => {
+const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items, loading, profile, onDeploy, onReplace, onEdit, onRefresh }) => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -23,6 +25,31 @@ const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items
   const [dateTo, setDateTo] = useState('');
 
   const isAdmin = profile?.role === 'admin';
+
+  const handleDeleteItem = async (id: string) => {
+    if (!window.confirm('Вы уверены, что хотите удалить эту единицу товара? Она будет перемещена в корзину.')) return;
+    try {
+      await supabase.from('inventory_items').update({ is_deleted: true }).eq('id', id);
+      onRefresh();
+    } catch (e) {
+      console.error(e);
+      alert('Ошибка при удалении');
+    }
+  };
+
+  const handleDeleteCatalog = async (id: string) => {
+    if (!window.confirm('ВНИМАНИЕ: Вы удаляете тип оборудования из справочника. Все товары этого типа на складе также будут помечены как удаленные. Продолжить?')) return;
+    try {
+      // Cascade soft delete items
+      await supabase.from('inventory_items').update({ is_deleted: true }).eq('catalog_id', id);
+      // Delete catalog item
+      await supabase.from('inventory_catalog').update({ is_deleted: true }).eq('id', id);
+      onRefresh();
+    } catch (e) {
+      console.error(e);
+      alert('Ошибка при удалении');
+    }
+  };
 
   const filteredItems = useMemo(() => {
     let list = items;
@@ -100,18 +127,28 @@ const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items
           {filteredCatalog.map(c => (
             <div key={c.id} className="bg-white p-5 rounded-[24px] border border-slate-200 relative group">
               {isAdmin && (
-                <button 
-                  onClick={(e) => { e.stopPropagation(); onEdit(c, 'catalog'); }}
-                  className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
-                >
-                  <span className="material-icons-round text-sm">edit</span>
-                </button>
+                <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); onEdit(c, 'catalog'); }}
+                    className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all"
+                    title="Редактировать"
+                  >
+                    <span className="material-icons-round text-sm">edit</span>
+                  </button>
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); handleDeleteCatalog(c.id); }}
+                    className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center transition-all"
+                    title="Удалить"
+                  >
+                    <span className="material-icons-round text-sm">delete</span>
+                  </button>
+                </div>
               )}
-              <div className="flex justify-between items-start mb-2 pr-8">
+              <div className="flex justify-between items-start mb-2 pr-20">
                 <div>
                   <div className="flex gap-2 mb-1">
                     <Badge color={c.item_type === 'product' ? 'blue' : 'amber'}>{c.item_type === 'product' ? 'Оборудование' : 'Материал'}</Badge>
-                    {c.sku && <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">SKU: {c.sku}</span>}
+                    {c.sku && <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">SKU: {c.sku}</span>}
                   </div>
                   <h4 className="font-bold text-slate-900 mt-1">{c.name}</h4>
                 </div>
@@ -304,13 +341,22 @@ const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items
                            </button>
                         )}
                         {isAdmin && (
-                          <button 
-                            onClick={() => onEdit(item, 'item')}
-                            className="w-8 h-8 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
-                            title="Редактировать запись"
-                          >
-                            <span className="material-icons-round text-sm">edit</span>
-                          </button>
+                          <>
+                            <button 
+                              onClick={() => onEdit(item, 'item')}
+                              className="w-8 h-8 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
+                              title="Редактировать запись"
+                            >
+                              <span className="material-icons-round text-sm">edit</span>
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteItem(item.id)}
+                              className="w-8 h-8 rounded-xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
+                              title="Удалить запись"
+                            >
+                              <span className="material-icons-round text-sm">delete</span>
+                            </button>
+                          </>
                         )}
                       </div>
                     </td>
