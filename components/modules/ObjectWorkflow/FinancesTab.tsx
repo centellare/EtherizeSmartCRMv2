@@ -270,7 +270,9 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
        </div>
 
        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          <StatCard label="Баланс" val={formatBYN(summary.balance)} color={summary.balance >= 0 ? 'emerald' : 'red'} active={!activeAnalysisFilter} onClick={() => setActiveAnalysisFilter(null)} />
+          {!isSpecialist && (
+            <StatCard label="Баланс" val={formatBYN(summary.balance)} color={summary.balance >= 0 ? 'emerald' : 'red'} active={!activeAnalysisFilter} onClick={() => setActiveAnalysisFilter(null)} />
+          )}
           {!isSpecialist && (
             <>
               <StatCard label="Приходы" val={formatBYN(summary.incomeTotal)} color="slate" active={activeAnalysisFilter === 'income'} onClick={() => setActiveAnalysisFilter('income')} />
