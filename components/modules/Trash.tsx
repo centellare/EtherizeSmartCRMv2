@@ -26,11 +26,20 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
 
   const fetchDeleted = async () => {
     setLoading(true);
-    const [{ data: objects }, { data: clients }, { data: tasks }, { data: transactions }] = await Promise.all([
+    const [
+      { data: objects }, 
+      { data: clients }, 
+      { data: tasks }, 
+      { data: transactions },
+      { data: inventoryCatalog },
+      { data: inventoryItems }
+    ] = await Promise.all([
       supabase.from('objects').select('id, name, deleted_at').is('is_deleted', true),
       supabase.from('clients').select('id, name, deleted_at').not('deleted_at', 'is', null),
       supabase.from('tasks').select('id, title, deleted_at').is('is_deleted', true),
-      supabase.from('transactions').select('id, category, amount, type, deleted_at').not('deleted_at', 'is', null)
+      supabase.from('transactions').select('id, category, amount, type, deleted_at').not('deleted_at', 'is', null),
+      supabase.from('inventory_catalog').select('id, name, deleted_at').is('is_deleted', true),
+      supabase.from('inventory_items').select('id, serial_number, deleted_at, catalog:inventory_catalog(name, unit)').is('is_deleted', true)
     ]);
     
     const combined: TrashItem[] = [
@@ -44,8 +53,16 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
         table: 'transactions',
         deleted_at: i.deleted_at
       })),
+      ...(inventoryCatalog || []).map(i => ({ id: i.id, name: i.name, type: 'Тип оборудования', table: 'inventory_catalog', deleted_at: i.deleted_at })),
+      ...(inventoryItems || []).map((i: any) => ({ 
+        id: i.id, 
+        name: `${i.catalog?.name || 'Товар'} ${i.serial_number ? `(S/N: ${i.serial_number})` : ''}`, 
+        type: 'Товар со склада', 
+        table: 'inventory_items', 
+        deleted_at: i.deleted_at 
+      })),
     ];
-    setDeletedItems(combined.sort((a,b) => new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime()));
+    setDeletedItems(combined.sort((a,b) => new Date(b.deleted_at || 0).getTime() - new Date(a.deleted_at || 0).getTime()));
     setLoading(false);
   };
 
@@ -58,6 +75,7 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
       if (filterType === 'clients') return item.table === 'clients';
       if (filterType === 'tasks') return item.table === 'tasks';
       if (filterType === 'finances') return item.table === 'transactions';
+      if (filterType === 'inventory') return item.table === 'inventory_items' || item.table === 'inventory_catalog';
       return true;
     });
   }, [deletedItems, filterType]);
@@ -82,7 +100,14 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
     setLoading(true);
     const field = (table === 'clients' || table === 'transactions') ? 'deleted_at' : 'is_deleted';
     const value = (table === 'clients' || table === 'transactions') ? null : false;
-    await supabase.from(table).update({ [field]: value }).eq('id', id);
+    
+    // For inventory, we also want to clear deleted_at timestamp if we use is_deleted
+    const updates: any = { [field]: value };
+    if (field === 'is_deleted') {
+       updates.deleted_at = null;
+    }
+
+    await supabase.from(table).update(updates).eq('id', id);
     await fetchDeleted();
     setLoading(false);
   };
@@ -109,7 +134,13 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
       if (action === 'restore') {
         const field = (table === 'clients' || table === 'transactions') ? 'deleted_at' : 'is_deleted';
         const value = (table === 'clients' || table === 'transactions') ? null : false;
-        await supabase.from(table).update({ [field]: value }).in('id', ids);
+        
+        const updates: any = { [field]: value };
+        if (field === 'is_deleted') {
+           updates.deleted_at = null;
+        }
+
+        await supabase.from(table).update(updates).in('id', ids);
       } else {
         await supabase.from(table).delete().in('id', ids);
       }
@@ -156,7 +187,8 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
                 { value: 'objects', label: 'Объекты' },
                 { value: 'clients', label: 'Клиенты' },
                 { value: 'tasks', label: 'Задачи' },
-                { value: 'finances', label: 'Финансы' }
+                { value: 'finances', label: 'Финансы' },
+                { value: 'inventory', label: 'Склад' }
               ]}
               icon="filter_list"
               className="!h-11"
@@ -224,7 +256,12 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
                     </td>
                     <td className="p-5 font-bold text-slate-900">{item.name}</td>
                     <td className="p-5">
-                      <Badge color={item.table === 'transactions' ? 'emerald' : item.table === 'objects' ? 'blue' : 'slate'}>
+                      <Badge color={
+                        item.table === 'transactions' ? 'emerald' : 
+                        item.table === 'objects' ? 'blue' : 
+                        item.table === 'inventory_items' ? 'amber' :
+                        item.table === 'inventory_catalog' ? 'purple' : 'slate'
+                      }>
                         {item.type}
                       </Badge>
                     </td>

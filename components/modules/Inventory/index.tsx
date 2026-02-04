@@ -52,10 +52,13 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
     setCatalog(prev => prev.filter(c => c.id !== id));
     
     try {
-        await supabase.from('inventory_items').update({ is_deleted: true }).eq('catalog_id', id);
-        await supabase.from('inventory_catalog').update({ is_deleted: true }).eq('id', id);
-        setToast({ message: 'Категория и связанные товары удалены', type: 'success' });
-        // No need to fetch data again if optimistic update worked
+        const now = new Date().toISOString();
+        // Soft delete items first
+        await supabase.from('inventory_items').update({ is_deleted: true, deleted_at: now }).eq('catalog_id', id);
+        // Soft delete catalog
+        await supabase.from('inventory_catalog').update({ is_deleted: true, deleted_at: now }).eq('id', id);
+        
+        setToast({ message: 'Категория и связанные товары перемещены в корзину', type: 'success' });
     } catch (e) {
         console.error(e);
         setToast({ message: 'Ошибка при удалении', type: 'error' });
@@ -68,8 +71,20 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
     setItems(prev => prev.filter(i => i.id !== id));
 
     try {
-        await supabase.from('inventory_items').update({ is_deleted: true }).eq('id', id);
-        setToast({ message: 'Единица товара удалена', type: 'success' });
+        // Soft delete
+        await supabase.from('inventory_items')
+          .update({ is_deleted: true, deleted_at: new Date().toISOString() })
+          .eq('id', id);
+        
+        // Log history
+        await supabase.from('inventory_history').insert([{
+            item_id: id,
+            action_type: 'scrap',
+            created_by: profile.id,
+            comment: `Перемещено в корзину пользователем ${profile.full_name || 'System'}`
+        }]);
+
+        setToast({ message: 'Единица товара перемещена в корзину', type: 'success' });
     } catch (e) {
         console.error(e);
         setToast({ message: 'Ошибка при удалении', type: 'error' });

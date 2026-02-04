@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo } from 'react';
 import { InventoryCatalogItem, InventoryItem } from '../../../types';
-import { Badge, Input, Select } from '../../ui';
+import { Badge, Input, Select, ConfirmModal } from '../../ui';
 import { formatDate, getMinskISODate } from '../../../lib/dateUtils';
 
 interface InventoryListProps {
@@ -27,6 +27,11 @@ const InventoryList: React.FC<InventoryListProps> = ({
   const [typeFilter, setTypeFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  
+  // State for delete confirmation
+  const [deleteConfig, setDeleteConfig] = useState<{ open: boolean; id: string | null; type: 'catalog' | 'item' }>({ 
+    open: false, id: null, type: 'item' 
+  });
 
   const isAdmin = profile?.role === 'admin';
 
@@ -77,6 +82,17 @@ const InventoryList: React.FC<InventoryListProps> = ({
   const formatCurrency = (val: number) => 
     new Intl.NumberFormat('ru-BY', { style: 'currency', currency: 'BYN', maximumFractionDigits: 2 }).format(val);
 
+  const handleConfirmDelete = () => {
+    if (deleteConfig.id) {
+      if (deleteConfig.type === 'catalog') {
+        onDeleteCatalog(deleteConfig.id);
+      } else {
+        onDeleteItem(deleteConfig.id);
+      }
+    }
+    setDeleteConfig({ ...deleteConfig, open: false });
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-20">
@@ -119,12 +135,9 @@ const InventoryList: React.FC<InventoryListProps> = ({
                     type="button"
                     className="w-8 h-8 rounded-full bg-slate-100 text-red-600 hover:bg-red-50 flex items-center justify-center transition-all"
                     onClick={(e) => { 
-                      console.log('Delete catalog clicked');
                       e.preventDefault();
                       e.stopPropagation(); 
-                      if (window.confirm('ВНИМАНИЕ: Вы удаляете тип оборудования. Все товары этого типа будут скрыты. Продолжить?')) {
-                        onDeleteCatalog(c.id);
-                      }
+                      setDeleteConfig({ open: true, id: c.id, type: 'catalog' });
                     }}
                     title="Удалить"
                   >
@@ -155,6 +168,18 @@ const InventoryList: React.FC<InventoryListProps> = ({
             </div>
           ))}
         </div>
+        
+        {/* Confirm Modal Rendered at the end of the component */}
+        <ConfirmModal 
+          isOpen={deleteConfig.open}
+          onClose={() => setDeleteConfig({ ...deleteConfig, open: false })}
+          onConfirm={handleConfirmDelete}
+          title={deleteConfig.type === 'catalog' ? "Удаление категории" : "Удаление товара"}
+          message={deleteConfig.type === 'catalog' 
+            ? "ВНИМАНИЕ: Вы удаляете тип оборудования из справочника. Это скроет все существующие товары этого типа. Продолжить?" 
+            : "Вы уверены, что хотите удалить эту единицу товара? Она будет перемещена в корзину."}
+          confirmVariant="danger"
+        />
       </div>
     );
   }
@@ -357,12 +382,9 @@ const InventoryList: React.FC<InventoryListProps> = ({
                               type="button"
                               className="w-8 h-8 rounded-xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
                               onClick={(e) => {
-                                console.log('Delete item clicked');
                                 e.preventDefault();
                                 e.stopPropagation();
-                                if (window.confirm('Вы уверены, что хотите удалить эту единицу товара?')) {
-                                  onDeleteItem(item.id);
-                                }
+                                setDeleteConfig({ open: true, id: item.id, type: 'item' });
                               }}
                               title="Удалить запись"
                             >
@@ -379,6 +401,18 @@ const InventoryList: React.FC<InventoryListProps> = ({
           </table>
         </div>
       </div>
+
+      {/* Confirm Modal for Items */}
+      <ConfirmModal 
+        isOpen={deleteConfig.open}
+        onClose={() => setDeleteConfig({ ...deleteConfig, open: false })}
+        onConfirm={handleConfirmDelete}
+        title={deleteConfig.type === 'catalog' ? "Удаление категории" : "Удаление товара"}
+        message={deleteConfig.type === 'catalog' 
+          ? "ВНИМАНИЕ: Вы удаляете тип оборудования из справочника. Это скроет все существующие товары этого типа. Продолжить?" 
+          : "Вы уверены, что хотите удалить эту единицу товара? Она будет перемещена в корзину."}
+        confirmVariant="danger"
+      />
     </div>
   );
 };
