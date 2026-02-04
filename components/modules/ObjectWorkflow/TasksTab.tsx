@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { Button, Modal, Input, Select, ConfirmModal, Badge } from '../../ui';
@@ -317,32 +316,31 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
-      <div className={`flex flex-col md:flex-row justify-between items-center p-6 rounded-[28px] border transition-all gap-4 ${isViewingHistory ? 'bg-amber-50 border-amber-200 shadow-inner' : 'bg-white border-slate-200 shadow-sm'}`}>
-         <div className="text-center md:text-left">
-            <h4 className={`font-bold flex items-center justify-center md:justify-start gap-2 ${isViewingHistory ? 'text-amber-800' : 'text-slate-800'}`}>
+      <div className={`flex flex-col md:flex-row justify-between items-center p-4 sm:p-6 rounded-[28px] border transition-all gap-4 ${isViewingHistory ? 'bg-amber-50 border-amber-200 shadow-inner' : 'bg-white border-slate-200 shadow-sm'}`}>
+         <div className="text-center md:text-left min-w-0 flex-grow pr-4">
+            <h4 className={`font-bold flex items-center justify-center md:justify-start gap-2 truncate ${isViewingHistory ? 'text-amber-800' : 'text-slate-800'}`}>
               {isViewingHistory && <span className="material-icons-round text-lg">history</span>}
-              {isViewingHistory ? 'Просмотр этапа: ' : 'Текущий этап: '}
-              {STAGES.find(s=>s.id === viewedStageId)?.label}
+              <span className="truncate">{isViewingHistory ? 'Просмотр: ' : 'Текущий: '}{STAGES.find(s=>s.id === viewedStageId)?.label}</span>
             </h4>
             {isViewingHistory && <p className="text-[10px] font-bold text-amber-600 uppercase mt-1">Данный этап уже был завершен или изменен</p>}
          </div>
-         <div className="flex flex-wrap justify-center gap-2">
+         <div className="flex flex-wrap justify-center md:justify-end gap-2 shrink-0">
            {!isViewingHistory ? (
              <>
                {object.current_status === 'review_required' && canManage && (
-                 <Button variant="tonal" className="h-10 px-6 text-xs" icon="verified" onClick={() => updateStatus('in_work')}>Принять работу</Button>
+                 <Button variant="tonal" className="h-10 px-4 text-xs" icon="verified" onClick={() => updateStatus('in_work')}>Принять работу</Button>
                )}
                {isSpecialist && object.current_status !== 'review_required' && (
-                 <Button variant="tonal" className="h-10 px-6 text-xs" icon="send" onClick={() => updateStatus('review_required')}>Сдать этап на проверку</Button>
+                 <Button variant="tonal" className="h-10 px-4 text-xs" icon="send" onClick={() => updateStatus('review_required')}>Сдать на проверку</Button>
                )}
                {canManage && !['review_required', 'frozen', 'completed'].includes(object.current_status) && (
                  <>
                   {canJumpForward ? (
-                    <Button variant="primary" className="h-10 px-6 text-xs bg-amber-600 hover:bg-amber-700" icon="fast_forward" onClick={onJumpForward}>
+                    <Button variant="primary" className="h-10 px-4 text-xs bg-amber-600 hover:bg-amber-700" icon="fast_forward" onClick={onJumpForward}>
                       Вернуться на {STAGES.find(s => s.id === object.rolled_back_from)?.label}
                     </Button>
                   ) : (
-                    <Button variant="tonal" className="h-10 px-6 text-xs" icon={object.current_stage === 'support' ? "task_alt" : "skip_next"} onClick={onStartNextStage}>
+                    <Button variant="tonal" className="h-10 px-4 text-xs" icon={object.current_stage === 'support' ? "task_alt" : "skip_next"} onClick={onStartNextStage}>
                       {object.current_stage === 'support' ? "Завершить проект" : "Завершить и далее"}
                     </Button>
                   )}
@@ -351,7 +349,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
              </>
            ) : (
              canManage && viewedStageId !== object.current_stage && (
-               <Button variant="secondary" className="h-10 px-6 text-xs" icon="settings_backup_restore" onClick={onRollback}>Вернуть объект на этот этап</Button>
+               <Button variant="secondary" className="h-10 px-4 text-xs" icon="settings_backup_restore" onClick={onRollback}>Вернуть объект на этот этап</Button>
              )
            )}
          </div>
@@ -359,9 +357,9 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
       <div className="grid grid-cols-1 gap-4">
          <div className="flex justify-between items-center mb-2 px-1">
-            <h5 className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Список задач этапа</h5>
+            <h5 className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Задачи этапа</h5>
             {!isViewingHistory && (
-              <Button className="h-8 text-xs" icon="add" onClick={handleOpenCreateModal} disabled={object.current_status === 'frozen'}>Добавить задачу</Button>
+              <Button className="h-8 px-3 text-[10px]" icon="add" onClick={handleOpenCreateModal} disabled={object.current_status === 'frozen'}>Добавить задачу</Button>
             )}
          </div>
          
@@ -378,8 +376,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
             return (
               <div key={task.id} onClick={() => { setSelectedTask(task); setIsTaskDetailsModalOpen(true); }}
-                className={`bg-white p-5 rounded-3xl border transition-all flex items-center justify-between group cursor-pointer hover:border-blue-300 ${task.status === 'completed' ? 'border-slate-100 opacity-60' : 'border-slate-200 shadow-sm'}`}>
-                <div className="flex items-center gap-4 flex-grow min-w-0 pr-4">
+                className={`bg-white p-4 sm:p-5 rounded-3xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between group cursor-pointer hover:border-blue-300 gap-4 ${task.status === 'completed' ? 'border-slate-100 opacity-60' : 'border-slate-200 shadow-sm'}`}>
+                <div className="flex items-start sm:items-center gap-4 flex-grow min-w-0 pr-0 sm:pr-4">
                     <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${task.status === 'completed' ? 'bg-emerald-50 text-emerald-500' : 'bg-blue-50 text-blue-500'}`}>
                       <span className="material-icons-round text-2xl">{task.status === 'completed' ? 'check_circle' : 'pending'}</span>
                     </div>
@@ -388,7 +386,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                         <p className={`font-medium truncate text-base ${task.status === 'completed' ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{task.title}</p>
                         {hasFiles && <span className="material-icons-round text-sm text-slate-400">attach_file</span>}
                       </div>
-                      <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5">
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
                         <p className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">{task.executor?.full_name}</p>
                         {totalCount > 0 && (
                           <div className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded text-[9px] font-bold text-slate-600">
@@ -397,26 +395,28 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                           </div>
                         )}
                         {task.deadline && (
-                           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${task.deadline < getMinskISODate() && task.status !== 'completed' ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-500'}`}>
+                           <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded whitespace-nowrap ${task.deadline < getMinskISODate() && task.status !== 'completed' ? 'bg-red-50 text-red-500' : 'bg-slate-100 text-slate-500'}`}>
                              До {formatDate(task.deadline)}
                            </span>
                         )}
                       </div>
                     </div>
                 </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {canEditDelete(task) && (
-                    <>
-                      <button onClick={(e) => handleOpenEditModal(task, e)} className="w-10 h-10 rounded-2xl bg-white border border-slate-100 flex items-center justify-center hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-all">
-                        <span className="material-icons-round text-lg">edit</span>
-                      </button>
-                      <button onClick={(e) => handleDeleteInit(task, e)} className="w-10 h-10 rounded-2xl bg-white border border-slate-100 flex items-center justify-center hover:bg-red-50 text-slate-400 hover:text-red-600 transition-all">
-                        <span className="material-icons-round text-lg">delete</span>
-                      </button>
-                    </>
-                  )}
+                <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 pt-3 sm:pt-0 border-t sm:border-t-0 border-slate-50 w-full sm:w-auto">
+                  <div className="flex gap-1">
+                    {canEditDelete(task) && (
+                      <>
+                        <button onClick={(e) => handleOpenEditModal(task, e)} className="w-10 h-10 rounded-2xl bg-white border border-slate-100 flex items-center justify-center hover:bg-blue-50 text-slate-400 hover:text-blue-600 transition-all">
+                          <span className="material-icons-round text-lg">edit</span>
+                        </button>
+                        <button onClick={(e) => handleDeleteInit(task, e)} className="w-10 h-10 rounded-2xl bg-white border border-slate-100 flex items-center justify-center hover:bg-red-50 text-slate-400 hover:text-red-600 transition-all">
+                          <span className="material-icons-round text-lg">delete</span>
+                        </button>
+                      </>
+                    )}
+                  </div>
                   {(task.executor?.id === profile.id || isAdmin) && task.status !== 'completed' && (
-                    <button onClick={(e) => { e.stopPropagation(); setSelectedTask(task); setIsTaskCloseModalOpen(true); }} className="w-10 h-10 rounded-2xl bg-[#f2f3f5] border border-[#e1e2e1] flex items-center justify-center hover:bg-emerald-500 hover:text-white transition-all text-[#444746]">
+                    <button onClick={(e) => { e.stopPropagation(); setSelectedTask(task); setIsTaskCloseModalOpen(true); }} className="w-10 h-10 rounded-2xl bg-[#f2f3f5] border border-[#e1e2e1] flex items-center justify-center hover:bg-emerald-500 hover:text-white transition-all text-[#444746] shrink-0">
                       <span className="material-icons-round text-lg">done</span>
                     </button>
                   )}
@@ -517,7 +517,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                 {selectedTask.completion_doc_link && (
                   <a href={selectedTask.completion_doc_link} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-100 rounded-xl hover:border-emerald-300 transition-colors">
                     <span className="material-icons-round text-emerald-600">verified</span>
-                    <span className="text-xs font-medium text-emerald-900 truncate">{selectedTask.completion_doc_name || 'Отчет о выполнении'}</span>
+                    <span className="text-xs font-medium text-slate-700 truncate">{selectedTask.completion_doc_name || 'Отчет о выполнении'}</span>
                   </a>
                 )}
               </div>

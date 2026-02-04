@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Modal, Input, Button, Badge } from './ui';
@@ -121,14 +120,14 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
       {/* Mobile Overlay */}
       {isMobileMenuOpen && (
         <div 
-          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 md:hidden animate-in fade-in duration-200"
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-[60] md:hidden animate-in fade-in duration-200"
           onClick={() => setIsMobileMenuOpen(false)}
         ></div>
       )}
 
       {/* Sidebar: Fixed on mobile (slide-in), Static on desktop */}
       <aside className={`
-        fixed md:static inset-y-0 left-0 z-50 w-72 bg-[#f3f5f7] flex flex-col border-r border-[#e1e2e1] 
+        fixed md:static inset-y-0 left-0 z-[70] w-72 bg-[#f3f5f7] flex flex-col border-r border-[#e1e2e1] 
         transition-transform duration-300 ease-in-out shadow-2xl md:shadow-none
         ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
       `}>
@@ -173,22 +172,23 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
         </div>
       </aside>
 
-      <main className="flex-grow flex flex-col overflow-hidden w-full">
-        <header className="h-16 bg-white border-b border-[#e1e2e1] flex items-center justify-between px-4 md:px-8 shrink-0">
-          <div className="flex items-center gap-4">
-            {/* Hamburger Button */}
+      <main className="flex-grow flex flex-col overflow-hidden w-full relative">
+        <header className="h-16 bg-white border-b border-[#e1e2e1] flex items-center justify-between px-4 md:px-8 shrink-0 sticky top-0 z-30">
+          <div className="flex items-center gap-4 min-w-0">
+            {/* Hamburger Button: Всегда доступна на мобильных */}
             <button 
               onClick={() => setIsMobileMenuOpen(true)}
-              className="md:hidden w-10 h-10 -ml-2 rounded-full flex items-center justify-center hover:bg-slate-100 text-[#444746]"
+              className="md:hidden w-10 h-10 -ml-2 rounded-full flex items-center justify-center hover:bg-slate-100 text-[#005ac1] shrink-0 active:scale-90 transition-transform"
+              aria-label="Открыть меню"
             >
-              <span className="material-icons-round">menu</span>
+              <span className="material-icons-round text-2xl">menu</span>
             </button>
 
-            <span className="hidden md:block material-icons-round text-[#444746]">{allMenuItems.find(i => i.id === activeModule)?.icon}</span>
-            <h3 className="text-lg font-medium text-[#1c1b1f]">{allMenuItems.find(i => i.id === activeModule)?.label}</h3>
+            <span className="hidden md:block material-icons-round text-[#444746] shrink-0">{allMenuItems.find(i => i.id === activeModule)?.icon}</span>
+            <h3 className="text-lg font-medium text-[#1c1b1f] truncate">{allMenuItems.find(i => i.id === activeModule)?.label}</h3>
           </div>
-          <div className="flex items-center gap-3 md:gap-6">
-            <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 rounded-full border border-slate-100">
+          <div className="flex items-center gap-2 md:gap-6 shrink-0">
+            <div className="flex items-center gap-2 px-2 md:px-3 py-1 bg-slate-50 rounded-full border border-slate-100">
                <div className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`}></div>
                <span className={`text-[10px] font-bold uppercase tracking-widest hidden sm:inline ${isLive ? 'text-emerald-600' : 'text-red-400'}`}>{isLive ? 'Live' : 'Offline'}</span>
             </div>

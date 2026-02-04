@@ -487,8 +487,8 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
-        <div>
-          <h2 className="text-3xl font-medium text-[#1c1b1f] flex items-center gap-3">
+        <div className="min-w-0 flex-grow pr-4">
+          <h2 className="text-3xl font-medium text-[#1c1b1f] flex flex-wrap items-center gap-3">
             Задачи
             {loading && !showBlockingLoader && (
               <div className="flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full animate-pulse">
@@ -499,17 +499,18 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
           </h2>
           <p className="text-slate-500 text-sm mt-1">Планирование и контроль выполнения</p>
         </div>
-        <div className="flex items-center gap-2">
-           <div className="bg-[#eff1f8] p-1 rounded-2xl flex">
-              <button onClick={() => setFilterMode('all')} className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${filterMode === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-50'}`}>Все</button>
-              <button onClick={() => setFilterMode('mine')} className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${filterMode === 'mine' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>Мои</button>
-              <button onClick={() => setFilterMode('created')} className={`px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${filterMode === 'created' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>Поставленные</button>
+        <div className="flex items-center gap-2 shrink-0 w-full md:w-auto">
+           <div className="bg-[#eff1f8] p-1 rounded-2xl flex flex-grow md:flex-initial">
+              <button onClick={() => setFilterMode('all')} className={`flex-1 px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${filterMode === 'all' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>Все</button>
+              <button onClick={() => setFilterMode('mine')} className={`flex-1 px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${filterMode === 'mine' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>Мои</button>
+              <button onClick={() => setFilterMode('created')} className={`flex-1 px-4 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${filterMode === 'created' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500'}`}>Поставленные</button>
            </div>
-           <Button onClick={() => { setIsEditMode(false); resetForm(); setIsCreateModalOpen(true); }} icon="add_circle" className="h-12 px-6">Поставить задачу</Button>
+           <Button onClick={() => { setIsEditMode(false); resetForm(); setIsCreateModalOpen(true); }} icon="add_circle" className="h-12 px-6 hidden sm:flex">Поставить задачу</Button>
+           <Button onClick={() => { setIsEditMode(false); resetForm(); setIsCreateModalOpen(true); }} icon="add" className="h-12 w-12 !px-0 flex sm:hidden rounded-2xl"></Button>
         </div>
       </div>
 
-      <div className="flex items-center border-b border-slate-200 mb-8 overflow-x-auto scrollbar-hide">
+      <div className="flex items-center border-b border-slate-200 mb-8 overflow-x-auto scrollbar-hide -mx-4 px-4 sm:mx-0 sm:px-0">
         {[
           { id: 'active', label: 'Активные', icon: 'assignment' },
           { id: 'today', label: 'Сегодня+', icon: 'today' },
@@ -524,7 +525,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
             className={`flex items-center gap-2 px-6 py-4 text-xs font-bold uppercase transition-all relative shrink-0 ${activeTab === tab.id ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
           >
             <span className="material-icons-round text-sm">{tab.icon}</span>
-            {tab.label}
+            <span className="whitespace-nowrap">{tab.label}</span>
             {tab.badge ? (
               <span className="w-5 h-5 bg-red-500 text-white text-[9px] rounded-full flex items-center justify-center font-bold">
                 {tab.badge}
@@ -565,7 +566,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
                 variant="tonal" 
                 icon="refresh" 
                 onClick={() => activeTab === 'archive' ? fetchArchive(0) : fetchData()} 
-                className="h-10 w-10 !px-0 rounded-xl" 
+                className="h-10 w-10 !px-0 rounded-xl shrink-0" 
               />
            </div>
         </div>
@@ -581,11 +582,11 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
           {teamWorkload.map((member: any) => (
             <div key={member.id} className="bg-white rounded-[32px] border border-slate-200 overflow-hidden shadow-sm flex flex-col h-[380px]">
               <div className="p-6 pb-4 flex justify-between items-start shrink-0">
-                <div>
-                  <h4 className="text-base font-bold text-slate-900 leading-tight">{member.full_name}</h4>
+                <div className="min-w-0 pr-4">
+                  <h4 className="text-base font-bold text-slate-900 leading-tight truncate">{member.full_name}</h4>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1">{member.role}</p>
                 </div>
-                <div className="flex flex-col items-center">
+                <div className="flex flex-col items-center shrink-0">
                   <div className="w-8 h-8 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center text-xs font-bold shadow-inner">
                     {member.tasks.length}
                   </div>
@@ -640,30 +641,30 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
                  const isOverdue = task.deadline && task.deadline < getMinskISODate() && task.status !== 'completed';
                  const isCompleted = task.status === 'completed';
                  return (
-                   <div key={task.id} onClick={() => { setSelectedTask(task); setIsTaskDetailsModalOpen(true); }} className={`bg-white p-5 rounded-[28px] border transition-all cursor-pointer group flex items-center justify-between ${isCompleted ? 'border-slate-100 opacity-75' : 'border-slate-200 hover:border-blue-400 hover:shadow-md'}`}>
-                      <div className="flex items-center gap-5 min-w-0">
+                   <div key={task.id} onClick={() => { setSelectedTask(task); setIsTaskDetailsModalOpen(true); }} className={`bg-white p-4 sm:p-5 rounded-[28px] border transition-all cursor-pointer group flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${isCompleted ? 'border-slate-100 opacity-75' : 'border-slate-200 hover:border-blue-400 hover:shadow-md'}`}>
+                      <div className="flex items-start sm:items-center gap-4 sm:gap-5 min-w-0 flex-grow">
                         <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isCompleted ? 'bg-emerald-50 text-emerald-500' : isOverdue ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
                           <span className="material-icons-round text-xl">
                             {isCompleted ? 'check_circle' : isOverdue ? 'priority_high' : 'more_horiz'}
                           </span>
                         </div>
-                        <div className="min-w-0">
-                          <h4 className={`font-bold transition-colors truncate ${isCompleted ? 'text-slate-400' : 'text-slate-900 group-hover:text-blue-600'}`}>
+                        <div className="min-w-0 flex-grow">
+                          <h4 className={`font-bold transition-colors truncate text-sm sm:text-base ${isCompleted ? 'text-slate-400' : 'text-slate-900 group-hover:text-blue-600'}`}>
                             {task.title}
-                            {task.doc_link && <span className="material-icons-round text-sm ml-2 text-slate-300">attach_file</span>}
+                            {task.doc_link && <span className="material-icons-round text-sm ml-2 text-slate-300 align-middle">attach_file</span>}
                           </h4>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="px-2.5 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-bold uppercase rounded-lg tracking-tight">{(task as any).objects?.name || 'Объект'}</span>
-                            <span className="text-[10px] font-bold text-slate-400 uppercase">Исполнитель: {(task as any).executor?.full_name}</span>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-bold uppercase rounded-lg tracking-tight whitespace-nowrap">{(task as any).objects?.name || 'Объект'}</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap">Исп: {(task as any).executor?.full_name}</span>
                             {isCompleted && task.completed_at && (
-                              <span className="text-[9px] font-bold text-emerald-500 uppercase ml-2 bg-emerald-50 px-2 py-0.5 rounded">Завершено {formatDate(task.completed_at)}</span>
+                              <span className="text-[9px] font-bold text-emerald-500 uppercase bg-emerald-50 px-2 py-0.5 rounded whitespace-nowrap">Завершено {formatDate(task.completed_at)}</span>
                             )}
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-6 shrink-0 ml-4">
+                      <div className="flex items-center justify-between sm:justify-end gap-6 shrink-0 w-full sm:w-auto pt-3 sm:pt-0 border-t sm:border-t-0 border-slate-50 sm:ml-4">
                         {!isCompleted && task.deadline && (
-                          <div className="text-right">
+                          <div className="text-left sm:text-right">
                             <p className={`text-xs font-bold ${isOverdue ? 'text-red-500' : 'text-slate-700'}`}>
                               {formatDate(task.deadline)}
                             </p>
@@ -687,7 +688,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
           </div>
 
           {activeTab === 'archive' && archiveTotal > PAGE_SIZE && (
-            <div className="mt-8 flex items-center justify-center gap-4">
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
                <button 
                  disabled={archivePage === 0 || loading}
                  onClick={() => fetchArchive(archivePage - 1)}
@@ -855,11 +856,11 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
               </div>
             )}
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
                {canEditDelete(selectedTask) && (
                  <>
-                   <Button variant="tonal" onClick={() => handleEditInit(selectedTask)} icon="edit" className="flex-1">Изменить</Button>
-                   <Button variant="danger" onClick={() => handleDeleteInit(selectedTask.id)} icon="delete" className="flex-1">Удалить</Button>
+                   <Button variant="tonal" onClick={() => handleEditInit(selectedTask)} icon="edit" className="flex-1 min-w-[120px]">Изменить</Button>
+                   <Button variant="danger" onClick={() => handleDeleteInit(selectedTask.id)} icon="delete" className="flex-1 min-w-[120px]">Удалить</Button>
                  </>
                )}
                {selectedTask.object_id && (
@@ -869,7 +870,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
                      setIsTaskDetailsModalOpen(false); 
                    }} 
                    icon="open_in_new" 
-                   className="flex-1"
+                   className="flex-1 min-w-[120px]"
                  >
                    К объекту
                  </Button>
