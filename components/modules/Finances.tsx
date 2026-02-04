@@ -392,139 +392,142 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       )}
 
       <div className="bg-white rounded-[32px] border border-[#e1e2e1] overflow-hidden shadow-sm">
-        <table className="w-full text-left">
-          <thead className="bg-slate-50 border-b">
-            <tr>
-              <th className="p-4 w-10"></th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Тип / Дата</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Объект / Описание</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase w-10 text-center">Файл</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Сумма</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Факт</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Статус</th>
-              <th className="p-5"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {filteredTransactions.map(t => {
-              const docStatus = getTransactionDocStatus(t);
-              return (
-                <React.Fragment key={t.id}>
-                  <tr className="hover:bg-slate-50 transition-colors group">
-                    <td className="p-4 text-center">
-                       {docStatus === 'missing' && <span className="material-icons-round text-red-500 text-lg animate-pulse" title="Требуется документ">warning</span>}
-                       {docStatus === 'complete' && <span className="material-icons-round text-emerald-500 text-lg" title="Документы в порядке">description</span>}
-                       {docStatus === 'none' && <span className="material-icons-round text-slate-200 text-lg">description</span>}
-                    </td>
-                    <td className="p-5">
-                      <Badge color={t.type === 'income' ? 'emerald' : 'red'}>{t.type === 'income' ? 'ПРИХОД' : 'РАСХОД'}</Badge>
-                      <p className="text-[10px] text-slate-400 font-bold mt-1">{formatDate(t.created_at)}</p>
-                    </td>
-                    <td className="p-5 cursor-pointer" onClick={() => { setSelectedTrans(t); setIsDetailsModalOpen(true); }}>
-                      <p className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{t.objects?.name || '—'}</p>
-                      <p className="text-xs text-slate-500 line-clamp-1">{t.description || t.category}</p>
-                    </td>
-                    <td className="p-5 text-center">
-                      {t.doc_link && <a href={t.doc_link} target="_blank" onClick={(e) => e.stopPropagation()} className="text-blue-500 hover:text-blue-700"><span className="material-icons-round">attach_file</span></a>}
-                    </td>
-                    <td className="p-5 font-bold">{formatBYN(t.type === 'expense' ? (t.requested_amount || t.amount) : t.amount)}</td>
-                    <td className="p-5">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-bold">{formatBYN(t.type === 'income' ? (t.fact_amount || 0) : (t.status === 'approved' ? t.amount : 0))}</span>
-                        {t.type === 'income' && (
-                          <button onClick={(e) => { e.stopPropagation(); setExpandedRows(prev => { const n = new Set(prev); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n; }); }} className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${expandedRows.has(t.id) ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>
-                            <span className="material-icons-round text-sm">{expandedRows.has(t.id) ? 'expand_less' : 'history'}</span>
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                    <td className="p-5">
-                      <Badge color={t.status === 'approved' ? 'emerald' : t.status === 'partial' ? 'blue' : t.status === 'rejected' ? 'red' : 'amber'}>
-                        {t.status?.toUpperCase()}
-                      </Badge>
-                    </td>
-                    <td className="p-5 text-right">
-                      <div className="flex justify-end gap-1">
-                        {t.type === 'income' && t.status !== 'approved' && !isSpecialist && (
-                          <>
-                            <button onClick={(e) => { e.stopPropagation(); setSelectedTrans(t); setPaymentAmount(''); setPaymentComment(''); setRequiresDoc(false); setDocType('Акт'); setDocNumber(''); setDocDate(''); setIsPaymentModalOpen(true); }} className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all" title="Внести оплату"><span className="material-icons-round text-sm">add_card</span></button>
-                            {t.status === 'partial' && (
-                              <button onClick={(e) => { e.stopPropagation(); setSelectedTrans(t); setIsFinalizeConfirmOpen(true); }} className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all" title="Завершить (больше не доплатят)"><span className="material-icons-round text-sm">done_all</span></button>
-                            )}
-                          </>
-                        )}
-                        {t.type === 'expense' && t.status === 'pending' && canApprove && (
-                          <>
-                            <button onClick={(e) => { e.stopPropagation(); setSelectedTrans(t); setApprovalAmount((t.requested_amount || t.amount).toString()); setIsApprovalModalOpen(true); }} className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all" title="Утвердить"><span className="material-icons-round text-sm">check</span></button>
-                            <button onClick={(e) => { e.stopPropagation(); setSelectedTrans(t); setIsRejectConfirmOpen(true); }} className="w-8 h-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all" title="Отклонить"><span className="material-icons-round text-sm">close</span></button>
-                          </>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                  {expandedRows.has(t.id) && t.payments && t.payments.length > 0 && (
-                    <tr className="bg-slate-50/50 animate-in slide-in-from-top-1 duration-200">
-                      <td colSpan={8} className="p-0">
-                        <div className="px-10 py-4 border-l-4 border-blue-500 ml-5 my-2 bg-white rounded-xl shadow-inner">
-                          <p className="text-[10px] font-bold text-slate-400 uppercase mb-3 tracking-widest">История частичных платежей</p>
-                          <table className="w-full text-xs">
-                            <thead>
-                              <tr className="text-slate-400 border-b border-slate-100">
-                                <th className="pb-2 text-left font-medium">Дата</th>
-                                <th className="pb-2 text-left font-medium">Сумма</th>
-                                <th className="pb-2 text-left font-medium">Закр. док.</th>
-                                <th className="pb-2 text-left font-medium">Кто внес</th>
-                                <th className="pb-2 text-left font-medium">Комментарий</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-50">
-                              {t.payments.map((p: any) => (
-                                <tr key={p.id}>
-                                  <td className="py-2">{formatDate(p.payment_date)}</td>
-                                  <td className="py-2 font-bold text-emerald-600">{formatBYN(p.amount)}</td>
-                                  <td className="py-2">
-                                    <button 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        openPaymentDetails(p, t);
-                                      }}
-                                      className="flex items-center gap-1 group/doc hover:bg-slate-50 px-2 py-1 rounded-lg transition-all"
-                                    >
-                                      {p.requires_doc ? (
-                                        p.doc_number ? (
-                                          <div className="flex items-center gap-1 text-emerald-600 font-bold">
-                                            <span className="material-icons-round text-xs">description</span>
-                                            <span>{p.doc_type} №{p.doc_number}</span>
-                                          </div>
-                                        ) : (
-                                          <div className="flex items-center gap-1 text-red-500 font-bold">
-                                            <span className="material-icons-round text-xs">warning</span>
-                                            <span>Ожидается</span>
-                                          </div>
-                                        )
-                                      ) : (
-                                        <div className="flex items-center gap-1 text-slate-400 font-medium">
-                                          <span className="material-icons-round text-xs opacity-50">remove_circle_outline</span>
-                                          <span>Не требуется</span>
-                                        </div>
-                                      )}
-                                    </button>
-                                  </td>
-                                  <td className="py-2 text-slate-500">{p.creator?.full_name}</td>
-                                  <td className="py-2 text-slate-400 italic">{p.comment || '—'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
+        {/* ADDED: Wrapper for horizontal scroll on mobile */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left min-w-[800px]">
+            <thead className="bg-slate-50 border-b">
+              <tr>
+                <th className="p-4 w-10"></th>
+                <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Тип / Дата</th>
+                <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Объект / Описание</th>
+                <th className="p-5 text-[10px] font-bold text-slate-400 uppercase w-10 text-center">Файл</th>
+                <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Сумма</th>
+                <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Факт</th>
+                <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Статус</th>
+                <th className="p-5"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredTransactions.map(t => {
+                const docStatus = getTransactionDocStatus(t);
+                return (
+                  <React.Fragment key={t.id}>
+                    <tr className="hover:bg-slate-50 transition-colors group">
+                      <td className="p-4 text-center">
+                        {docStatus === 'missing' && <span className="material-icons-round text-red-500 text-lg animate-pulse" title="Требуется документ">warning</span>}
+                        {docStatus === 'complete' && <span className="material-icons-round text-emerald-500 text-lg" title="Документы в порядке">description</span>}
+                        {docStatus === 'none' && <span className="material-icons-round text-slate-200 text-lg">description</span>}
+                      </td>
+                      <td className="p-5">
+                        <Badge color={t.type === 'income' ? 'emerald' : 'red'}>{t.type === 'income' ? 'ПРИХОД' : 'РАСХОД'}</Badge>
+                        <p className="text-[10px] text-slate-400 font-bold mt-1">{formatDate(t.created_at)}</p>
+                      </td>
+                      <td className="p-5 cursor-pointer" onClick={() => { setSelectedTrans(t); setIsDetailsModalOpen(true); }}>
+                        <p className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{t.objects?.name || '—'}</p>
+                        <p className="text-xs text-slate-500 line-clamp-1">{t.description || t.category}</p>
+                      </td>
+                      <td className="p-5 text-center">
+                        {t.doc_link && <a href={t.doc_link} target="_blank" onClick={(e) => e.stopPropagation()} className="text-blue-500 hover:text-blue-700"><span className="material-icons-round">attach_file</span></a>}
+                      </td>
+                      <td className="p-5 font-bold">{formatBYN(t.type === 'expense' ? (t.requested_amount || t.amount) : t.amount)}</td>
+                      <td className="p-5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-bold">{formatBYN(t.type === 'income' ? (t.fact_amount || 0) : (t.status === 'approved' ? t.amount : 0))}</span>
+                          {t.type === 'income' && (
+                            <button onClick={(e) => { e.stopPropagation(); setExpandedRows(prev => { const n = new Set(prev); n.has(t.id) ? n.delete(t.id) : n.add(t.id); return n; }); }} className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${expandedRows.has(t.id) ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>
+                              <span className="material-icons-round text-sm">{expandedRows.has(t.id) ? 'expand_less' : 'history'}</span>
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                      <td className="p-5">
+                        <Badge color={t.status === 'approved' ? 'emerald' : t.status === 'partial' ? 'blue' : t.status === 'rejected' ? 'red' : 'amber'}>
+                          {t.status?.toUpperCase()}
+                        </Badge>
+                      </td>
+                      <td className="p-5 text-right">
+                        <div className="flex justify-end gap-1">
+                          {t.type === 'income' && t.status !== 'approved' && !isSpecialist && (
+                            <>
+                              <button onClick={(e) => { e.stopPropagation(); setSelectedTrans(t); setPaymentAmount(''); setPaymentComment(''); setRequiresDoc(false); setDocType('Акт'); setDocNumber(''); setDocDate(''); setIsPaymentModalOpen(true); }} className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all" title="Внести оплату"><span className="material-icons-round text-sm">add_card</span></button>
+                              {t.status === 'partial' && (
+                                <button onClick={(e) => { e.stopPropagation(); setSelectedTrans(t); setIsFinalizeConfirmOpen(true); }} className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all" title="Завершить (больше не доплатят)"><span className="material-icons-round text-sm">done_all</span></button>
+                              )}
+                            </>
+                          )}
+                          {t.type === 'expense' && t.status === 'pending' && canApprove && (
+                            <>
+                              <button onClick={(e) => { e.stopPropagation(); setSelectedTrans(t); setApprovalAmount((t.requested_amount || t.amount).toString()); setIsApprovalModalOpen(true); }} className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all" title="Утвердить"><span className="material-icons-round text-sm">check</span></button>
+                              <button onClick={(e) => { e.stopPropagation(); setSelectedTrans(t); setIsRejectConfirmOpen(true); }} className="w-8 h-8 rounded-lg bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all" title="Отклонить"><span className="material-icons-round text-sm">close</span></button>
+                            </>
+                          )}
                         </div>
                       </td>
                     </tr>
-                  )}
-                </React.Fragment>
-              );
-            })}
-          </tbody>
-        </table>
+                    {expandedRows.has(t.id) && t.payments && t.payments.length > 0 && (
+                      <tr className="bg-slate-50/50 animate-in slide-in-from-top-1 duration-200">
+                        <td colSpan={8} className="p-0">
+                          <div className="px-10 py-4 border-l-4 border-blue-500 ml-5 my-2 bg-white rounded-xl shadow-inner">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase mb-3 tracking-widest">История частичных платежей</p>
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="text-slate-400 border-b border-slate-100">
+                                  <th className="pb-2 text-left font-medium">Дата</th>
+                                  <th className="pb-2 text-left font-medium">Сумма</th>
+                                  <th className="pb-2 text-left font-medium">Закр. док.</th>
+                                  <th className="pb-2 text-left font-medium">Кто внес</th>
+                                  <th className="pb-2 text-left font-medium">Комментарий</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-50">
+                                {t.payments.map((p: any) => (
+                                  <tr key={p.id}>
+                                    <td className="py-2">{formatDate(p.payment_date)}</td>
+                                    <td className="py-2 font-bold text-emerald-600">{formatBYN(p.amount)}</td>
+                                    <td className="py-2">
+                                      <button 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          openPaymentDetails(p, t);
+                                        }}
+                                        className="flex items-center gap-1 group/doc hover:bg-slate-50 px-2 py-1 rounded-lg transition-all"
+                                      >
+                                        {p.requires_doc ? (
+                                          p.doc_number ? (
+                                            <div className="flex items-center gap-1 text-emerald-600 font-bold">
+                                              <span className="material-icons-round text-xs">description</span>
+                                              <span>{p.doc_type} №{p.doc_number}</span>
+                                            </div>
+                                          ) : (
+                                            <div className="flex items-center gap-1 text-red-500 font-bold">
+                                              <span className="material-icons-round text-xs">warning</span>
+                                              <span>Ожидается</span>
+                                            </div>
+                                          )
+                                        ) : (
+                                          <div className="flex items-center gap-1 text-slate-400 font-medium">
+                                            <span className="material-icons-round text-xs opacity-50">remove_circle_outline</span>
+                                            <span>Не требуется</span>
+                                          </div>
+                                        )}
+                                      </button>
+                                    </td>
+                                    <td className="py-2 text-slate-500">{p.creator?.full_name}</td>
+                                    <td className="py-2 text-slate-400 italic">{p.comment || '—'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Модалка просмотра/редактирования деталей платежа и документа */}

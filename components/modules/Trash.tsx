@@ -190,80 +190,83 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
           </div>
         )}
 
-        <table className="w-full text-left">
-          <thead className="bg-slate-50 border-b">
-            <tr>
-              <th className="p-4 w-12 text-center">
-                <input 
-                  type="checkbox" 
-                  checked={filteredItems.length > 0 && selectedIds.size === filteredItems.length}
-                  onChange={toggleSelectAll}
-                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                />
-              </th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Элемент</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Тип</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Дата удаления</th>
-              <th className="p-5 text-right"></th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50">
-            {filteredItems.map(item => {
-              const isSelected = selectedIds.has(`${item.table}:${item.id}`);
-              return (
-                <tr key={`${item.table}-${item.id}`} className={`hover:bg-slate-50/50 transition-colors ${isSelected ? 'bg-blue-50/50' : ''}`}>
-                  <td className="p-4 text-center">
-                    <input 
-                      type="checkbox" 
-                      checked={isSelected}
-                      onChange={() => toggleSelect(item.table, item.id)}
-                      className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                  </td>
-                  <td className="p-5 font-bold text-slate-900">{item.name}</td>
-                  <td className="p-5">
-                    <Badge color={item.table === 'transactions' ? 'emerald' : item.table === 'objects' ? 'blue' : 'slate'}>
-                      {item.type}
-                    </Badge>
-                  </td>
-                  <td className="p-5 text-xs text-slate-500">
-                    {item.deleted_at ? new Date(item.deleted_at).toLocaleString() : '—'}
-                  </td>
-                  <td className="p-5 text-right">
-                    <div className="flex justify-end gap-2">
-                      <button 
-                        onClick={() => handleRestore(item.id, item.table)}
-                        className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all"
-                        title="Восстановить"
-                      >
-                        <span className="material-icons-round text-sm">history</span>
-                      </button>
-                      {isAdmin && (
+        {/* ADDED: Wrapper for horizontal scroll on mobile */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left min-w-[600px]">
+            <thead className="bg-slate-50 border-b">
+              <tr>
+                <th className="p-4 w-12 text-center">
+                  <input 
+                    type="checkbox" 
+                    checked={filteredItems.length > 0 && selectedIds.size === filteredItems.length}
+                    onChange={toggleSelectAll}
+                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                </th>
+                <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Элемент</th>
+                <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Тип</th>
+                <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Дата удаления</th>
+                <th className="p-5 text-right"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {filteredItems.map(item => {
+                const isSelected = selectedIds.has(`${item.table}:${item.id}`);
+                return (
+                  <tr key={`${item.table}-${item.id}`} className={`hover:bg-slate-50/50 transition-colors ${isSelected ? 'bg-blue-50/50' : ''}`}>
+                    <td className="p-4 text-center">
+                      <input 
+                        type="checkbox" 
+                        checked={isSelected}
+                        onChange={() => toggleSelect(item.table, item.id)}
+                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      />
+                    </td>
+                    <td className="p-5 font-bold text-slate-900">{item.name}</td>
+                    <td className="p-5">
+                      <Badge color={item.table === 'transactions' ? 'emerald' : item.table === 'objects' ? 'blue' : 'slate'}>
+                        {item.type}
+                      </Badge>
+                    </td>
+                    <td className="p-5 text-xs text-slate-500">
+                      {item.deleted_at ? new Date(item.deleted_at).toLocaleString() : '—'}
+                    </td>
+                    <td className="p-5 text-right">
+                      <div className="flex justify-end gap-2">
                         <button 
-                          onClick={() => setDeleteConfirm({ open: true, item })}
-                          className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all"
-                          title="Удалить навсегда"
+                          onClick={() => handleRestore(item.id, item.table)}
+                          className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all"
+                          title="Восстановить"
                         >
-                          <span className="material-icons-round text-sm">delete_forever</span>
+                          <span className="material-icons-round text-sm">history</span>
                         </button>
-                      )}
+                        {isAdmin && (
+                          <button 
+                            onClick={() => setDeleteConfirm({ open: true, item })}
+                            className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all"
+                            title="Удалить навсегда"
+                          >
+                            <span className="material-icons-round text-sm">delete_forever</span>
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {filteredItems.length === 0 && !loading && (
+                <tr>
+                  <td colSpan={5} className="p-20 text-center">
+                    <div className="flex flex-col items-center opacity-20">
+                      <span className="material-icons-round text-6xl mb-4">delete_sweep</span>
+                      <p className="text-lg font-medium italic">Корзина пуста</p>
                     </div>
                   </td>
                 </tr>
-              );
-            })}
-            {filteredItems.length === 0 && !loading && (
-              <tr>
-                <td colSpan={5} className="p-20 text-center">
-                  <div className="flex flex-col items-center opacity-20">
-                    <span className="material-icons-round text-6xl mb-4">delete_sweep</span>
-                    <p className="text-lg font-medium italic">Корзина пуста</p>
-                  </div>
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {/* Confirmation Modals */}

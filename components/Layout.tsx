@@ -13,6 +13,7 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setActiveModule, onProfileUpdate }) => {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // State для мобильного меню
   const [loading, setLoading] = useState(false);
   const [isLive, setIsLive] = useState(true);
   const [profileForm, setProfileForm] = useState({ full_name: '', phone: '', birth_date: '' });
@@ -88,6 +89,11 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
     }
   };
 
+  const handleMenuClick = (moduleId: string) => {
+    setActiveModule(moduleId);
+    setIsMobileMenuOpen(false); // Закрываем меню на мобильном при клике
+  };
+
   const userInitials = profile?.full_name 
     ? profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
     : '??';
@@ -112,18 +118,39 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
         </form>
       </Modal>
 
-      <aside className="w-72 bg-[#f3f5f7] flex flex-col border-r border-[#e1e2e1]">
-        <div className="p-6 mb-2">
+      {/* Mobile Overlay */}
+      {isMobileMenuOpen && (
+        <div 
+          className="fixed inset-0 bg-black/40 backdrop-blur-sm z-40 md:hidden animate-in fade-in duration-200"
+          onClick={() => setIsMobileMenuOpen(false)}
+        ></div>
+      )}
+
+      {/* Sidebar: Fixed on mobile (slide-in), Static on desktop */}
+      <aside className={`
+        fixed md:static inset-y-0 left-0 z-50 w-72 bg-[#f3f5f7] flex flex-col border-r border-[#e1e2e1] 
+        transition-transform duration-300 ease-in-out shadow-2xl md:shadow-none
+        ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
+        <div className="p-6 mb-2 flex justify-between items-center">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-[#005ac1] rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
               <span className="material-icons-round">home_max</span>
             </div>
             <h2 className="text-xl font-bold text-[#1c1b1f] tracking-tight">SmartCRM</h2>
           </div>
+          {/* Close button for mobile */}
+          <button 
+            onClick={() => setIsMobileMenuOpen(false)} 
+            className="md:hidden w-8 h-8 flex items-center justify-center rounded-full hover:bg-black/5 text-slate-500"
+          >
+            <span className="material-icons-round">close</span>
+          </button>
         </div>
+        
         <nav className="flex-grow px-4 space-y-1 overflow-y-auto scrollbar-hide">
           {menuItems.map((item) => (
-            <button key={item.id} onClick={() => setActiveModule(item.id)} className={`w-full flex items-center gap-4 px-4 h-12 rounded-full text-sm font-medium transition-all group ${activeModule === item.id ? 'bg-[#d3e4ff] text-[#001d3d]' : 'text-[#444746] hover:bg-black/5'}`}>
+            <button key={item.id} onClick={() => handleMenuClick(item.id)} className={`w-full flex items-center gap-4 px-4 h-12 rounded-full text-sm font-medium transition-all group ${activeModule === item.id ? 'bg-[#d3e4ff] text-[#001d3d]' : 'text-[#444746] hover:bg-black/5'}`}>
               <span className={`material-icons-round ${activeModule === item.id ? 'text-[#001d3d]' : 'text-[#444746] group-hover:text-[#1c1b1f]'}`}>{item.icon}</span>
               {item.label}
             </button>
@@ -146,16 +173,24 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
         </div>
       </aside>
 
-      <main className="flex-grow flex flex-col overflow-hidden">
-        <header className="h-16 bg-white border-b border-[#e1e2e1] flex items-center justify-between px-8 shrink-0">
+      <main className="flex-grow flex flex-col overflow-hidden w-full">
+        <header className="h-16 bg-white border-b border-[#e1e2e1] flex items-center justify-between px-4 md:px-8 shrink-0">
           <div className="flex items-center gap-4">
-            <span className="material-icons-round text-[#444746]">{allMenuItems.find(i => i.id === activeModule)?.icon}</span>
+            {/* Hamburger Button */}
+            <button 
+              onClick={() => setIsMobileMenuOpen(true)}
+              className="md:hidden w-10 h-10 -ml-2 rounded-full flex items-center justify-center hover:bg-slate-100 text-[#444746]"
+            >
+              <span className="material-icons-round">menu</span>
+            </button>
+
+            <span className="hidden md:block material-icons-round text-[#444746]">{allMenuItems.find(i => i.id === activeModule)?.icon}</span>
             <h3 className="text-lg font-medium text-[#1c1b1f]">{allMenuItems.find(i => i.id === activeModule)?.label}</h3>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-3 md:gap-6">
             <div className="flex items-center gap-2 px-3 py-1 bg-slate-50 rounded-full border border-slate-100">
                <div className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`}></div>
-               <span className={`text-[10px] font-bold uppercase tracking-widest ${isLive ? 'text-emerald-600' : 'text-red-400'}`}>{isLive ? 'Live' : 'Offline'}</span>
+               <span className={`text-[10px] font-bold uppercase tracking-widest hidden sm:inline ${isLive ? 'text-emerald-600' : 'text-red-400'}`}>{isLive ? 'Live' : 'Offline'}</span>
             </div>
             <button onClick={() => setActiveModule('notifications')} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors relative ${activeModule === 'notifications' ? 'bg-[#d3e4ff] text-[#001d3d]' : 'hover:bg-[#f3f5f7] text-[#444746]'}`}>
               <span className="material-icons-round">notifications</span>
@@ -163,7 +198,8 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
             </button>
           </div>
         </header>
-        <div className="flex-grow p-8 overflow-y-auto bg-[#f7f9fc]">
+        {/* Адаптивный padding: p-4 на мобильных, p-8 на десктопах */}
+        <div className="flex-grow p-4 md:p-8 overflow-y-auto bg-[#f7f9fc]">
           <div className="max-w-[1400px] mx-auto pb-12">{children}</div>
         </div>
       </main>
