@@ -1,9 +1,8 @@
-
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { Button, Modal, Input, Badge, Select, ConfirmModal, Toast } from '../../ui';
 import { Transaction } from '../../../types';
-import { formatDate } from '../../../lib/dateUtils';
+import { formatDate, getMinskISODate } from '../../../lib/dateUtils';
 
 const formatBYN = (amount: number = 0) => {
   return new Intl.NumberFormat('ru-BY', {
@@ -35,6 +34,7 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
   refreshData
 }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [isPaymentDetailsModalOpen, setIsPaymentDetailsModalOpen] = useState(false);
   const [isEditingDoc, setIsEditingDoc] = useState(false);
@@ -42,6 +42,7 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [isFinalizeConfirmOpen, setIsFinalizeConfirmOpen] = useState(false);
   const [isRejectConfirmOpen, setIsRejectConfirmOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null; type: 'transaction' | 'payment' }>({ open: false, id: null, type: 'transaction' });
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   
   const [activeAnalysisFilter, setActiveAnalysisFilter] = useState<string | null>(null);
@@ -62,7 +63,7 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
   const [docDate, setDocDate] = useState('');
   const [approvalAmount, setApprovalAmount] = useState('');
   
-  const today = new Date().toISOString().split('T')[0];
+  const today = getMinskISODate();
 
   const [formData, setFormData] = useState({ 
     type: 'expense' as 'income' | 'expense',
@@ -84,12 +85,14 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
       doc_link: '',
       doc_name: ''
     });
+    setIsEditMode(false);
   };
 
   const isSpecialist = profile.role === 'specialist';
   const isManager = profile.role === 'manager';
   const isDirector = profile.role === 'director';
   const canApprove = isAdmin || isDirector || (isManager && object.responsible_id === profile.id);
+  const canEditDelete = isAdmin || isDirector;
 
   const summary = useMemo(() => {
     const data = transactions.filter(t => {
@@ -149,20 +152,88 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
     setLoading(true);
     const amount = Number(formData.amount);
     const type = isSpecialist ? 'expense' : formData.type;
-    const { error } = await supabase.from('transactions').insert([{
-      object_id: object.id, type, amount, planned_amount: amount, requested_amount: amount,
-      planned_date: type === 'income' ? formData.planned_date : null,
-      category: formData.category, description: formData.description,
-      doc_link: formData.doc_link || null, doc_name: formData.doc_name || null,
-      status: 'pending', created_by: profile.id
-    }]);
-    if (!error) {
-      setIsModalOpen(false);
-      resetForm();
-      await refreshData();
-      setToast({message: 'Запись создана', type: 'success'});
+    
+    if (isEditMode && selectedTrans) {
+      const { error } = await supabase.from('transactions').update({
+        amount, planned_amount: type === 'income' ? amount : null, requested_amount: type === 'expense' ? amount : null,
+        planned_date: type === 'income' ? formData.planned_date : null,
+        category: formData.category, description: formData.description,
+        doc_link: formData.doc_link || null, doc_name: formData.doc_name || null
+      }).eq('id', selectedTrans.id);
+      
+      if (!error) {
+        setIsModalOpen(false);
+        resetForm();
+        await refreshData();
+        setToast({message: 'Запись обновлена', type: 'success'});
+      } else {
+        setToast({message: `Ошибка: ${error.message}`, type: 'error'});
+      }
     } else {
-      setToast({message: `Ошибка: ${error.message}`, type: 'error'});
+      const { error } = await supabase.from('transactions').insert([{
+        object_id: object.id, type, amount, planned_amount: amount, requested_amount: amount,
+        planned_date: type === 'income' ? formData.planned_date : null,
+        category: formData.category, description: formData.description,
+        doc_link: formData.doc_link || null, doc_name: formData.doc_name || null,
+        status: 'pending', created_by: profile.id
+      }]);
+      if (!error) {
+        setIsModalOpen(false);
+        resetForm();
+        await refreshData();
+        setToast({message: 'Запись создана', type: 'success'});
+      } else {
+        setToast({message: `Ошибка: ${error.message}`, type: 'error'});
+      }
+    }
+    setLoading(false);
+  };
+
+  const handleEditTransactionInit = (trans: any) => {
+    setSelectedTrans(trans);
+    setFormData({
+      type: trans.type,
+      amount: (trans.type === 'expense' ? (trans.requested_amount || trans.amount) : trans.amount).toString(),
+      planned_date: trans.planned_date ? getMinskISODate(trans.planned_date) : today,
+      category: trans.category,
+      description: trans.description || '',
+      doc_link: trans.doc_link || '',
+      doc_name: trans.doc_name || ''
+    });
+    setIsEditMode(true);
+    setIsDetailsModalOpen(false);
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (!deleteConfirm.id) return;
+    setLoading(true);
+    
+    if (deleteConfirm.type === 'transaction') {
+      const { error } = await supabase.from('transactions').update({ deleted_at: new Date().toISOString() }).eq('id', deleteConfirm.id);
+      if (!error) {
+        setToast({message: 'Запись удалена', type: 'success'});
+        setDeleteConfirm({ open: false, id: null, type: 'transaction' });
+        setIsDetailsModalOpen(false);
+        await refreshData();
+      }
+    } else {
+      // Удаление платежа
+      const { data: payment } = await supabase.from('transaction_payments').select('amount, transaction_id').eq('id', deleteConfirm.id).single();
+      const { error } = await supabase.from('transaction_payments').delete().eq('id', deleteConfirm.id);
+      
+      if (!error && payment) {
+        const trans = transactions.find(t => t.id === payment.transaction_id);
+        if (trans) {
+          const newFact = Math.max(0, (trans.fact_amount || 0) - payment.amount);
+          const newStatus = newFact >= trans.amount - 0.01 ? 'approved' : (newFact > 0 ? 'partial' : 'pending');
+          await supabase.from('transactions').update({ fact_amount: newFact, status: newStatus }).eq('id', payment.transaction_id);
+        }
+        setToast({message: 'Платеж удален', type: 'success'});
+        setDeleteConfirm({ open: false, id: null, type: 'transaction' });
+        setIsPaymentDetailsModalOpen(false);
+        await refreshData();
+      }
     }
     setLoading(false);
   };
@@ -436,7 +507,19 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Сумма платежа</p>
                       <p className="text-2xl font-bold text-emerald-600">{formatBYN(selectedPayment.amount)}</p>
                     </div>
-                    <Badge color={selectedTrans?.type === 'income' ? 'emerald' : 'red'}>{selectedTrans?.type?.toUpperCase()}</Badge>
+                    <div className="flex flex-col items-end gap-2">
+                       {canEditDelete && (
+                         <button 
+                           type="button"
+                           onClick={() => setDeleteConfirm({ open: true, id: selectedPayment.id, type: 'payment' })}
+                           className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all shadow-sm"
+                           title="Удалить платеж"
+                         >
+                           <span className="material-icons-round text-sm">delete</span>
+                         </button>
+                       )}
+                       <Badge color={selectedTrans?.type === 'income' ? 'emerald' : 'red'}>{selectedTrans?.type?.toUpperCase()}</Badge>
+                    </div>
                   </div>
                   <div className="pt-3 border-t border-slate-50 grid grid-cols-2 gap-4">
                      <div>
@@ -546,9 +629,29 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
                 <Badge color={selectedTrans.type === 'income' ? 'emerald' : 'red'}>{selectedTrans.type === 'income' ? 'ПРИХОД' : 'РАСХОД'}</Badge>
                 <h3 className="text-2xl font-bold mt-2">{selectedTrans.category}</h3>
               </div>
-              <div className="text-right">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Статус</p>
-                <Badge color={selectedTrans.status === 'approved' ? 'emerald' : selectedTrans.status === 'rejected' ? 'red' : 'amber'}>{selectedTrans.status?.toUpperCase()}</Badge>
+              <div className="flex flex-col items-end gap-3">
+                {canEditDelete && (
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={() => handleEditTransactionInit(selectedTrans)}
+                      className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all shadow-sm"
+                      title="Редактировать"
+                    >
+                      <span className="material-icons-round text-sm">edit</span>
+                    </button>
+                    <button 
+                      onClick={() => setDeleteConfirm({ open: true, id: selectedTrans.id, type: 'transaction' })}
+                      className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all shadow-sm"
+                      title="Удалить"
+                    >
+                      <span className="material-icons-round text-sm">delete</span>
+                    </button>
+                  </div>
+                )}
+                <div className="text-right">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Статус</p>
+                  <Badge color={selectedTrans.status === 'approved' ? 'emerald' : selectedTrans.status === 'partial' ? 'blue' : selectedTrans.status === 'rejected' ? 'red' : 'amber'}>{selectedTrans.status?.toUpperCase()}</Badge>
+                </div>
               </div>
             </div>
 
@@ -575,12 +678,12 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
         )}
       </Modal>
 
-      <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={formData.type === 'income' ? 'План прихода' : 'Заявка на расход'}>
+      <Modal isOpen={isModalOpen} onClose={() => { setIsModalOpen(false); resetForm(); }} title={isEditMode ? 'Редактирование записи' : (formData.type === 'income' ? 'План прихода' : 'Заявка на расход')}>
         <form onSubmit={handleSaveTransaction} className="space-y-4">
            <div className="grid grid-cols-2 gap-4">
              <Input label="Сумма" type="number" step="0.01" required value={formData.amount} onChange={(e:any) => setFormData({ ...formData, amount: e.target.value })} icon="payments" />
              {formData.type === 'income' && (
-               <Input label="Дата плана" type="date" required value={formData.planned_date} onChange={(e:any) => setFormData({ ...formData, planned_date: e.target.value })} icon="event" min={today} />
+               <Input label="Дата плана" type="date" required value={formData.planned_date} onChange={(e:any) => setFormData({ ...formData, planned_date: e.target.value })} icon="event" />
              )}
            </div>
            <Input label="Категория" required value={formData.category} onChange={(e:any) => setFormData({ ...formData, category: e.target.value })} icon="category" />
@@ -597,7 +700,7 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
             <label className="block text-xs font-medium text-[#444746] mb-1.5 ml-1">Описание</label>
             <textarea className="w-full bg-white border border-slate-200 rounded-2xl p-4 text-sm outline-none focus:border-blue-500" rows={3} value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
            </div>
-           <Button type="submit" className="w-full h-14" loading={loading} icon="save">Создать запись</Button>
+           <Button type="submit" className="w-full h-14" loading={loading} icon="save">{isEditMode ? 'Сохранить изменения' : 'Создать запись'}</Button>
         </form>
       </Modal>
 
@@ -687,6 +790,15 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
       {/* Подтверждения */}
       <ConfirmModal isOpen={isRejectConfirmOpen} onClose={() => setIsRejectConfirmOpen(false)} onConfirm={handleRejectExpense} title="Отклонить расход" message="Вы уверены, что хотите отклонить эту заявку?" loading={loading} />
       <ConfirmModal isOpen={isFinalizeConfirmOpen} onClose={() => setIsFinalizeConfirmOpen(false)} onConfirm={handleFinalizeIncome} title="Финализировать приход" message="Статус будет изменен на 'Завершено', а итоговая сумма прихода будет установлена равной фактическим выплатам." loading={loading} />
+      <ConfirmModal 
+        isOpen={deleteConfirm.open} 
+        onClose={() => setDeleteConfirm({ open: false, id: null, type: 'transaction' })} 
+        onConfirm={handleDeleteConfirm} 
+        title={deleteConfirm.type === 'transaction' ? "Удаление записи" : "Удаление платежа"} 
+        message={deleteConfirm.type === 'transaction' ? "Вы уверены, что хотите окончательно удалить эту запись? Она будет перемещена в корзину." : "Удалить этот платеж из истории? Баланс транзакции будет пересчитан."}
+        confirmVariant="danger" 
+        loading={loading} 
+      />
     </div>
   );
 };

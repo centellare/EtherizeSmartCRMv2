@@ -41,7 +41,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const [isFinalizeConfirmOpen, setIsFinalizeConfirmOpen] = useState(false);
   const [isRejectConfirmOpen, setIsRejectConfirmOpen] = useState(false);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
-  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
+  const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null; type: 'transaction' | 'payment' }>({ open: false, id: null, type: 'transaction' });
   
   const [selectedTrans, setSelectedTrans] = useState<any>(null);
   const [selectedPayment, setSelectedPayment] = useState<any>(null);
@@ -290,16 +290,38 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const handleDeleteTransaction = async () => {
     if (!deleteConfirm.id) return;
     setLoading(true);
-    const { error } = await supabase
-      .from('transactions')
-      .update({ deleted_at: new Date().toISOString() })
-      .eq('id', deleteConfirm.id);
     
-    if (!error) {
-      setToast({ message: 'Запись удалена', type: 'success' });
-      setDeleteConfirm({ open: false, id: null });
-      setIsDetailsModalOpen(false);
-      await fetchData(true);
+    if (deleteConfirm.type === 'transaction') {
+      const { error } = await supabase
+        .from('transactions')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', deleteConfirm.id);
+      
+      if (!error) {
+        setToast({ message: 'Запись удалена', type: 'success' });
+        setDeleteConfirm({ open: false, id: null, type: 'transaction' });
+        setIsDetailsModalOpen(false);
+        await fetchData(true);
+      }
+    } else {
+      // Удаление платежа
+      const { data: payment } = await supabase.from('transaction_payments').select('amount, transaction_id').eq('id', deleteConfirm.id).single();
+      const { error } = await supabase.from('transaction_payments').delete().eq('id', deleteConfirm.id);
+      
+      if (!error && payment) {
+        // Обновляем факт транзакции
+        const trans = transactions.find(t => t.id === payment.transaction_id);
+        if (trans) {
+          const newFact = Math.max(0, (trans.fact_amount || 0) - payment.amount);
+          const newStatus = newFact >= trans.amount - 0.01 ? 'approved' : (newFact > 0 ? 'partial' : 'pending');
+          await supabase.from('transactions').update({ fact_amount: newFact, status: newStatus }).eq('id', payment.transaction_id);
+        }
+        
+        setToast({ message: 'Платеж удален', type: 'success' });
+        setDeleteConfirm({ open: false, id: null, type: 'transaction' });
+        setIsPaymentDetailsModalOpen(false);
+        await fetchData(true);
+      }
     }
     setLoading(false);
   };
@@ -599,7 +621,19 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
                       <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Сумма платежа</p>
                       <p className="text-2xl font-bold text-emerald-600">{formatBYN(selectedPayment.amount)}</p>
                     </div>
-                    <Badge color={selectedTrans?.type === 'income' ? 'emerald' : 'red'}>{selectedTrans?.type?.toUpperCase()}</Badge>
+                    <div className="flex flex-col items-end gap-2">
+                       {canEditDelete && (
+                         <button 
+                           type="button"
+                           onClick={() => setDeleteConfirm({ open: true, id: selectedPayment.id, type: 'payment' })}
+                           className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all shadow-sm"
+                           title="Удалить платеж"
+                         >
+                           <span className="material-icons-round text-sm">delete</span>
+                         </button>
+                       )}
+                       <Badge color={selectedTrans?.type === 'income' ? 'emerald' : 'red'}>{selectedTrans?.type?.toUpperCase()}</Badge>
+                    </div>
                   </div>
                   <div className="pt-3 border-t border-slate-50 grid grid-cols-2 gap-4">
                      <div>
@@ -720,7 +754,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
                       <span className="material-icons-round text-sm">edit</span>
                     </button>
                     <button 
-                      onClick={() => setDeleteConfirm({ open: true, id: selectedTrans.id })}
+                      onClick={() => setDeleteConfirm({ open: true, id: selectedTrans.id, type: 'transaction' })}
                       className="w-9 h-9 rounded-xl bg-red-50 text-red-600 hover:bg-red-600 hover:text-white flex items-center justify-center transition-all shadow-sm"
                       title="Удалить"
                     >
@@ -730,7 +764,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
                 )}
                 <div className="text-right">
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Статус</p>
-                  <Badge color={selectedTrans.status === 'approved' ? 'emerald' : selectedTrans.status === 'rejected' ? 'red' : 'amber'}>{selectedTrans.status?.toUpperCase()}</Badge>
+                  <Badge color={selectedTrans.status === 'approved' ? 'emerald' : selectedTrans.status === 'partial' ? 'blue' : selectedTrans.status === 'rejected' ? 'red' : 'amber'}>{selectedTrans.status?.toUpperCase()}</Badge>
                 </div>
               </div>
             </div>
@@ -871,10 +905,10 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       <ConfirmModal isOpen={isFinalizeConfirmOpen} onClose={() => setIsFinalizeConfirmOpen(false)} onConfirm={handleFinalizeIncome} title="Финализировать приход" message="Клиент больше не будет доплачивать? Статус будет изменен на 'Завершено', а итоговая сумма прихода будет равна фактическим поступлениям." loading={loading} />
       <ConfirmModal 
         isOpen={deleteConfirm.open} 
-        onClose={() => setDeleteConfirm({ open: false, id: null })} 
+        onClose={() => setDeleteConfirm({ open: false, id: null, type: 'transaction' })} 
         onConfirm={handleDeleteTransaction} 
-        title="Удаление записи" 
-        message="Вы уверены, что хотите удалить эту финансовую запись? Она будет перемещена в корзину." 
+        title={deleteConfirm.type === 'transaction' ? "Удаление записи" : "Удаление платежа"} 
+        message={deleteConfirm.type === 'transaction' ? "Вы уверены, что хотите удалить эту финансовую запись? Она будет перемещена в корзину." : "Удалить этот платеж из истории? Баланс транзакции будет пересчитан."}
         confirmVariant="danger" 
         loading={loading} 
       />
