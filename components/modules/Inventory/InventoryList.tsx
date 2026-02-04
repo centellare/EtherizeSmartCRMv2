@@ -108,6 +108,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
               {isAdmin && (
                 <div className="absolute top-4 right-4 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button 
+                    type="button"
                     onClick={(e) => { e.stopPropagation(); onEdit(c, 'catalog'); }}
                     className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all"
                     title="Редактировать"
@@ -115,13 +116,16 @@ const InventoryList: React.FC<InventoryListProps> = ({
                     <span className="material-icons-round text-sm">edit</span>
                   </button>
                   <button 
+                    type="button"
+                    className="w-8 h-8 rounded-full bg-slate-100 text-red-600 hover:bg-red-50 flex items-center justify-center transition-all"
                     onClick={(e) => { 
+                      console.log('Delete catalog clicked');
+                      e.preventDefault();
                       e.stopPropagation(); 
                       if (window.confirm('ВНИМАНИЕ: Вы удаляете тип оборудования. Все товары этого типа будут скрыты. Продолжить?')) {
                         onDeleteCatalog(c.id);
                       }
                     }}
-                    className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center transition-all"
                     title="Удалить"
                   >
                     <span className="material-icons-round text-sm">delete</span>
@@ -321,6 +325,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
                       <div className="flex justify-end gap-1">
                         {activeTab === 'stock' && item.status === 'in_stock' && (
                           <button 
+                            type="button"
                             onClick={() => onDeploy(item)}
                             className="h-8 px-3 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all text-xs font-bold inline-flex items-center gap-1"
                           >
@@ -330,6 +335,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
                         )}
                         {activeTab === 'warranty' && item.status === 'deployed' && !isMaterial && (
                            <button 
+                             type="button"
                              onClick={() => onReplace(item)}
                              className="h-8 px-3 rounded-xl bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white transition-all text-xs font-bold inline-flex items-center gap-1"
                            >
@@ -340,6 +346,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
                         {isAdmin && (
                           <>
                             <button 
+                              type="button"
                               onClick={() => onEdit(item, 'item')}
                               className="w-8 h-8 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
                               title="Редактировать запись"
@@ -347,13 +354,16 @@ const InventoryList: React.FC<InventoryListProps> = ({
                               <span className="material-icons-round text-sm">edit</span>
                             </button>
                             <button 
+                              type="button"
+                              className="w-8 h-8 rounded-xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
                               onClick={(e) => {
+                                console.log('Delete item clicked');
+                                e.preventDefault();
                                 e.stopPropagation();
                                 if (window.confirm('Вы уверены, что хотите удалить эту единицу товара?')) {
                                   onDeleteItem(item.id);
                                 }
                               }}
-                              className="w-8 h-8 rounded-xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
                               title="Удалить запись"
                             >
                               <span className="material-icons-round text-sm">delete</span>

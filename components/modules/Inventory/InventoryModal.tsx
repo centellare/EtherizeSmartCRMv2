@@ -88,13 +88,28 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
   const handleCreateCatalog = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.from('inventory_catalog').insert([{
-       ...catForm, 
-       warranty_period_months: parseInt(catForm.warranty_period_months),
-       last_purchase_price: parseFloat(catForm.last_purchase_price) || 0
-    }]);
+    
+    const payload = {
+        name: catForm.name,
+        item_type: catForm.item_type || 'product', // Fallback just in case
+        sku: catForm.sku || null,
+        unit: catForm.unit || 'шт',
+        last_purchase_price: parseFloat(catForm.last_purchase_price) || 0,
+        description: catForm.description || null,
+        has_serial: catForm.has_serial,
+        warranty_period_months: parseInt(catForm.warranty_period_months) || 12
+    };
+
+    const { error } = await supabase.from('inventory_catalog').insert([payload]);
+    
     setLoading(false);
-    if (!error) onSuccess();
+    
+    if (error) {
+        alert('Ошибка создания: ' + JSON.stringify(error));
+        console.error('Create Catalog Error:', error);
+    } else {
+        onSuccess();
+    }
   };
 
   const handleUpdateCatalog = async (e: React.FormEvent) => {
