@@ -9,16 +9,20 @@ interface InventoryListProps {
   catalog: InventoryCatalogItem[];
   items: InventoryItem[];
   loading: boolean;
+  profile: any;
   onDeploy: (item: InventoryItem) => void;
   onReplace: (item: InventoryItem) => void;
+  onEdit: (item: any, type: 'catalog' | 'item') => void;
 }
 
-const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items, loading, onDeploy, onReplace }) => {
+const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items, loading, profile, onDeploy, onReplace, onEdit }) => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+
+  const isAdmin = profile?.role === 'admin';
 
   const filteredItems = useMemo(() => {
     let list = items;
@@ -94,8 +98,16 @@ const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filteredCatalog.map(c => (
-            <div key={c.id} className="bg-white p-5 rounded-[24px] border border-slate-200">
-              <div className="flex justify-between items-start mb-2">
+            <div key={c.id} className="bg-white p-5 rounded-[24px] border border-slate-200 relative group">
+              {isAdmin && (
+                <button 
+                  onClick={(e) => { e.stopPropagation(); onEdit(c, 'catalog'); }}
+                  className="absolute top-4 right-4 w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
+                >
+                  <span className="material-icons-round text-sm">edit</span>
+                </button>
+              )}
+              <div className="flex justify-between items-start mb-2 pr-8">
                 <div>
                   <div className="flex gap-2 mb-1">
                     <Badge color={c.item_type === 'product' ? 'blue' : 'amber'}>{c.item_type === 'product' ? 'Оборудование' : 'Материал'}</Badge>
@@ -103,9 +115,11 @@ const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items
                   </div>
                   <h4 className="font-bold text-slate-900 mt-1">{c.name}</h4>
                 </div>
-                <Badge color="slate">{c.warranty_period_months} мес.</Badge>
               </div>
-              <p className="text-sm text-slate-500 mb-4">{c.description || 'Нет описания'}</p>
+              <div className="flex items-center gap-2 mb-4">
+                 <Badge color="slate">{c.warranty_period_months} мес.</Badge>
+              </div>
+              <p className="text-sm text-slate-500 mb-4 line-clamp-2">{c.description || 'Нет описания'}</p>
               <div className="flex flex-wrap gap-2 items-center text-xs">
                 <span className="bg-blue-50 text-blue-700 px-2 py-1 rounded-lg font-bold">{c.unit || 'шт'}</span>
                 {c.last_purchase_price ? (
@@ -206,7 +220,7 @@ const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items
                 const dateDisplay = activeTab === 'warranty' ? item.warranty_start : item.created_at;
 
                 return (
-                  <tr key={item.id} className="hover:bg-slate-50 transition-colors">
+                  <tr key={item.id} className="hover:bg-slate-50 transition-colors group">
                     <td className="p-4">
                       <p className="font-bold text-slate-900">{item.catalog?.name}</p>
                       <div className="flex gap-1 mt-1">
@@ -270,24 +284,35 @@ const InventoryList: React.FC<InventoryListProps> = ({ activeTab, catalog, items
                       )}
                     </td>
                     <td className="p-4 text-right">
-                      {activeTab === 'stock' && item.status === 'in_stock' && (
-                        <button 
-                          onClick={() => onDeploy(item)}
-                          className="h-8 px-3 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all text-xs font-bold inline-flex items-center gap-1"
-                        >
-                          <span className="material-icons-round text-sm">rocket_launch</span>
-                          Отгрузить
-                        </button>
-                      )}
-                      {activeTab === 'warranty' && item.status === 'deployed' && !isMaterial && (
-                         <button 
-                           onClick={() => onReplace(item)}
-                           className="h-8 px-3 rounded-xl bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white transition-all text-xs font-bold inline-flex items-center gap-1"
-                         >
-                           <span className="material-icons-round text-sm">autorenew</span>
-                           Замена
-                         </button>
-                      )}
+                      <div className="flex justify-end gap-1">
+                        {activeTab === 'stock' && item.status === 'in_stock' && (
+                          <button 
+                            onClick={() => onDeploy(item)}
+                            className="h-8 px-3 rounded-xl bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all text-xs font-bold inline-flex items-center gap-1"
+                          >
+                            <span className="material-icons-round text-sm">rocket_launch</span>
+                            Отгрузить
+                          </button>
+                        )}
+                        {activeTab === 'warranty' && item.status === 'deployed' && !isMaterial && (
+                           <button 
+                             onClick={() => onReplace(item)}
+                             className="h-8 px-3 rounded-xl bg-amber-50 text-amber-600 hover:bg-amber-600 hover:text-white transition-all text-xs font-bold inline-flex items-center gap-1"
+                           >
+                             <span className="material-icons-round text-sm">autorenew</span>
+                             Замена
+                           </button>
+                        )}
+                        {isAdmin && (
+                          <button 
+                            onClick={() => onEdit(item, 'item')}
+                            className="w-8 h-8 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all opacity-0 group-hover:opacity-100"
+                            title="Редактировать запись"
+                          >
+                            <span className="material-icons-round text-sm">edit</span>
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 );

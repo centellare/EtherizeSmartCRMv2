@@ -7,11 +7,11 @@ import { InventoryCatalogItem, InventoryItem } from '../../../types';
 interface InventoryModalProps {
   isOpen: boolean;
   onClose: () => void;
-  mode: 'create_catalog' | 'add_item' | 'deploy_item' | 'replace_item';
+  mode: 'create_catalog' | 'add_item' | 'deploy_item' | 'replace_item' | 'edit_catalog' | 'edit_item';
   catalog: InventoryCatalogItem[];
   objects: any[];
   items: InventoryItem[]; // All items for replacement logic
-  selectedItem: InventoryItem | null; // The item being acted upon (deployed or replaced)
+  selectedItem: any | null; // Can be InventoryItem or CatalogItem depending on mode
   profile: any;
   onSuccess: () => void;
 }
@@ -20,43 +20,71 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
   isOpen, onClose, mode, catalog, objects, items, selectedItem, profile, onSuccess 
 }) => {
   const [loading, setLoading] = useState(false);
+  const isAdmin = profile?.role === 'admin';
   
-  // Create Catalog State
+  // Create/Edit Catalog State
   const [catForm, setCatForm] = useState({ 
     name: '', sku: '', unit: 'шт', last_purchase_price: '', 
     description: '', warranty_period_months: '12', has_serial: false,
     item_type: 'product' as 'product' | 'material'
   });
 
-  // Add Item State
+  // Add/Edit Item State
   const [itemForm, setItemForm] = useState({ catalog_id: '', serial_number: '', quantity: '1', purchase_price: '' });
 
   // Deploy/Replace State
   const [deployForm, setDeployForm] = useState({ object_id: '', serial_number: '', quantity_to_deploy: '1' });
   const [replaceForm, setReplaceForm] = useState({ new_item_id: '' });
 
-  // Reset forms on open
+  // Reset/Init forms
   useEffect(() => {
     if (isOpen) {
+       // Defaults
        setDeployForm({ 
          object_id: '', 
          serial_number: '', 
-         quantity_to_deploy: selectedItem ? selectedItem.quantity.toString() : '1' 
+         quantity_to_deploy: selectedItem && selectedItem.quantity ? selectedItem.quantity.toString() : '1' 
        });
        setReplaceForm({ new_item_id: '' });
        setItemForm({ catalog_id: '', serial_number: '', quantity: '1', purchase_price: '' });
-    }
-  }, [isOpen, selectedItem]);
+       setCatForm({ 
+         name: '', sku: '', unit: 'шт', last_purchase_price: '', 
+         description: '', warranty_period_months: '12', has_serial: false,
+         item_type: 'product'
+       });
 
-  // Update purchase price when catalog item is selected
+       // Fill for edits
+       if (mode === 'edit_catalog' && selectedItem) {
+         setCatForm({
+           name: selectedItem.name,
+           sku: selectedItem.sku || '',
+           unit: selectedItem.unit,
+           last_purchase_price: selectedItem.last_purchase_price?.toString() || '',
+           description: selectedItem.description || '',
+           warranty_period_months: selectedItem.warranty_period_months?.toString() || '12',
+           has_serial: selectedItem.has_serial,
+           item_type: selectedItem.item_type || 'product'
+         });
+       } else if (mode === 'edit_item' && selectedItem) {
+         setItemForm({
+           catalog_id: selectedItem.catalog_id,
+           serial_number: selectedItem.serial_number || '',
+           quantity: selectedItem.quantity?.toString() || '1',
+           purchase_price: selectedItem.purchase_price?.toString() || ''
+         });
+       }
+    }
+  }, [isOpen, selectedItem, mode]);
+
+  // Update purchase price when catalog item is selected (only in add mode)
   useEffect(() => {
-    if (itemForm.catalog_id) {
+    if (mode === 'add_item' && itemForm.catalog_id) {
         const catItem = catalog.find(c => c.id === itemForm.catalog_id);
         if (catItem && catItem.last_purchase_price !== undefined) {
             setItemForm(prev => ({ ...prev, purchase_price: catItem.last_purchase_price!.toString() }));
         }
     }
-  }, [itemForm.catalog_id, catalog]);
+  }, [itemForm.catalog_id, catalog, mode]);
 
   const handleCreateCatalog = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,6 +94,39 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
        warranty_period_months: parseInt(catForm.warranty_period_months),
        last_purchase_price: parseFloat(catForm.last_purchase_price) || 0
     }]);
+    setLoading(false);
+    if (!error) onSuccess();
+  };
+
+  const handleUpdateCatalog = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedItem) return;
+    setLoading(true);
+    const { error } = await supabase.from('inventory_catalog').update({
+       ...catForm, 
+       warranty_period_months: parseInt(catForm.warranty_period_months),
+       last_purchase_price: parseFloat(catForm.last_purchase_price) || 0
+    }).eq('id', selectedItem.id);
+    setLoading(false);
+    if (!error) onSuccess();
+  };
+
+  const handleDeleteCatalog = async () => {
+    if (!selectedItem || !window.confirm('Вы уверены, что хотите удалить этот тип оборудования?')) return;
+    
+    setLoading(true);
+    // Check for existing items
+    const { count } = await supabase.from('inventory_items')
+      .select('*', { count: 'exact', head: true })
+      .eq('catalog_id', selectedItem.id);
+    
+    if (count && count > 0) {
+      alert(`Невозможно удалить: на складе или объектах числится ${count} единиц этого типа.`);
+      setLoading(false);
+      return;
+    }
+
+    const { error } = await supabase.from('inventory_catalog').delete().eq('id', selectedItem.id);
     setLoading(false);
     if (!error) onSuccess();
   };
@@ -98,6 +159,31 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
     setLoading(false);
   };
 
+  const handleUpdateItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedItem) return;
+    setLoading(true);
+    const { error } = await supabase.from('inventory_items').update({
+        serial_number: itemForm.serial_number || null,
+        quantity: parseFloat(itemForm.quantity) || 1,
+        purchase_price: parseFloat(itemForm.purchase_price) || 0
+    }).eq('id', selectedItem.id);
+    setLoading(false);
+    if (!error) onSuccess();
+  };
+
+  const handleDeleteItem = async () => {
+    if (!selectedItem || !window.confirm('Вы уверены? История движения этой единицы будет удалена.')) return;
+    setLoading(true);
+    
+    // Manual Cascade: Delete history first
+    await supabase.from('inventory_history').delete().eq('item_id', selectedItem.id);
+    
+    const { error } = await supabase.from('inventory_items').delete().eq('id', selectedItem.id);
+    setLoading(false);
+    if (!error) onSuccess();
+  };
+
   const handleDeployItem = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedItem || !deployForm.object_id) return;
@@ -125,7 +211,6 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
         current_object_id: deployForm.object_id,
         warranty_start: now.toISOString(),
         warranty_end: warrantyEnd.toISOString(),
-        // If user provided a serial number during deployment (usually when splitting bulk items or assigning late)
         serial_number: deployForm.serial_number || selectedItem.serial_number
     };
 
@@ -133,11 +218,9 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
 
     // SPLIT LOGIC
     if (qtyToDeploy < selectedItem.quantity) {
-        // 1. Reduce quantity of the original item
         const newStockQty = selectedItem.quantity - qtyToDeploy;
         await supabase.from('inventory_items').update({ quantity: newStockQty }).eq('id', selectedItem.id);
 
-        // 2. Create new deployed item
         const { data: newItem, error: createError } = await supabase.from('inventory_items').insert([{
             catalog_id: selectedItem.catalog_id,
             purchase_price: selectedItem.purchase_price,
@@ -153,15 +236,10 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
         }
         deployedItemId = newItem.id;
     } else {
-        // FULL MOVE
         const { error } = await supabase.from('inventory_items').update(deployedStatus).eq('id', selectedItem.id);
-        if (error) {
-            setLoading(false);
-            return;
-        }
+        if (error) { setLoading(false); return; }
     }
 
-    // Log History
     await supabase.from('inventory_history').insert([{
         item_id: deployedItemId,
         action_type: 'deploy',
@@ -182,13 +260,11 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
     const newItem = items.find(i => i.id === replaceForm.new_item_id);
     if (!newItem) return;
 
-    // 1. Scrap old item
     await supabase.from('inventory_items').update({
         status: 'scrapped',
         current_object_id: null
     }).eq('id', selectedItem.id);
 
-    // 2. Deploy new item
     const now = new Date();
     const warrantyMonths = newItem.catalog?.warranty_period_months || 0;
     const warrantyEnd = new Date(now);
@@ -201,7 +277,6 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
         warranty_end: warrantyEnd.toISOString()
     }).eq('id', newItem.id);
 
-    // 3. History
     await supabase.from('inventory_history').insert([
         {
             item_id: selectedItem.id,
@@ -230,7 +305,9 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
   const getTitle = () => {
       switch(mode) {
           case 'create_catalog': return 'Новый тип оборудования';
+          case 'edit_catalog': return 'Редактирование справочника';
           case 'add_item': return 'Приемка на склад';
+          case 'edit_item': return 'Корректировка партии';
           case 'deploy_item': return 'Отгрузка на объект';
           case 'replace_item': return 'Гарантийная замена';
       }
@@ -245,8 +322,8 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={getTitle()}>
-        {mode === 'create_catalog' && (
-            <form onSubmit={handleCreateCatalog} className="space-y-4">
+        {(mode === 'create_catalog' || mode === 'edit_catalog') && (
+            <form onSubmit={mode === 'create_catalog' ? handleCreateCatalog : handleUpdateCatalog} className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                     <Input label="Название" required value={catForm.name} onChange={(e:any) => setCatForm({...catForm, name: e.target.value})} />
                     <Input label="Артикул (SKU)" value={catForm.sku} onChange={(e:any) => setCatForm({...catForm, sku: e.target.value})} />
@@ -256,7 +333,7 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
                     <Select 
                         label="Тип ТМЦ" 
                         value={catForm.item_type} 
-                        onChange={(e:any) => setCatForm({...catForm, item_type: e.target.value})}
+                        onChange={(e:any) => setCatForm({...catForm, item_type: e.target.value as any})}
                         options={[{value: 'product', label: 'Оборудование'}, {value: 'material', label: 'Материал'}]} 
                     />
                     <Select 
@@ -268,7 +345,7 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
                 </div>
 
                 <div className="grid grid-cols-2 gap-4">
-                    <Input label="Цена закупки" type="number" step="0.01" value={catForm.last_purchase_price} onChange={(e:any) => setCatForm({...catForm, last_purchase_price: e.target.value})} />
+                    <Input label="Цена закупки (справочно)" type="number" step="0.01" value={catForm.last_purchase_price} onChange={(e:any) => setCatForm({...catForm, last_purchase_price: e.target.value})} />
                     <Input label="Гарантия (мес)" type="number" required value={catForm.warranty_period_months} onChange={(e:any) => setCatForm({...catForm, warranty_period_months: e.target.value})} />
                 </div>
                 
@@ -281,19 +358,32 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
                     <label className="block text-xs font-medium text-[#444746] mb-1.5 ml-1">Описание</label>
                     <textarea className="w-full bg-white border border-slate-200 rounded-xl p-4 text-sm" value={catForm.description} onChange={(e) => setCatForm({...catForm, description: e.target.value})} />
                 </div>
-                <Button type="submit" className="w-full h-12" loading={loading}>Создать</Button>
+                
+                <div className="flex gap-3 pt-2">
+                    {mode === 'edit_catalog' && isAdmin && (
+                        <Button type="button" variant="danger" className="w-full h-12" loading={loading} onClick={handleDeleteCatalog}>Удалить</Button>
+                    )}
+                    <Button type="submit" className="w-full h-12" loading={loading}>{mode === 'edit_catalog' ? 'Сохранить изменения' : 'Создать'}</Button>
+                </div>
             </form>
         )}
 
-        {mode === 'add_item' && (
-            <form onSubmit={handleAddItem} className="space-y-4">
-                <Select 
-                    label="Тип оборудования" 
-                    required 
-                    value={itemForm.catalog_id} 
-                    onChange={(e:any) => setItemForm({...itemForm, catalog_id: e.target.value})}
-                    options={[{value: '', label: 'Выберите тип'}, ...catalog.map(c => ({value: c.id, label: c.name}))]}
-                />
+        {(mode === 'add_item' || mode === 'edit_item') && (
+            <form onSubmit={mode === 'add_item' ? handleAddItem : handleUpdateItem} className="space-y-4">
+                {mode === 'add_item' ? (
+                    <Select 
+                        label="Тип оборудования" 
+                        required 
+                        value={itemForm.catalog_id} 
+                        onChange={(e:any) => setItemForm({...itemForm, catalog_id: e.target.value})}
+                        options={[{value: '', label: 'Выберите тип'}, ...catalog.map(c => ({value: c.id, label: c.name}))]}
+                    />
+                ) : (
+                    <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-2">
+                        <p className="text-xs text-blue-500 font-bold uppercase mb-1">Редактирование партии</p>
+                        <p className="font-bold text-blue-900">{selectedItem?.catalog?.name}</p>
+                    </div>
+                )}
                 
                 <div className="grid grid-cols-2 gap-4">
                     <Input 
@@ -319,7 +409,13 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
                     onChange={(e:any) => setItemForm({...itemForm, serial_number: e.target.value})} 
                     placeholder="Необязательно"
                 />
-                <Button type="submit" className="w-full h-12" loading={loading}>Принять</Button>
+                
+                <div className="flex gap-3 pt-2">
+                    {mode === 'edit_item' && isAdmin && (
+                        <Button type="button" variant="danger" className="w-full h-12" loading={loading} onClick={handleDeleteItem}>Удалить</Button>
+                    )}
+                    <Button type="submit" className="w-full h-12" loading={loading}>{mode === 'edit_item' ? 'Сохранить изменения' : 'Принять'}</Button>
+                </div>
             </form>
         )}
 

@@ -17,8 +17,8 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
   const [objects, setObjects] = useState<any[]>([]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<'create_catalog' | 'add_item' | 'deploy_item' | 'replace_item'>('add_item');
-  const [selectedItem, setSelectedItem] = useState<InventoryItem | null>(null);
+  const [modalMode, setModalMode] = useState<'create_catalog' | 'add_item' | 'deploy_item' | 'replace_item' | 'edit_catalog' | 'edit_item'>('add_item');
+  const [selectedItem, setSelectedItem] = useState<any | null>(null);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
   const fetchData = async () => {
@@ -46,7 +46,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
     fetchData();
   }, []);
 
-  const openModal = (mode: 'create_catalog' | 'add_item' | 'deploy_item' | 'replace_item', item: InventoryItem | null = null) => {
+  const openModal = (mode: 'create_catalog' | 'add_item' | 'deploy_item' | 'replace_item' | 'edit_catalog' | 'edit_item', item: any | null = null) => {
     setModalMode(mode);
     setSelectedItem(item);
     setIsModalOpen(true);
@@ -88,8 +88,10 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
         catalog={catalog} 
         items={items} 
         loading={loading} 
+        profile={profile}
         onDeploy={(item) => openModal('deploy_item', item)}
         onReplace={(item) => openModal('replace_item', item)}
+        onEdit={(item, type) => openModal(type === 'catalog' ? 'edit_catalog' : 'edit_item', item)}
       />
 
       <InventoryModal 
