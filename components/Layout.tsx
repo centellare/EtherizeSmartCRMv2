@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Modal, Input, Button, Badge } from './ui';
+import { isModuleAllowed } from '../lib/access';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -53,13 +54,8 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
     { id: 'trash', label: 'Корзина', icon: 'delete_outline' },
   ];
 
-  const menuItems = allMenuItems.filter(item => {
-    const role = profile?.role;
-    if (role === 'specialist') return ['dashboard', 'tasks', 'objects'].includes(item.id);
-    if (role === 'manager') return !['database', 'trash'].includes(item.id);
-    if (role === 'director') return item.id !== 'database';
-    return true;
-  });
+  // Фильтруем элементы меню через общую логику доступа
+  const menuItems = allMenuItems.filter(item => isModuleAllowed(profile?.role, item.id));
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();

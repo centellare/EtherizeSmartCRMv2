@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { supabase, checkConnection } from './lib/supabase';
@@ -6,6 +5,7 @@ import Auth from './components/Auth';
 import Layout from './components/Layout';
 import MainContent from './components/MainContent';
 import { Button } from './components/ui';
+import { isModuleAllowed } from './lib/access';
 
 export type Module = 'dashboard' | 'clients' | 'objects' | 'tasks' | 'finances' | 'team' | 'notifications' | 'trash' | 'database';
 
@@ -27,6 +27,15 @@ const App: React.FC = () => {
   const [activeModule, setActiveModule] = useState<Module>(initialState.module);
   const [activeObjectId, setActiveObjectId] = useState<string | null>(initialState.id);
   const [activeStageId, setActiveStageId] = useState<string | null>(null);
+
+  // Проверка прав при изменении роли или модуля
+  useEffect(() => {
+    if (profile && !isModuleAllowed(profile.role, activeModule)) {
+      console.warn(`Initial module ${activeModule} is not allowed for role ${profile.role}. Resetting to dashboard.`);
+      setActiveModule('dashboard');
+      setActiveObjectId(null);
+    }
+  }, [profile, activeModule]);
 
   // Таймер для отображения кнопки сброса при долгой загрузке
   useEffect(() => {
@@ -52,12 +61,17 @@ const App: React.FC = () => {
   useEffect(() => {
     const handleHashChange = () => {
       const state = getInitialStateFromHash();
+      // Перед установкой проверяем доступ, если профиль уже загружен
+      if (profile && !isModuleAllowed(profile.role, state.module)) {
+        window.location.hash = 'dashboard';
+        return;
+      }
       setActiveModule(state.module);
       setActiveObjectId(state.id);
     };
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [profile]);
 
   const handleNavigateToObject = (objectId: string, stageId?: string) => {
     setActiveObjectId(objectId);
@@ -66,6 +80,12 @@ const App: React.FC = () => {
   };
 
   const handleModuleChange = async (module: Module) => {
+    // Проверка доступа перед переключением
+    if (profile && !isModuleAllowed(profile.role, module)) {
+      console.error("Access denied");
+      return;
+    }
+
     // Умная проверка перед переключением:
     // Если мы переключаемся на важный модуль, проверяем связь
     if (['dashboard', 'tasks', 'objects', 'finances'].includes(module)) {
