@@ -11,6 +11,7 @@ export type Module = 'dashboard' | 'clients' | 'objects' | 'tasks' | 'finances' 
 
 const App: React.FC = () => {
   const { session, profile, loading, refreshProfile, recoverSession } = useAuth();
+  const [showLongLoadingControl, setShowLongLoadingControl] = useState(false);
   
   // Инициализация из URL Hash
   const getInitialStateFromHash = () => {
@@ -26,6 +27,18 @@ const App: React.FC = () => {
   const [activeModule, setActiveModule] = useState<Module>(initialState.module);
   const [activeObjectId, setActiveObjectId] = useState<string | null>(initialState.id);
   const [activeStageId, setActiveStageId] = useState<string | null>(null);
+
+  // Таймер для отображения кнопки сброса при долгой загрузке
+  useEffect(() => {
+    let timer: any;
+    if (loading && !profile) {
+      setShowLongLoadingControl(false);
+      timer = setTimeout(() => {
+        setShowLongLoadingControl(true);
+      }, 3000); // Показываем кнопку через 3 секунды ожидания
+    }
+    return () => clearTimeout(timer);
+  }, [loading, profile]);
 
   // Синхронизация состояния с URL
   useEffect(() => {
@@ -86,9 +99,29 @@ const App: React.FC = () => {
   if (loading && !profile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
-        <div className="flex flex-col items-center gap-4">
-          <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Загрузка системы...</p>
+        <div className="flex flex-col items-center gap-6 animate-in fade-in duration-500">
+          <div className="relative">
+             <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+          </div>
+          
+          <div className="flex flex-col items-center gap-3">
+             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Загрузка системы...</p>
+             
+             {/* Fail-safe кнопка, если загрузка зависла */}
+             {showLongLoadingControl && (
+               <div className="animate-in fade-in slide-in-from-top-2 duration-500 flex flex-col items-center gap-2 mt-4">
+                 <p className="text-[10px] text-slate-400">Возникли проблемы?</p>
+                 <Button 
+                   variant="secondary" 
+                   onClick={handleHardLogout}
+                   className="h-9 text-xs !px-5 bg-white border-red-100 text-red-500 hover:bg-red-50 hover:text-red-600 hover:border-red-200 shadow-sm"
+                   icon="logout"
+                 >
+                   Сбросить сессию и войти
+                 </Button>
+               </div>
+             )}
+          </div>
         </div>
       </div>
     );
