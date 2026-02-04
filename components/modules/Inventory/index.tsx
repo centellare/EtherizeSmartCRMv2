@@ -48,30 +48,33 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
   }, []);
 
   const handleDeleteCatalog = async (id: string) => {
-    setLoading(true);
+    // Optimistic update
+    setCatalog(prev => prev.filter(c => c.id !== id));
+    
     try {
         await supabase.from('inventory_items').update({ is_deleted: true }).eq('catalog_id', id);
         await supabase.from('inventory_catalog').update({ is_deleted: true }).eq('id', id);
         setToast({ message: 'Категория и связанные товары удалены', type: 'success' });
-        await fetchData();
+        // No need to fetch data again if optimistic update worked
     } catch (e) {
         console.error(e);
         setToast({ message: 'Ошибка при удалении', type: 'error' });
+        fetchData(); // Revert on error
     }
-    setLoading(false);
   };
 
   const handleDeleteItem = async (id: string) => {
-    setLoading(true);
+    // Optimistic update
+    setItems(prev => prev.filter(i => i.id !== id));
+
     try {
         await supabase.from('inventory_items').update({ is_deleted: true }).eq('id', id);
         setToast({ message: 'Единица товара удалена', type: 'success' });
-        await fetchData();
     } catch (e) {
         console.error(e);
         setToast({ message: 'Ошибка при удалении', type: 'error' });
+        fetchData(); // Revert on error
     }
-    setLoading(false);
   };
 
   const openModal = (mode: 'create_catalog' | 'add_item' | 'deploy_item' | 'replace_item' | 'edit_catalog' | 'edit_item', item: any | null = null) => {

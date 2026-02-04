@@ -347,7 +347,8 @@ const InventoryList: React.FC<InventoryListProps> = ({
                               <span className="material-icons-round text-sm">edit</span>
                             </button>
                             <button 
-                              onClick={() => {
+                              onClick={(e) => {
+                                e.stopPropagation();
                                 if (window.confirm('Вы уверены, что хотите удалить эту единицу товара?')) {
                                   onDeleteItem(item.id);
                                 }
