@@ -10,6 +10,8 @@ export const useAuth = () => {
   
   // Флаг для предотвращения обновлений стейта на размонтированном компоненте
   const mounted = useRef(true);
+  // Ref для отслеживания текущего ID пользователя, чтобы избегать лишних загрузок
+  const currentUserIdRef = useRef<string | undefined>(undefined);
 
   // Функция загрузки профиля - отделена от эффектов
   const loadProfile = async (userId: string) => {
@@ -40,11 +42,10 @@ export const useAuth = () => {
     if (!mounted.current) return;
     
     // Не ставим setLoading(true) здесь, чтобы не вызывать "мерцание" интерфейса при ревалидации
-    // setLoading используется только для ПЕРВИЧНОЙ загрузки
+    // setLoading используется только для ПЕРВИЧНОЙ загрузки или явного входа
     
     try {
       // 1. Явно проверяем сессию через getSession()
-      // Это гарантирует, что мы получим актуальный токен, даже если вкладка спала
       const { data: { session: currentSession }, error: sessionError } = await supabase.auth.getSession();
 
       if (sessionError || !currentSession) {
@@ -52,11 +53,15 @@ export const useAuth = () => {
           setSession(null);
           setProfile(null);
           setLoading(false);
+          currentUserIdRef.current = undefined;
         }
         return;
       }
 
-      if (mounted.current) setSession(currentSession);
+      if (mounted.current) {
+        setSession(currentSession);
+        currentUserIdRef.current = currentSession.user.id;
+      }
 
       // 2. Если профиля нет или сменился пользователь - грузим профиль
       if (!profile || profile.id !== currentSession.user.id) {
@@ -69,12 +74,12 @@ export const useAuth = () => {
                await supabase.auth.signOut();
                setSession(null);
                setProfile(null);
+               currentUserIdRef.current = undefined;
              } else {
                setProfile(userProfile);
              }
           } else {
-            // Профиль не найден в БД, но сессия есть (странная ситуация, но возможная)
-            // Не разлогиниваем сразу, даем шанс интерфейсу обработать
+            // Профиль не найден в БД, но сессия есть
             setProfile(null);
           }
         }
@@ -90,30 +95,49 @@ export const useAuth = () => {
     mounted.current = true;
     initializeAuth();
 
-    // Подписка на изменения авторизации (вход, выход, обновление токена)
+    // Подписка на изменения авторизации
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!mounted.current) return;
 
-      // При обновлении токена или входе просто обновляем сессию в стейте
-      if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
+      const newUserId = newSession?.user?.id;
+      const prevUserId = currentUserIdRef.current;
+
+      // При обновлении токена (тихий режим)
+      if (event === 'TOKEN_REFRESHED') {
         setSession(newSession);
-        // Если профиля еще нет, пробуем загрузить
-        if (newSession && !profile) {
-          initializeAuth();
+        currentUserIdRef.current = newUserId;
+      }
+
+      // При входе (SIGNED_IN)
+      if (event === 'SIGNED_IN') {
+        // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ:
+        // Проверяем, изменился ли пользователь.
+        // Если это тот же пользователь (например, при переключении вкладок/гидратации),
+        // мы НЕ включаем loading(true), чтобы не вызывать "зависание" интерфейса.
+        if (newUserId && newUserId === prevUserId) {
+             setSession(newSession);
+             // Можно тихо обновить профиль, если нужно, но не блокируем UI
+        } else {
+             // Если это новый вход (логин) или первичная загрузка, включаем loading,
+             // чтобы скрыть "глитч" (экран "Профиль не найден").
+             setLoading(true);
+             setSession(newSession);
+             currentUserIdRef.current = newUserId;
+             await initializeAuth();
         }
-      } 
+      }
       
       if (event === 'SIGNED_OUT') {
         setSession(null);
         setProfile(null);
         setLoading(false);
+        currentUserIdRef.current = undefined;
       }
     });
 
-    // Обработчик фокуса окна - САМОЕ ВАЖНОЕ для "просыпания"
+    // Обработчик фокуса окна
     const handleFocus = () => {
       if (document.visibilityState === 'visible') {
-        // Принудительная ревалидация при возвращении на вкладку
         console.debug('Tab active, revalidating auth...');
         initializeAuth();
       }
@@ -128,7 +152,7 @@ export const useAuth = () => {
       document.removeEventListener('visibilitychange', handleFocus);
       window.removeEventListener('focus', handleFocus);
     };
-  }, []); // Пустой массив зависимостей - эффект запускается один раз
+  }, []); 
 
   return { 
     session, 
