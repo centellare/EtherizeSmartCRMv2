@@ -12,16 +12,15 @@ export const useAuth = () => {
   const initialLoadDone = useRef(false);
 
   const fetchProfile = useCallback(async (userId: string, silent = false) => {
-    // Если вкладка скрыта, не инициируем новый запрос профиля, чтобы не плодить Pending-статусы
-    if (document.visibilityState === 'hidden') return;
     if (isFetchingProfile.current) return;
-    
     isFetchingProfile.current = true;
+
+    // Показываем экран загрузки только если это первый вход или если мы явно не просили "тихий" режим
+    // и при этом у нас еще нет данных профиля в памяти.
     const shouldShowLoading = !silent && !initialLoadDone.current;
     if (shouldShowLoading) setLoading(true);
     
     try {
-      // Используем AbortController для возможности отмены при таймауте на уровне браузера
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -29,9 +28,12 @@ export const useAuth = () => {
         .maybeSingle();
       
       if (error) {
-        console.error('Auth check error:', error.message);
-        // Не сбрасываем профиль в null при фоновых ошибках (silent=true)
-        if (!silent) setProfile(null);
+        const isAborted = error.name === 'AbortError' || error.message?.toLowerCase().includes('aborted');
+        if (!isAborted) {
+          console.error('Database error fetching profile:', error.message);
+          // Не сбрасываем профиль в null при фоновых ошибках, чтобы не "выбивало" из приложения
+          if (shouldShowLoading) setProfile(null);
+        }
       } else if (data) {
         if (data.deleted_at) {
           setProfile(null);
@@ -43,9 +45,17 @@ export const useAuth = () => {
           profileRef.current = data;
           initialLoadDone.current = true;
         }
+      } else {
+        // Если данных нет вовсе (например, запись в таблице профилей отсутствует)
+        setProfile(null);
+        profileRef.current = null;
       }
     } catch (err: any) {
-      console.error('Critical auth exception:', err);
+      const isAborted = err.name === 'AbortError' || err.message?.toLowerCase().includes('aborted');
+      if (!isAborted) {
+        console.error('Critical auth error:', err);
+        if (shouldShowLoading) setProfile(null);
+      }
     } finally {
       isFetchingProfile.current = false;
       if (shouldShowLoading) setLoading(false);
@@ -63,28 +73,37 @@ export const useAuth = () => {
         if (isMounted) {
           setSession(initialSession);
           if (initialSession) {
+            // Первая загрузка - не silent
             await fetchProfile(initialSession.user.id, false);
           } else {
             setLoading(false);
           }
         }
       } catch (err) {
+        console.error('Session check failed:', err);
         if (isMounted) setLoading(false);
       }
 
       const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
         if (!isMounted) return;
         
+        // Ключевой момент: если профиль уже есть (profileRef.current), 
+        // любое событие обновления сессии должно проходить в silent режиме.
         const isSilent = !!profileRef.current;
 
         switch (event) {
           case 'SIGNED_IN':
             setSession(currentSession);
-            if (currentSession) await fetchProfile(currentSession.user.id, isSilent);
+            if (currentSession) {
+              await fetchProfile(currentSession.user.id, isSilent);
+            }
             break;
             
           case 'TOKEN_REFRESHED':
             setSession(currentSession);
+            if (currentSession) {
+              await fetchProfile(currentSession.user.id, true); // Всегда silent для рефреша
+            }
             break;
             
           case 'SIGNED_OUT':
@@ -105,9 +124,12 @@ export const useAuth = () => {
 
     initialize();
 
+    // Защитный таймер: если за 10 секунд ничего не произошло, убираем лоадер
     const timeout = setTimeout(() => {
-      if (isMounted && loading) setLoading(false);
-    }, 8000);
+      if (isMounted && loading) {
+        setLoading(false);
+      }
+    }, 10000);
 
     return () => {
       isMounted = false;

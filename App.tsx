@@ -12,6 +12,7 @@ export type Module = 'dashboard' | 'clients' | 'objects' | 'tasks' | 'finances' 
 const App: React.FC = () => {
   const { session, profile, loading, refreshProfile } = useAuth();
   
+  // Инициализация из URL Hash
   const getInitialStateFromHash = () => {
     const hash = window.location.hash.replace('#', '');
     const [module, id] = hash.split('/');
@@ -26,11 +27,13 @@ const App: React.FC = () => {
   const [activeObjectId, setActiveObjectId] = useState<string | null>(initialState.id);
   const [activeStageId, setActiveStageId] = useState<string | null>(null);
 
+  // Синхронизация состояния с URL
   useEffect(() => {
     const hash = activeObjectId ? `${activeModule}/${activeObjectId}` : activeModule;
     window.location.hash = hash;
   }, [activeModule, activeObjectId]);
 
+  // Слушатель изменения Hash (кнопки назад/вперед в браузере)
   useEffect(() => {
     const handleHashChange = () => {
       const state = getInitialStateFromHash();
@@ -40,33 +43,6 @@ const App: React.FC = () => {
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
-
-  // Улучшенный слушатель фокуса для борьбы с Throttling браузера
-  useEffect(() => {
-    const handleFocus = async () => {
-      if (document.visibilityState === 'visible' && session) {
-        try {
-          // 1. Принудительно обновляем сессию (Wake Up Auth)
-          await supabase.auth.refreshSession();
-          
-          // 2. Даем браузеру 150мс на восстановление сетевых сокетов
-          await new Promise(resolve => setTimeout(resolve, 150));
-          
-          // 3. Выполняем "контрольный" запрос профиля для проверки связи
-          await refreshProfile();
-        } catch (e) {
-          console.warn('[Network] Не удалось восстановить сессию автоматически');
-        }
-      }
-    };
-
-    window.addEventListener('visibilitychange', handleFocus);
-    window.addEventListener('focus', handleFocus);
-    return () => {
-      window.removeEventListener('visibilitychange', handleFocus);
-      window.removeEventListener('focus', handleFocus);
-    };
-  }, [session, refreshProfile]);
 
   const handleNavigateToObject = (objectId: string, stageId?: string) => {
     setActiveObjectId(objectId);
@@ -88,6 +64,8 @@ const App: React.FC = () => {
     window.location.reload();
   };
 
+  // 1. Показываем загрузку ТОЛЬКО если идет процесс и профиля еще нет в памяти.
+  // Это предотвращает "вылет" на экран загрузки при фоновом обновлении токена (visibility change).
   if (loading && !profile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
@@ -99,8 +77,10 @@ const App: React.FC = () => {
     );
   }
 
+  // 2. Если загрузка не идет и сессии нет — показываем вход
   if (!loading && !session) return <Auth />;
 
+  // 3. Если загрузка завершена, а профиль всё еще null (но сессия была) — показываем ошибку профиля
   if (!loading && !profile) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8fafc] p-6 text-center animate-in fade-in duration-500">
@@ -109,7 +89,7 @@ const App: React.FC = () => {
         </div>
         <h2 className="text-xl font-medium text-slate-900 mb-2">Профиль не найден</h2>
         <p className="text-slate-500 max-w-xs mb-8 leading-relaxed">
-          Не удалось загрузить данные вашего аккаунта. Возможно, возникла сетевая ошибка при восстановлении сессии.
+          Не удалось загрузить данные вашего аккаунта. Возможно, он был деактивирован администратором или возникла техническая ошибка.
         </p>
         <div className="flex flex-col gap-3 w-full max-w-[240px]">
           <Button onClick={() => window.location.reload()} icon="refresh" className="w-full">Обновить страницу</Button>
@@ -119,6 +99,7 @@ const App: React.FC = () => {
     );
   }
 
+  // 4. Если профиль есть — рендерим приложение, даже если loading=true в фоне
   return (
     <Layout 
       profile={profile} 
