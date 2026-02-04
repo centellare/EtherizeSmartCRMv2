@@ -380,11 +380,18 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
                     <textarea className="w-full bg-white border border-slate-200 rounded-xl p-4 text-sm" value={catForm.description} onChange={(e) => setCatForm({...catForm, description: e.target.value})} />
                 </div>
                 
-                <div className="flex gap-3 pt-2">
+                <div className="flex gap-3 pt-4">
                     {mode === 'edit_catalog' && isAdmin && (
-                        <Button type="button" variant="danger" className="w-full h-12" loading={loading} onClick={handleDeleteCatalog}>Удалить</Button>
+                        <button 
+                            type="button" 
+                            className="flex-1 h-12 rounded-full bg-red-50 text-red-600 font-bold text-sm hover:bg-red-600 hover:text-white transition-all" 
+                            disabled={loading}
+                            onClick={handleDeleteCatalog}
+                        >
+                            Удалить тип
+                        </button>
                     )}
-                    <Button type="submit" className="w-full h-12" loading={loading}>{mode === 'edit_catalog' ? 'Сохранить изменения' : 'Создать'}</Button>
+                    <Button type="submit" className={mode === 'edit_catalog' ? 'flex-[2] h-12' : 'w-full h-12'} loading={loading}>{mode === 'edit_catalog' ? 'Сохранить изменения' : 'Создать'}</Button>
                 </div>
             </form>
         )}
@@ -431,11 +438,18 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
                     placeholder="Необязательно"
                 />
                 
-                <div className="flex gap-3 pt-2">
+                <div className="flex gap-3 pt-4">
                     {mode === 'edit_item' && isAdmin && (
-                        <Button type="button" variant="danger" className="w-full h-12" loading={loading} onClick={handleDeleteItem}>Удалить</Button>
+                        <button 
+                            type="button" 
+                            className="flex-1 h-12 rounded-full bg-red-50 text-red-600 font-bold text-sm hover:bg-red-600 hover:text-white transition-all" 
+                            disabled={loading}
+                            onClick={handleDeleteItem}
+                        >
+                            Удалить запись
+                        </button>
                     )}
-                    <Button type="submit" className="w-full h-12" loading={loading}>{mode === 'edit_item' ? 'Сохранить изменения' : 'Принять'}</Button>
+                    <Button type="submit" className={mode === 'edit_item' ? 'flex-[2] h-12' : 'w-full h-12'} loading={loading}>{mode === 'edit_item' ? 'Сохранить изменения' : 'Принять'}</Button>
                 </div>
             </form>
         )}
