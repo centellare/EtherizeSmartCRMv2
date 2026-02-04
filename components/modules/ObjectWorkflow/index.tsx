@@ -293,7 +293,7 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
       )}
 
       {activeTab === 'docs' && (
-        <ArchiveTab tasks={tasks} />
+        <ArchiveTab tasks={tasks} profile={profile} />
       )}
 
       {/* Modals remained identical, but benefit from Toast feedback */}
