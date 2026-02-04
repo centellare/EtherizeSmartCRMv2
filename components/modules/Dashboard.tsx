@@ -294,7 +294,7 @@ const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
         staff: staffRes.data || []
       });
 
-      setLatency(Math.round(performance.now() - start));
+      setLatency(Math.round(Number(performance.now()) - Number(start)));
     } catch (e) {
       console.error(e);
     } finally {

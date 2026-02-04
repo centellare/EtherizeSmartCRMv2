@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { supabase, checkConnection } from './lib/supabase';
@@ -7,7 +8,7 @@ import MainContent from './components/MainContent';
 import { Button } from './components/ui';
 import { isModuleAllowed } from './lib/access';
 
-export type Module = 'dashboard' | 'clients' | 'objects' | 'tasks' | 'finances' | 'team' | 'notifications' | 'trash' | 'database';
+export type Module = 'dashboard' | 'clients' | 'objects' | 'tasks' | 'finances' | 'team' | 'inventory' | 'notifications' | 'trash' | 'database';
 
 const App: React.FC = () => {
   const { session, profile, loading, refreshProfile, recoverSession } = useAuth();
@@ -88,7 +89,7 @@ const App: React.FC = () => {
 
     // Умная проверка перед переключением:
     // Если мы переключаемся на важный модуль, проверяем связь
-    if (['dashboard', 'tasks', 'objects', 'finances'].includes(module)) {
+    if (['dashboard', 'tasks', 'objects', 'finances', 'inventory'].includes(module)) {
       const isConnected = await checkConnection();
       if (!isConnected) {
         console.warn('Connection lost, attempting recovery before navigation...');

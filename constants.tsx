@@ -160,6 +160,53 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
       { name: 'is_read', type: 'boolean', defaultValue: 'false' },
       { name: 'created_at', type: 'timestamp', defaultValue: 'now()' }
     ]
+  },
+  {
+    name: 'inventory_catalog',
+    description: 'Справочник номенклатуры товаров.',
+    columns: [
+      { name: 'id', type: 'uuid', isPrimary: true, defaultValue: 'gen_random_uuid()' },
+      { name: 'name', type: 'text', description: 'Название товара' },
+      { name: 'item_type', type: 'text', defaultValue: "'product'", description: 'product / material' },
+      { name: 'sku', type: 'text', isNullable: true, description: 'Артикул' },
+      { name: 'unit', type: 'text', defaultValue: "'шт'", description: 'Ед. измерения' },
+      { name: 'last_purchase_price', type: 'numeric', defaultValue: '0', description: 'Цена закупки' },
+      { name: 'description', type: 'text', isNullable: true },
+      { name: 'has_serial', type: 'boolean', defaultValue: 'false', description: 'Требуется ли серийный номер' },
+      { name: 'warranty_period_months', type: 'integer', defaultValue: '12', description: 'Гарантия (мес)' },
+      { name: 'created_at', type: 'timestamp', defaultValue: 'now()' }
+    ]
+  },
+  {
+    name: 'inventory_items',
+    description: 'Единицы товара на складе и объектах.',
+    columns: [
+      { name: 'id', type: 'uuid', isPrimary: true, defaultValue: 'gen_random_uuid()' },
+      { name: 'catalog_id', type: 'uuid', isForeign: true, references: 'inventory_catalog(id)' },
+      { name: 'serial_number', type: 'text', isNullable: true },
+      { name: 'quantity', type: 'numeric', defaultValue: '1', description: 'Количество' },
+      { name: 'purchase_price', type: 'numeric', defaultValue: '0', description: 'Цена закупки партии' },
+      { name: 'status', type: 'text', defaultValue: "'in_stock'", description: 'in_stock / deployed / scrapped' },
+      { name: 'current_object_id', type: 'uuid', isNullable: true, isForeign: true, references: 'objects(id)' },
+      { name: 'assigned_to_id', type: 'uuid', isNullable: true, isForeign: true, references: 'profiles(id)' },
+      { name: 'warranty_start', type: 'date', isNullable: true },
+      { name: 'warranty_end', type: 'date', isNullable: true },
+      { name: 'created_at', type: 'timestamp', defaultValue: 'now()' }
+    ]
+  },
+  {
+    name: 'inventory_history',
+    description: 'Журнал движения ТМЦ',
+    columns: [
+      { name: 'id', type: 'uuid', isPrimary: true, defaultValue: 'gen_random_uuid()' },
+      { name: 'item_id', type: 'uuid', isForeign: true, references: 'inventory_items(id)' },
+      { name: 'action_type', type: 'text', description: 'receive, deploy, scrap, replace' },
+      { name: 'from_object_id', type: 'uuid', isNullable: true },
+      { name: 'to_object_id', type: 'uuid', isNullable: true },
+      { name: 'comment', type: 'text', isNullable: true },
+      { name: 'created_by', type: 'uuid', isForeign: true, references: 'profiles(id)' },
+      { name: 'created_at', type: 'timestamp', defaultValue: 'now()' }
+    ]
   }
 ];
 
@@ -181,6 +228,10 @@ CREATE INDEX IF NOT EXISTS idx_tasks_object_id ON public.tasks(object_id);
 CREATE INDEX IF NOT EXISTS idx_transactions_deleted ON public.transactions(deleted_at);
 CREATE INDEX IF NOT EXISTS idx_transactions_type ON public.transactions(type);
 CREATE INDEX IF NOT EXISTS idx_transactions_object ON public.transactions(object_id);
+
+CREATE INDEX IF NOT EXISTS idx_inventory_items_status ON public.inventory_items(status);
+CREATE INDEX IF NOT EXISTS idx_inventory_items_serial ON public.inventory_items(serial_number);
+CREATE INDEX IF NOT EXISTS idx_inventory_items_object ON public.inventory_items(current_object_id);
 
 -- 1. Переход на следующий этап объекта
 CREATE OR REPLACE FUNCTION public.transition_object_stage(

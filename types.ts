@@ -95,6 +95,39 @@ export interface Transaction {
   };
 }
 
+export interface InventoryCatalogItem {
+  id: string;
+  name: string;
+  item_type: 'product' | 'material'; // Тип ТМЦ
+  sku?: string; 
+  unit?: string; 
+  last_purchase_price?: number; 
+  description?: string;
+  has_serial: boolean;
+  warranty_period_months: number;
+  created_at: string;
+}
+
+export type InventoryItemStatus = 'in_stock' | 'deployed' | 'maintenance' | 'scrapped';
+
+export interface InventoryItem {
+  id: string;
+  catalog_id: string;
+  serial_number?: string;
+  quantity: number; 
+  purchase_price?: number; 
+  status: InventoryItemStatus;
+  current_object_id?: string;
+  assigned_to_id?: string;
+  warranty_start?: string;
+  warranty_end?: string;
+  created_at: string;
+  
+  // Joins
+  catalog?: InventoryCatalogItem;
+  object?: { id: string; name: string };
+}
+
 export interface TableSchema {
   name: string;
   description: string;
