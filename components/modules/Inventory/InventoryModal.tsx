@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { Modal, Input, Select, Button } from '../../ui';
 import { InventoryCatalogItem, InventoryItem } from '../../../types';
@@ -13,13 +13,14 @@ interface InventoryModalProps {
   items: InventoryItem[]; // All items for replacement logic
   selectedItem: any | null; // Can be InventoryItem or CatalogItem depending on mode
   profile: any;
-  onSuccess: () => void;
+  onSuccess: (keepOpen?: boolean) => void;
 }
 
 const InventoryModal: React.FC<InventoryModalProps> = ({ 
   isOpen, onClose, mode, catalog, objects, items, selectedItem, profile, onSuccess 
 }) => {
   const [loading, setLoading] = useState(false);
+  const [skipSerial, setSkipSerial] = useState(false);
   
   // Create/Edit Catalog State
   const [catForm, setCatForm] = useState({ 
@@ -35,10 +36,17 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
   const [deployForm, setDeployForm] = useState({ object_id: '', serial_number: '', quantity_to_deploy: '1' });
   const [replaceForm, setReplaceForm] = useState({ new_item_id: '' });
 
+  // Computed properties
+  const selectedCatalogItem = useMemo(() => 
+    catalog.find(c => c.id === itemForm.catalog_id), 
+  [itemForm.catalog_id, catalog]);
+
+  const isSerialRequired = selectedCatalogItem?.has_serial && !skipSerial;
+
   // Reset/Init forms
   useEffect(() => {
     if (isOpen) {
-       // Defaults
+       setSkipSerial(false);
        setDeployForm({ 
          object_id: '', 
          serial_number: '', 
@@ -52,7 +60,6 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
          item_type: 'product'
        });
 
-       // Fill for edits
        if (mode === 'edit_catalog' && selectedItem) {
          setCatForm({
            name: selectedItem.name,
@@ -75,7 +82,14 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
     }
   }, [isOpen, selectedItem, mode]);
 
-  // Update purchase price when catalog item is selected (only in add mode)
+  // FIX: Force quantity to 1 if serial number is required (logic protection)
+  useEffect(() => {
+    if (mode === 'add_item' && isSerialRequired) {
+      setItemForm(prev => ({ ...prev, quantity: '1' }));
+    }
+  }, [isSerialRequired, mode]);
+
+  // Update purchase price when catalog item is selected
   useEffect(() => {
     if (mode === 'add_item' && itemForm.catalog_id) {
         const catItem = catalog.find(c => c.id === itemForm.catalog_id);
@@ -88,10 +102,9 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
   const handleCreateCatalog = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    
     const payload = {
         name: catForm.name,
-        item_type: catForm.item_type || 'product', // Fallback just in case
+        item_type: catForm.item_type || 'product',
         sku: catForm.sku || null,
         unit: catForm.unit || 'шт',
         last_purchase_price: parseFloat(catForm.last_purchase_price) || 0,
@@ -99,14 +112,10 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
         has_serial: catForm.has_serial,
         warranty_period_months: parseInt(catForm.warranty_period_months) || 12
     };
-
     const { error } = await supabase.from('inventory_catalog').insert([payload]);
-    
     setLoading(false);
-    
     if (error) {
         alert('Ошибка создания: ' + JSON.stringify(error));
-        console.error('Create Catalog Error:', error);
     } else {
         onSuccess();
     }
@@ -117,23 +126,47 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
     if (!selectedItem) return;
     setLoading(true);
     const { error } = await supabase.from('inventory_catalog').update({
-       ...catForm, 
-       warranty_period_months: parseInt(catForm.warranty_period_months),
-       last_purchase_price: parseFloat(catForm.last_purchase_price) || 0
+        ...catForm, 
+        warranty_period_months: parseInt(catForm.warranty_period_months),
+        last_purchase_price: parseFloat(catForm.last_purchase_price) || 0
     }).eq('id', selectedItem.id);
     setLoading(false);
     if (!error) onSuccess();
   };
 
-  const handleAddItem = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddItem = async (e?: React.FormEvent, keepOpen = false) => {
+    if (e) e.preventDefault();
     if (!itemForm.catalog_id) return;
+    
+    // --- ВАЛИДАЦИЯ (ЗАЩИТА ОТ УЯЗВИМОСТЕЙ) ---
+    const qty = parseFloat(itemForm.quantity);
+    if (isNaN(qty) || qty <= 0) {
+        alert('Укажите корректное количество');
+        return;
+    }
+
+    if (isSerialRequired) {
+        if (!itemForm.serial_number.trim()) {
+            alert('Необходимо ввести серийный номер');
+            return;
+        }
+        if (qty !== 1) {
+            alert('Для товаров с S/N количество должно быть равно 1');
+            return;
+        }
+    }
+
     setLoading(true);
     
+    // Формируем финальный серийник: если пропуск — метка, иначе из поля или null
+    const finalSerial = skipSerial 
+        ? '[БЕЗ S/N]' 
+        : (itemForm.serial_number.trim() || null);
+
     const payload = {
         catalog_id: itemForm.catalog_id,
-        serial_number: itemForm.serial_number || null,
-        quantity: parseFloat(itemForm.quantity) || 1,
+        serial_number: finalSerial,
+        quantity: qty,
         purchase_price: parseFloat(itemForm.purchase_price) || 0,
         status: 'in_stock',
         assigned_to_id: profile.id
@@ -148,7 +181,13 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
             created_by: profile.id,
             comment: `Приемка. Кол-во: ${payload.quantity}`
         }]);
-        onSuccess();
+        
+        onSuccess(keepOpen);
+        if (keepOpen) {
+            setItemForm(prev => ({ ...prev, serial_number: '' }));
+        }
+    } else if (error) {
+        alert("Ошибка при сохранении: " + error.message);
     }
     setLoading(false);
   };
@@ -181,13 +220,11 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
     }
 
     setLoading(true);
-
     const now = new Date();
     const warrantyMonths = selectedItem.catalog?.warranty_period_months || 0;
     const warrantyEnd = new Date(now);
     warrantyEnd.setMonth(warrantyEnd.getMonth() + warrantyMonths);
 
-    // Common fields for the deployed item
     const deployedStatus = {
         status: 'deployed',
         current_object_id: deployForm.object_id,
@@ -198,7 +235,6 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
 
     let deployedItemId = selectedItem.id;
 
-    // SPLIT LOGIC
     if (qtyToDeploy < selectedItem.quantity) {
         const newStockQty = selectedItem.quantity - qtyToDeploy;
         await supabase.from('inventory_items').update({ quantity: newStockQty }).eq('id', selectedItem.id);
@@ -348,7 +384,7 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
         )}
 
         {(mode === 'add_item' || mode === 'edit_item') && (
-            <form onSubmit={mode === 'add_item' ? handleAddItem : handleUpdateItem} className="space-y-4">
+            <form onSubmit={mode === 'add_item' ? (e) => handleAddItem(e, false) : handleUpdateItem} className="space-y-4">
                 {mode === 'add_item' ? (
                     <Select 
                         label="Тип оборудования" 
@@ -370,8 +406,10 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
                         type="number"
                         step="0.01"
                         required
+                        disabled={isSerialRequired && mode === 'add_item'}
                         value={itemForm.quantity} 
-                        onChange={(e:any) => setItemForm({...itemForm, quantity: e.target.value})} 
+                        onChange={(e:any) => setItemForm({...itemForm, quantity: e.target.value})}
+                        className={isSerialRequired && mode === 'add_item' ? 'bg-slate-100 text-slate-500' : ''} 
                     />
                     <Input 
                         label="Цена закупки (за ед.)"
@@ -382,15 +420,49 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
                         onChange={(e:any) => setItemForm({...itemForm, purchase_price: e.target.value})}
                     />
                 </div>
-                <Input 
-                    label="Серийный номер" 
-                    value={itemForm.serial_number} 
-                    onChange={(e:any) => setItemForm({...itemForm, serial_number: e.target.value})} 
-                    placeholder="Необязательно"
-                />
                 
-                <div className="pt-2">
-                    <Button type="submit" className="w-full h-12" loading={loading}>{mode === 'edit_item' ? 'Сохранить изменения' : 'Принять'}</Button>
+                <div className="mb-2">
+                    <Input 
+                        label="Серийный номер" 
+                        value={itemForm.serial_number} 
+                        onChange={(e:any) => setItemForm({...itemForm, serial_number: e.target.value})} 
+                        placeholder={isSerialRequired ? "Сканируйте S/N..." : "Номер не обязателен"}
+                        disabled={skipSerial && mode === 'add_item'}
+                        required={isSerialRequired}
+                        className={skipSerial ? 'bg-slate-50 opacity-60' : ''}
+                    />
+                    {selectedCatalogItem?.has_serial && mode === 'add_item' && (
+                        <label className="flex items-center gap-2 mt-2 cursor-pointer group">
+                            <input 
+                                type="checkbox" 
+                                checked={skipSerial} 
+                                onChange={(e) => setSkipSerial(e.target.checked)} 
+                                className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                            />
+                            <span className="text-xs font-bold text-slate-500 group-hover:text-blue-600 transition-colors">Принять без ввода S/N</span>
+                        </label>
+                    )}
+                </div>
+                
+                <div className="pt-2 flex gap-3">
+                    {mode === 'add_item' ? (
+                        <>
+                            <Button 
+                                type="button" 
+                                variant="secondary" 
+                                className="flex-1" 
+                                loading={loading}
+                                onClick={(e) => { e.preventDefault(); handleAddItem(undefined, true); }}
+                            >
+                                Добавить и еще
+                            </Button>
+                            <Button type="submit" className="flex-1" loading={loading}>
+                                Добавить и закрыть
+                            </Button>
+                        </>
+                    ) : (
+                        <Button type="submit" className="w-full h-12" loading={loading}>Сохранить изменения</Button>
+                    )}
                 </div>
             </form>
         )}

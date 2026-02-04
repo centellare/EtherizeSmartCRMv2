@@ -98,9 +98,11 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
     setIsModalOpen(true);
   };
 
-  const handleSuccess = () => {
+  const handleSuccess = (keepOpen = false) => {
     fetchData();
-    setIsModalOpen(false);
+    if (!keepOpen) {
+        setIsModalOpen(false);
+    }
     setToast({ message: 'Операция выполнена успешно', type: 'success' });
   };
 
