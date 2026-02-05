@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { InventoryItem } from '../../../types';
@@ -26,30 +25,34 @@ const ItemDetailsDrawer: React.FC<ItemDetailsDrawerProps> = ({ item, isOpen, onC
   const fetchHistory = async () => {
     if (!item) return;
     setLoading(true);
-    const { data } = await supabase
-      .from('inventory_history')
-      .select('*, profiles(full_name)')
-      .eq('item_id', item.id)
-      .order('created_at', { ascending: false });
-    setHistory(data || []);
-    setLoading(false);
+    try {
+      const { data } = await supabase
+        .from('inventory_history')
+        .select('*, profiles(full_name)')
+        .eq('item_id', item.id)
+        .order('created_at', { ascending: false });
+      setHistory(data || []);
+    } catch (error) {
+      console.error('Error fetching history:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (!item) return null;
 
-  const isAdmin = profile?.role === 'admin';
   const isDeployed = item.status === 'deployed';
 
   return (
     <>
-      {/* Overlay */}
+      {/* Overlay — теперь под хэдером */}
       <div 
-        className={`fixed inset-0 bg-[#1c1b1f]/20 backdrop-blur-sm z-[1300] transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} 
+        className={`fixed inset-0 top-[64px] bg-[#1c1b1f]/20 backdrop-blur-sm z-[1000] transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} 
         onClick={onClose}
       />
       
-      {/* Drawer */}
-      <div className={`fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-2xl z-[1310] transform transition-transform duration-300 ease-in-out ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
+      {/* Drawer — top-[64px] и правильный расчет высоты */}
+      <div className={`fixed right-0 top-[64px] h-[calc(100vh-64px)] w-full max-w-md bg-white shadow-2xl z-[1010] transform transition-transform duration-300 ease-in-out border-l border-slate-100 ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}>
         <div className="flex flex-col h-full">
           
           {/* Header */}
@@ -114,7 +117,7 @@ const ItemDetailsDrawer: React.FC<ItemDetailsDrawerProps> = ({ item, isOpen, onC
                         <p className="text-[10px] text-blue-400 uppercase mb-1">Текущее местоположение</p>
                         <div className="flex items-center gap-2">
                             <span className="material-icons-round text-blue-600 text-sm">home_work</span>
-                            <p className="font-bold text-blue-900 text-sm">{item.object?.name}</p>
+                            <p className="font-bold text-blue-900 text-sm">{item.objects?.name || 'Неизвестный объект'}</p>
                         </div>
                     </div>
                   )}
@@ -127,10 +130,9 @@ const ItemDetailsDrawer: React.FC<ItemDetailsDrawerProps> = ({ item, isOpen, onC
             </section>
 
             {/* Timeline / History */}
-            <section>
+            <section className="pb-4">
               <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-4 ml-1">История движения</h3>
               <div className="space-y-0 relative pl-2">
-                {/* Vertical Line */}
                 <div className="absolute left-[19px] top-2 bottom-4 w-[2px] bg-slate-100"></div>
 
                 {loading ? (
@@ -188,4 +190,5 @@ const ItemDetailsDrawer: React.FC<ItemDetailsDrawerProps> = ({ item, isOpen, onC
   );
 };
 
+// ВОТ ЭТА СТРОКА КРИТИЧЕСКИ ВАЖНА:
 export default ItemDetailsDrawer;

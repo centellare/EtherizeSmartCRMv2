@@ -108,7 +108,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
       if (!groups[key]) {
         groups[key] = {
           id: key,
-          objectName: item.object?.name || 'Без объекта',
+          objectName: item.objects?.name || item.object?.name || 'Без объекта',
           date: item.warranty_start || new Date().toISOString(),
           items: []
         };
