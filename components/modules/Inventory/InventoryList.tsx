@@ -93,9 +93,11 @@ const InventoryList: React.FC<InventoryListProps> = ({
     }, 0);
   }, [filteredItems]);
 
+  // Группировка для вкладки Гарантия
   const groupedWarrantyItems = useMemo(() => {
     if (activeTab !== 'warranty') return [];
 
+    // Используем отфильтрованный список, чтобы поиск работал
     const groups: Record<string, { id: string; objectName: string; date: string; items: InventoryItem[] }> = {};
 
     filteredItems.forEach(item => {
@@ -138,22 +140,30 @@ const InventoryList: React.FC<InventoryListProps> = ({
     const html = `
         <html>
             <head>
-                <title>Технический лист оборудования</title>
+                <title>Список отгруженного оборудования</title>
                 <style>
-                    body { font-family: sans-serif; padding: 40px; color: #1c1b1f; max-width: 800px; margin: 0 auto; }
+                    body { font-family: sans-serif; padding: 40px; color: #1c1b1f; max-width: 900px; margin: 0 auto; }
                     table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 12px; }
-                    th, td { border: 1px solid #e1e2e1; padding: 8px 12px; text-align: left; }
-                    th { bg-color: #f8f9fa; font-weight: bold; }
-                    .header { margin-bottom: 30px; border-bottom: 2px solid #1c1b1f; pb: 20px; }
-                    .header h1 { margin: 0 0 10px 0; font-size: 24px; }
+                    th, td { border: 1px solid #e1e2e1; padding: 8px 12px; text-align: left; vertical-align: top; }
+                    th { background-color: #f8f9fa; font-weight: bold; }
+                    .header { margin-bottom: 30px; border-bottom: 2px solid #1c1b1f; padding-bottom: 20px; }
+                    .header h1 { margin: 0 0 10px 0; font-size: 20px; text-transform: uppercase; }
                     .info-row { margin-bottom: 5px; font-size: 14px; }
+                    .footer { margin-top: 60px; display: flex; justify-content: space-between; font-size: 14px; }
+                    .signature-block { width: 45%; }
+                    .signature-line { border-top: 1px solid #000; margin-top: 40px; margin-bottom: 5px; }
+                    .signature-hint { font-size: 10px; color: #666; }
+                    @media print {
+                        @page { margin: 1cm; }
+                        body { padding: 0; }
+                    }
                 </style>
             </head>
             <body>
                 <div class="header">
-                    <h1>Технический лист установленного оборудования</h1>
+                    <h1>Список отгруженного оборудования и/или материалов</h1>
                     <div class="info-row"><strong>Объект:</strong> ${group.objectName}</div>
-                    <div class="info-row"><strong>Дата отгрузки/монтажа:</strong> ${formatDate(group.date)}</div>
+                    <div class="info-row"><strong>Дата отгрузки:</strong> ${formatDate(group.date)}</div>
                 </div>
                 <table>
                     <thead>
@@ -161,8 +171,8 @@ const InventoryList: React.FC<InventoryListProps> = ({
                             <th style="width: 40px">№</th>
                             <th>Наименование</th>
                             <th style="width: 80px">Кол-во</th>
-                            <th>S/N</th>
-                            <th>Гарантия (мес)</th>
+                            <th>Гарантия</th>
+                            <th>Серийные номера</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -171,12 +181,26 @@ const InventoryList: React.FC<InventoryListProps> = ({
                                 <td>${idx + 1}</td>
                                 <td>${item.catalog?.name}</td>
                                 <td>${item.quantity} ${item.catalog?.unit}</td>
-                                <td>${item.serial_number || '-'}</td>
-                                <td>${item.catalog?.warranty_period_months}</td>
+                                <td>${item.catalog?.warranty_period_months ? item.catalog.warranty_period_months + ' мес' : '-'}</td>
+                                <td style="font-family: monospace;">${item.serial_number || '-'}</td>
                             </tr>
                         `).join('')}
                     </tbody>
                 </table>
+                
+                <div class="footer">
+                    <div class="signature-block">
+                        <p><strong>Отпустил (Логист):</strong></p>
+                        <div class="signature-line"></div>
+                        <div class="signature-hint">(Подпись / ФИО)</div>
+                    </div>
+                    <div class="signature-block">
+                        <p><strong>Принял (Инженер/Клиент):</strong></p>
+                        <div class="signature-line"></div>
+                        <div class="signature-hint">(Подпись / ФИО)</div>
+                    </div>
+                </div>
+                
                 <script>window.print();</script>
             </body>
         </html>
@@ -261,7 +285,6 @@ const InventoryList: React.FC<InventoryListProps> = ({
           ))}
         </div>
         
-        {/* Confirm Modal Rendered at the end of the component */}
         <ConfirmModal 
           isOpen={deleteConfig.open}
           onClose={() => setDeleteConfig({ ...deleteConfig, open: false })}
@@ -368,6 +391,8 @@ const InventoryList: React.FC<InventoryListProps> = ({
           )}
 
           {groupedWarrantyItems.map(group => {
+            // Проверка: нужно ли раскрыть группу, если поиск совпал с товаром внутри
+            // hasSearchMatch будет true только если введен поиск и он совпал с элементом внутри группы
             const hasSearchMatch = search && group.items.some(item => 
               item.catalog?.name.toLowerCase().includes(search.toLowerCase()) ||
               item.serial_number?.toLowerCase().includes(search.toLowerCase())
@@ -376,7 +401,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
             return (
               <details 
                 key={group.id} 
-                open={!!(search && hasSearchMatch)}
+                open={!!(search && hasSearchMatch)} // Принудительное приведение к true/false для TS
                 className="group bg-white border border-slate-200 rounded-2xl overflow-hidden transition-all hover:shadow-sm"
               >
                 <summary className="flex items-center justify-between p-4 cursor-pointer list-none bg-slate-50/50 hover:bg-slate-100/50 transition-colors">
