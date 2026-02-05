@@ -261,6 +261,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
           ))}
         </div>
         
+        {/* Confirm Modal Rendered at the end of the component */}
         <ConfirmModal 
           isOpen={deleteConfig.open}
           onClose={() => setDeleteConfig({ ...deleteConfig, open: false })}
@@ -278,6 +279,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
   return (
     <div className="space-y-6">
       <div className="flex flex-col xl:flex-row gap-4 items-start xl:items-center justify-between">
+        
         <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
             {/* Search */}
             <div className="w-full md:w-80">
@@ -374,7 +376,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
             return (
               <details 
                 key={group.id} 
-                open={!!search && hasSearchMatch}
+                open={!!(search && hasSearchMatch)}
                 className="group bg-white border border-slate-200 rounded-2xl overflow-hidden transition-all hover:shadow-sm"
               >
                 <summary className="flex items-center justify-between p-4 cursor-pointer list-none bg-slate-50/50 hover:bg-slate-100/50 transition-colors">
