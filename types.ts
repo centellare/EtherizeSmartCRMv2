@@ -133,3 +133,12 @@ export interface TableSchema {
   description: string;
   columns: any[];
 }
+
+export interface CartItem {
+  id: string;
+  catalog_name: string;
+  quantity: number;
+  max_quantity: number;
+  serial_number?: string;
+  unit: string;
+}

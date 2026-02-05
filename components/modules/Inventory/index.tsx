@@ -6,6 +6,17 @@ import InventoryList from './InventoryList';
 import InventoryModal from './InventoryModal';
 import { InventoryCatalogItem, InventoryItem } from '../../../types';
 
+export interface CartItem {
+  id: string;
+  catalog_name: string;
+  quantity: number; // Сколько отгружаем
+  max_quantity: number; // Сколько есть всего
+  serial_number?: string;
+  unit: string;
+  purchase_price?: number;
+  catalog_id: string; // Нужно для логики разделения
+}
+
 type Tab = 'catalog' | 'stock' | 'warranty';
 
 const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
@@ -16,8 +27,11 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [objects, setObjects] = useState<any[]>([]);
 
+  // Cart State
+  const [cart, setCart] = useState<CartItem[]>([]);
+
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<'create_catalog' | 'add_item' | 'deploy_item' | 'replace_item' | 'edit_catalog' | 'edit_item'>('add_item');
+  const [modalMode, setModalMode] = useState<'create_catalog' | 'add_item' | 'deploy_item' | 'replace_item' | 'edit_catalog' | 'edit_item' | 'return_item'>('add_item');
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
@@ -46,6 +60,37 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
   useEffect(() => {
     fetchData();
   }, []);
+
+  // Cart Handlers
+  const addToCart = (item: InventoryItem) => {
+    if (cart.find(c => c.id === item.id)) {
+      setToast({ message: 'Товар уже в корзине', type: 'error' });
+      return;
+    }
+    const newItem: CartItem = {
+      id: item.id,
+      catalog_name: item.catalog?.name || 'Неизвестный товар',
+      quantity: item.quantity, // По умолчанию берем всё доступное количество
+      max_quantity: item.quantity,
+      serial_number: item.serial_number,
+      unit: item.catalog?.unit || 'шт',
+      purchase_price: item.purchase_price,
+      catalog_id: item.catalog_id
+    };
+    setCart(prev => [...prev, newItem]);
+    setToast({ message: 'Добавлено в выборку', type: 'success' });
+  };
+
+  const removeFromCart = (id: string) => {
+    setCart(prev => prev.filter(c => c.id !== id));
+  };
+
+  const openCartDeployment = () => {
+    if (cart.length === 0) return;
+    setSelectedItem(null); // Explicitly null because we use cartItems
+    setModalMode('deploy_item');
+    setIsModalOpen(true);
+  };
 
   const handleDeleteCatalog = async (id: string) => {
     // Optimistic update
@@ -92,7 +137,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
     }
   };
 
-  const openModal = (mode: 'create_catalog' | 'add_item' | 'deploy_item' | 'replace_item' | 'edit_catalog' | 'edit_item', item: any | null = null) => {
+  const openModal = (mode: 'create_catalog' | 'add_item' | 'deploy_item' | 'replace_item' | 'edit_catalog' | 'edit_item' | 'return_item', item: any | null = null) => {
     setModalMode(mode);
     setSelectedItem(item);
     setIsModalOpen(true);
@@ -102,12 +147,16 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
     fetchData();
     if (!keepOpen) {
         setIsModalOpen(false);
+        // Очищаем корзину только если это была групповая отгрузка и окно закрылось
+        if (modalMode === 'deploy_item' && cart.length > 0) {
+            setCart([]);
+        }
     }
     setToast({ message: 'Операция выполнена успешно', type: 'success' });
   };
 
   return (
-    <div className="animate-in fade-in duration-500">
+    <div className="animate-in fade-in duration-500 pb-20">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
@@ -137,8 +186,13 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
         items={items} 
         loading={loading} 
         profile={profile}
+        cart={cart}
+        onAddToCart={addToCart}
+        onRemoveFromCart={removeFromCart}
+        onBulkDeploy={openCartDeployment}
         onDeploy={(item) => openModal('deploy_item', item)}
         onReplace={(item) => openModal('replace_item', item)}
+        onReturn={(item) => openModal('return_item', item)}
         onEdit={(item, type) => openModal(type === 'catalog' ? 'edit_catalog' : 'edit_item', item)}
         onRefresh={fetchData}
         onDeleteItem={handleDeleteItem}
@@ -152,6 +206,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
         catalog={catalog}
         objects={objects}
         selectedItem={selectedItem}
+        cartItems={cart.length > 0 && modalMode === 'deploy_item' && !selectedItem ? cart : []} // Pass cart only if no single item selected
         items={items}
         profile={profile}
         onSuccess={handleSuccess}
