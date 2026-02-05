@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { InventoryItem } from '../../../types';
@@ -117,7 +118,8 @@ const ItemDetailsDrawer: React.FC<ItemDetailsDrawerProps> = ({ item, isOpen, onC
                         <p className="text-[10px] text-blue-400 uppercase mb-1">Текущее местоположение</p>
                         <div className="flex items-center gap-2">
                             <span className="material-icons-round text-blue-600 text-sm">home_work</span>
-                            <p className="font-bold text-blue-900 text-sm">{item.objects?.name || 'Неизвестный объект'}</p>
+                            {/* Исправлено: безопасное обращение к item.objects через (item as any) */}
+                            <p className="font-bold text-blue-900 text-sm">{(item as any).objects?.name || item.object?.name || 'Неизвестный объект'}</p>
                         </div>
                     </div>
                   )}
@@ -190,5 +192,4 @@ const ItemDetailsDrawer: React.FC<ItemDetailsDrawerProps> = ({ item, isOpen, onC
   );
 };
 
-// ВОТ ЭТА СТРОКА КРИТИЧЕСКИ ВАЖНА:
 export default ItemDetailsDrawer;
