@@ -48,7 +48,7 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
   const [directorConfirmed, setDirectorConfirmed] = useState(false);
 
   const [stageForm, setStageForm] = useState({ next_stage: '', responsible_id: '', deadline: '' });
-  const [rollbackForm, setRollbackForm] = useState({ reason: '' });
+  const [rollbackForm, setRollbackForm] = useState({ reason: '', responsible_id: '' });
   const [jumpForm, setJumpForm] = useState({ deadline: '' });
 
   const role = profile?.role || 'specialist';
@@ -213,24 +213,30 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
   const handleRollback = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.id) return;
+    if (!rollbackForm.responsible_id) {
+        setToast({ message: 'Выберите ответственного за исправления', type: 'error' });
+        return;
+    }
+    
     setLoading(true);
     try {
       const { error } = await supabase.rpc('rollback_object_stage', {
         p_object_id: object.id,
         p_target_stage: viewedStageId,
         p_reason: rollbackForm.reason,
+        p_responsible_id: rollbackForm.responsible_id,
         p_user_id: profile.id
       });
 
       if (error) throw error;
 
       setIsRollbackModalOpen(false);
-      setRollbackForm({ reason: '' });
+      setRollbackForm({ reason: '', responsible_id: '' });
       setAutoOpenTaskModal(true);
-      setToast({ message: 'Объект возвращен на этап', type: 'success' });
+      setToast({ message: 'Объект возвращен на доработку', type: 'success' });
       await fetchData();
     } catch (err: any) { 
-       setToast({ message: 'Ошибка возврата', type: 'error' });
+       setToast({ message: err.message || 'Ошибка возврата', type: 'error' });
     }
     setLoading(false);
   };
@@ -275,7 +281,10 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
           refreshData={fetchData}
           onStartNextStage={handleNextStageInit}
           onJumpForward={() => setIsJumpModalOpen(true)}
-          onRollback={() => setIsRollbackModalOpen(true)}
+          onRollback={() => { 
+              setRollbackForm({ reason: '', responsible_id: '' });
+              setIsRollbackModalOpen(true); 
+          }}
           updateStatus={updateObjectStatus}
           forceOpenTaskModal={autoOpenTaskModal}
           onTaskModalOpened={() => setAutoOpenTaskModal(false)}
@@ -296,7 +305,6 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
         <ArchiveTab tasks={tasks} profile={profile} />
       )}
 
-      {/* Modals remained identical, but benefit from Toast feedback */}
       <Modal isOpen={isStageModalOpen} onClose={() => setIsStageModalOpen(false)} title={`Переход к этапу: ${nextStage?.label}`}>
         <form onSubmit={handleNextStage} className="space-y-5">
            <div className="p-4 bg-blue-50 border border-blue-100 rounded-2xl mb-4">
@@ -342,11 +350,30 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
 
       <Modal isOpen={isRollbackModalOpen} onClose={() => setIsRollbackModalOpen(false)} title="Возврат на этап">
         <form onSubmit={handleRollback} className="space-y-4">
-           <p className="text-sm text-slate-500 mb-2">Вы собираетесь вернуть объект на этап <b>{STAGES.find(s => s.id === viewedStageId)?.label}</b>.</p>
+           <div className="p-4 bg-amber-50 border border-amber-100 rounded-2xl mb-2">
+             <p className="text-sm text-amber-900 flex items-center gap-2">
+               <span className="material-icons-round text-lg">warning</span>
+               Вы возвращаете объект на этап: <b>{STAGES.find(s => s.id === viewedStageId)?.label}</b>
+             </p>
+           </div>
+           
+           <Select 
+            label="Кто будет исправлять?" 
+            required 
+            value={rollbackForm.responsible_id} 
+            onChange={(e:any) => setRollbackForm({...rollbackForm, responsible_id: e.target.value})} 
+            options={[
+              {value:'', label:'Выберите ответственного'}, 
+              ...staff.map(s => ({value: s.id, label: `${s.full_name} (${s.role})`}))
+            ]} 
+            icon="support_agent" 
+           />
+
            <div className="w-full">
             <label className="block text-xs font-medium text-[#444746] mb-1.5 ml-1">Причина возврата (обязательно)</label>
             <textarea required className="w-full bg-white border border-slate-200 rounded-xl p-4 text-sm outline-none focus:border-blue-500 shadow-inner" rows={3} value={rollbackForm.reason} onChange={(e) => setRollbackForm({...rollbackForm, reason: e.target.value})} placeholder="Укажите замечания..." />
            </div>
+           
            <Button type="submit" variant="danger" className="w-full h-12" icon="settings_backup_restore" loading={loading}>Подтвердить откат</Button>
         </form>
       </Modal>

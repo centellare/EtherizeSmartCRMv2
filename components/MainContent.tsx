@@ -10,6 +10,7 @@ import Team from './modules/Team';
 import Notifications from './modules/Notifications';
 import Trash from './modules/Trash';
 import Inventory from './modules/Inventory/index';
+import Proposals from './modules/Proposals/index';
 import SqlGenerator from './SqlGenerator';
 import ProtectedRoute from './ProtectedRoute';
 import { INITIAL_SUGGESTED_SCHEMA } from '../constants';
@@ -78,6 +79,9 @@ const MainContent: React.FC<MainContentProps> = ({
     
     case 'inventory':
       return renderWithProtection('inventory', <Inventory profile={profile} />);
+
+    case 'proposals':
+      return renderWithProtection('proposals', <Proposals profile={profile} />);
 
     case 'notifications': 
       return renderWithProtection('notifications', <Notifications profile={profile} />);

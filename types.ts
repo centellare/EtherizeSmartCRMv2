@@ -142,3 +142,56 @@ export interface CartItem {
   serial_number?: string;
   unit: string;
 }
+
+// --- Commercial Proposals Types ---
+
+export interface PriceCatalogItem {
+  id: string;
+  global_category: string;
+  item_type: string;
+  name: string;
+  description?: string;
+  price_eur: number;
+  markup_percent: number;
+  is_active: boolean;
+  created_at: string;
+  unit: string; // Ensure unit is in interface
+}
+
+export interface CommercialProposal {
+  id: string;
+  number: number;
+  title?: string; // Название проекта/КП
+  client_id: string;
+  status: 'draft' | 'sent' | 'accepted';
+  exchange_rate: number;
+  global_markup: number;
+  has_vat: boolean;
+  total_amount_byn?: number;
+  header_data?: any;
+  created_by: string;
+  created_at: string;
+  
+  // Joins
+  client?: { name: string };
+  creator?: { full_name: string };
+  items?: CPItem[];
+}
+
+export interface CPItem {
+  id: string;
+  cp_id: string;
+  catalog_id: string | null; // Nullable if catalog item deleted, but we rely on snapshots now
+  quantity: number;
+  final_price_byn: number;
+  
+  // Snapshot Data (Historical integrity)
+  snapshot_name?: string;
+  snapshot_description?: string;
+  snapshot_unit?: string;
+  snapshot_base_price_eur?: number;
+  snapshot_global_category?: string;
+  
+  // Legacy Join (Optional)
+  catalog?: PriceCatalogItem;
+}

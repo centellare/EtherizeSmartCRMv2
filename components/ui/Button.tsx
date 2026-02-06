@@ -10,6 +10,7 @@ interface ButtonProps {
   className?: string;
   type?: 'button' | 'submit';
   icon?: string;
+  title?: string;
 }
 
 export const Button: React.FC<ButtonProps> = ({ 
@@ -20,7 +21,8 @@ export const Button: React.FC<ButtonProps> = ({
   loading, 
   className = '', 
   type = 'button', 
-  icon 
+  icon,
+  title
 }) => {
   const variants = {
     primary: 'bg-[#005ac1] hover:bg-[#004a9d] text-white shadow-sm',
@@ -40,6 +42,7 @@ export const Button: React.FC<ButtonProps> = ({
           onClick(e);
         }
       }}
+      title={title}
       className={`h-10 px-6 rounded-full font-medium text-sm transition-all flex items-center justify-center gap-2 tracking-[.00714em] disabled:opacity-38 ${variants[variant]} ${className}`}
     >
       {loading ? (

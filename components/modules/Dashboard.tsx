@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase, measureQuery } from '../../lib/supabase';
 import { Badge, Input, Button } from '../ui';
@@ -275,7 +276,7 @@ const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
   const fetchData = async () => {
     if (!profile?.id) return;
     setLoading(true);
-    const start = performance.now();
+    const start: number = performance.now();
 
     try {
       // Fetching Logic based on Roles (Simplified for MVP: Fetch all, Filter in View)
@@ -294,7 +295,7 @@ const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
         staff: staffRes.data || []
       });
 
-      setLatency(Math.round(Number(performance.now()) - Number(start)));
+      setLatency(Math.round(performance.now() - start));
     } catch (e) {
       console.error(e);
     } finally {
@@ -344,7 +345,7 @@ const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
             <div className="w-[1px] h-8 bg-white/10"></div>
             <div className="flex flex-col">
               <span className="text-[10px] font-mono text-slate-400 uppercase">Records</span>
-              <span className="font-mono font-bold text-blue-400">{(data.tasks?.length || 0) + (data.transactions?.length || 0) + (data.objects?.length || 0)} items</span>
+              <span className="font-mono font-bold text-blue-400">{Number(data.tasks?.length || 0) + Number(data.transactions?.length || 0) + Number(data.objects?.length || 0)} items</span>
             </div>
           </div>
           <Button variant="ghost" className="h-8 text-xs text-white hover:bg-white/10" onClick={fetchData} icon="refresh">Refresh</Button>

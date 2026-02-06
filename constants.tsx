@@ -207,6 +207,55 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
       { name: 'created_by', type: 'uuid', isForeign: true, references: 'profiles(id)' },
       { name: 'created_at', type: 'timestamp', defaultValue: 'now()' }
     ]
+  },
+  {
+    name: 'price_catalog',
+    description: 'Справочник цен и товаров (Прайс-лист)',
+    columns: [
+      { name: 'id', type: 'uuid', isPrimary: true, defaultValue: 'gen_random_uuid()' },
+      { name: 'global_category', type: 'text' },
+      { name: 'item_type', type: 'text' },
+      { name: 'name', type: 'text' },
+      { name: 'description', type: 'text', isNullable: true },
+      { name: 'unit', type: 'text', defaultValue: "'шт'" },
+      { name: 'price_eur', type: 'numeric', defaultValue: '0' },
+      { name: 'markup_percent', type: 'numeric', defaultValue: '0' },
+      { name: 'is_active', type: 'boolean', defaultValue: 'true' },
+      { name: 'created_at', type: 'timestamp', defaultValue: 'now()' }
+    ]
+  },
+  {
+    name: 'commercial_proposals',
+    description: 'Коммерческие предложения (Шапка)',
+    columns: [
+      { name: 'id', type: 'uuid', isPrimary: true, defaultValue: 'gen_random_uuid()' },
+      { name: 'number', type: 'serial', description: 'Авто-номер' },
+      { name: 'title', type: 'text', isNullable: true, description: 'Название проекта' },
+      { name: 'client_id', type: 'uuid', isForeign: true, references: 'clients(id)' },
+      { name: 'status', type: 'text', defaultValue: "'draft'" },
+      { name: 'exchange_rate', type: 'numeric' },
+      { name: 'global_markup', type: 'numeric', defaultValue: '0' },
+      { name: 'has_vat', type: 'boolean', defaultValue: 'false' },
+      { name: 'total_amount_byn', type: 'numeric' },
+      { name: 'created_by', type: 'uuid', isForeign: true, references: 'profiles(id)' },
+      { name: 'created_at', type: 'timestamp', defaultValue: 'now()' }
+    ]
+  },
+  {
+    name: 'cp_items',
+    description: 'Позиции в КП с snapshot-данными',
+    columns: [
+      { name: 'id', type: 'uuid', isPrimary: true, defaultValue: 'gen_random_uuid()' },
+      { name: 'cp_id', type: 'uuid', isForeign: true, references: 'commercial_proposals(id)' },
+      { name: 'catalog_id', type: 'uuid', isForeign: true, references: 'price_catalog(id)' },
+      { name: 'quantity', type: 'integer', defaultValue: '1' },
+      { name: 'final_price_byn', type: 'numeric' },
+      { name: 'snapshot_name', type: 'text', description: 'Копия названия на момент создания' },
+      { name: 'snapshot_description', type: 'text', isNullable: true },
+      { name: 'snapshot_unit', type: 'text', description: 'Копия ед.изм.' },
+      { name: 'snapshot_base_price_eur', type: 'numeric', description: 'Базовая цена в евро на момент создания' },
+      { name: 'snapshot_global_category', type: 'text', description: 'Категория на момент создания' }
+    ]
   }
 ];
 
@@ -215,7 +264,23 @@ export const SUPABASE_SETUP_GUIDE = `
 Для работы бизнес-логики приложения выполните следующий код в SQL Editor Supabase:
 
 \`\`\`sql
--- 0. ОПТИМИЗАЦИЯ: Индексы для ускорения запросов
+-- МИГРАЦИЯ: Исправление структуры таблицы object_stages (Добавляем created_at, если нет)
+DO $$ 
+BEGIN 
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'object_stages' AND column_name = 'created_at') THEN 
+    ALTER TABLE public.object_stages ADD COLUMN created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(); 
+  END IF; 
+END $$;
+
+-- МИГРАЦИЯ: Удаление ограничивающего уникального индекса (если есть), мешающего возврату на этап
+ALTER TABLE public.object_stages DROP CONSTRAINT IF EXISTS object_stages_object_id_stage_name_key;
+DROP INDEX IF EXISTS object_stages_object_id_stage_name_key;
+
+-- МИГРАЦИЯ: Удаление старых версий функции для обновления сигнатуры
+DROP FUNCTION IF EXISTS public.rollback_object_stage(UUID, TEXT, TEXT, UUID);
+DROP FUNCTION IF EXISTS public.rollback_object_stage(UUID, TEXT, TEXT, UUID, UUID);
+
+-- 0. ОПТИМИЗАЦИЯ: Индексы
 CREATE INDEX IF NOT EXISTS idx_objects_deleted ON public.objects(is_deleted);
 CREATE INDEX IF NOT EXISTS idx_objects_status ON public.objects(current_status);
 CREATE INDEX IF NOT EXISTS idx_objects_responsible ON public.objects(responsible_id);
@@ -266,11 +331,12 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 2. Откат этапа назад
+-- 2. Откат этапа назад (ОБНОВЛЕНО: Исправлено закрытие текущего этапа)
 CREATE OR REPLACE FUNCTION public.rollback_object_stage(
   p_object_id UUID,
   p_target_stage TEXT,
   p_reason TEXT,
+  p_responsible_id UUID,
   p_user_id UUID
 ) RETURNS VOID AS $$
 DECLARE
@@ -278,18 +344,28 @@ DECLARE
 BEGIN
   SELECT current_stage INTO v_current_stage FROM public.objects WHERE id = p_object_id;
 
+  -- Закрываем текущий активный этап (с которого уходим) как прерванный
+  UPDATE public.object_stages 
+  SET status = 'interrupted', completed_at = NOW() 
+  WHERE object_id = p_object_id AND status = 'active';
+
+  -- Обновляем объект
   UPDATE public.objects
   SET current_stage = p_target_stage,
       rolled_back_from = v_current_stage,
       current_status = 'in_work',
+      responsible_id = p_responsible_id,
       updated_at = NOW(),
       updated_by = p_user_id
   WHERE id = p_object_id;
 
+  -- Вставляем новую запись в историю для этапа, на который вернулись
   INSERT INTO public.object_stages (object_id, stage_name, status, started_at, created_at)
   VALUES (p_object_id, p_target_stage, 'rolled_back', NOW(), NOW());
   
-  -- Уведомление об откате (можно расширить)
+  -- Уведомление об откате
+  INSERT INTO public.notifications (profile_id, content, created_at)
+  VALUES (p_responsible_id, 'Объект возвращен вам на доработку. Причина: ' || p_reason, NOW());
 END;
 $$ LANGUAGE plpgsql;
 
@@ -340,5 +416,44 @@ BEGIN
   WHERE object_id = p_object_id AND status = 'active';
 END;
 $$ LANGUAGE plpgsql;
+
+-- 5. RLS (Row Level Security)
+ALTER TABLE public.commercial_proposals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cp_items ENABLE ROW LEVEL SECURITY;
+
+-- Политики для commercial_proposals
+CREATE POLICY "Enable read access for all users" ON "public"."commercial_proposals"
+AS PERMISSIVE FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Enable insert for authenticated users" ON "public"."commercial_proposals"
+AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY "Enable update for owners and admins" ON "public"."commercial_proposals"
+AS PERMISSIVE FOR UPDATE TO authenticated USING (
+  (auth.uid() = created_by) OR 
+  (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin', 'director')))
+);
+
+CREATE POLICY "Enable delete for owners and admins" ON "public"."commercial_proposals"
+AS PERMISSIVE FOR DELETE TO authenticated USING (
+  (auth.uid() = created_by) OR 
+  (EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin', 'director')))
+);
+
+-- Политики для cp_items
+CREATE POLICY "Enable read access for all users" ON "public"."cp_items"
+AS PERMISSIVE FOR SELECT TO authenticated USING (true);
+
+CREATE POLICY "Enable insert for authenticated users" ON "public"."cp_items"
+AS PERMISSIVE FOR INSERT TO authenticated WITH CHECK (true);
+
+CREATE POLICY "Enable delete for owners and admins" ON "public"."cp_items"
+AS PERMISSIVE FOR DELETE TO authenticated USING (
+  EXISTS (
+    SELECT 1 FROM commercial_proposals 
+    WHERE commercial_proposals.id = cp_items.cp_id 
+    AND (commercial_proposals.created_by = auth.uid() OR EXISTS (SELECT 1 FROM profiles WHERE id = auth.uid() AND role IN ('admin', 'director')))
+  )
+);
 \`\`\`
 `;
