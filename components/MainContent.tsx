@@ -1,19 +1,21 @@
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import { Module } from '../App';
-import Dashboard from './modules/Dashboard';
-import Clients from './modules/Clients';
-import Objects from './modules/Objects';
-import Tasks from './modules/Tasks';
-import Finances from './modules/Finances';
-import Team from './modules/Team';
-import Notifications from './modules/Notifications';
-import Trash from './modules/Trash';
-import Inventory from './modules/Inventory/index';
-import Proposals from './modules/Proposals/index';
-import SqlGenerator from './SqlGenerator';
 import ProtectedRoute from './ProtectedRoute';
 import { INITIAL_SUGGESTED_SCHEMA } from '../constants';
+import SqlGenerator from './SqlGenerator';
+
+// Lazy Load Modules to improve performance
+const Dashboard = React.lazy(() => import('./modules/Dashboard'));
+const Clients = React.lazy(() => import('./modules/Clients'));
+const Objects = React.lazy(() => import('./modules/Objects'));
+const Tasks = React.lazy(() => import('./modules/Tasks'));
+const Finances = React.lazy(() => import('./modules/Finances'));
+const Team = React.lazy(() => import('./modules/Team'));
+const Inventory = React.lazy(() => import('./modules/Inventory/index'));
+const Proposals = React.lazy(() => import('./modules/Proposals/index'));
+const Notifications = React.lazy(() => import('./modules/Notifications'));
+const Trash = React.lazy(() => import('./modules/Trash'));
 
 interface MainContentProps {
   activeModule: Module;
@@ -25,11 +27,20 @@ interface MainContentProps {
   clearActiveObject: () => void;
 }
 
+const ModuleLoader = () => (
+  <div className="flex h-full items-center justify-center min-h-[400px]">
+    <div className="flex flex-col items-center gap-3">
+      <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+      <p className="text-xs font-bold text-slate-400 uppercase tracking-widest animate-pulse">Загрузка модуля...</p>
+    </div>
+  </div>
+);
+
 const MainContent: React.FC<MainContentProps> = ({ 
   activeModule, 
   profile, 
   setActiveModule, 
-  activeObjectId,
+  activeObjectId, 
   activeStageId,
   onNavigateToObject,
   clearActiveObject
@@ -41,7 +52,9 @@ const MainContent: React.FC<MainContentProps> = ({
       moduleId={moduleId} 
       onRedirect={setActiveModule}
     >
-      {component}
+      <Suspense fallback={<ModuleLoader />}>
+        {component}
+      </Suspense>
     </ProtectedRoute>
   );
 
@@ -101,7 +114,11 @@ const MainContent: React.FC<MainContentProps> = ({
       ));
     
     default: 
-      return <Dashboard profile={profile} />;
+      return (
+        <Suspense fallback={<ModuleLoader />}>
+          <Dashboard profile={profile} />
+        </Suspense>
+      );
   }
 };
 

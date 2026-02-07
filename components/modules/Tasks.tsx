@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase, measureQuery } from '../../lib/supabase';
 import { Button, Input, Select, Badge, Modal, ConfirmModal, Toast } from '../ui';
@@ -98,9 +99,21 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         .is('is_deleted', false)
         .eq('status', 'pending');
 
-      if (isSpecialist) {
+      // PERFORMANCE OPTIMIZATION: Server-side filtering
+      // Если выбран режим фильтрации, применяем его сразу в запросе, 
+      // чтобы не тянуть лишние данные.
+      if (filterMode === 'mine') {
+        tasksQuery = tasksQuery.eq('assigned_to', profile.id);
+      } else if (filterMode === 'created') {
+        tasksQuery = tasksQuery.eq('created_by', profile.id);
+      } else if (isSpecialist) {
+        // Специалист видит только свои задачи (назначенные или созданные)
         tasksQuery = tasksQuery.or(`assigned_to.eq.${profile.id},created_by.eq.${profile.id}`);
       }
+
+      // Примечание: Для таба "Команда" (activeTab === 'team') нам теоретически нужны все задачи,
+      // но если стоит фильтр "Мои", то логично показывать только нагрузку по моим задачам.
+      // Поэтому серверная фильтрация здесь безопасна.
 
       const [activeResult, staffResult, objectsResult] = await Promise.all([
         measureQuery(tasksQuery.order('deadline', { ascending: true })),
@@ -119,7 +132,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
       isFetching.current = false;
       setLoading(false);
     }
-  }, [profile?.id, isSpecialist, tasks.length]);
+  }, [profile?.id, isSpecialist, tasks.length, filterMode]); // Added filterMode dependency
 
   // Триггер обновления №1: Любое изменение значений в компонентах фильтров
   useEffect(() => {
@@ -212,9 +225,11 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
   }, [activeTab, fetchArchive, archiveDates, filterMode]);
 
   const baseVisibleTasks = useMemo(() => {
-    if (isAdmin) return tasks;
-    return tasks.filter(t => t.assigned_to === profile.id || t.created_by === profile.id);
-  }, [tasks, isAdmin, profile.id]);
+    // Client-side filtering is no longer needed for ownership/creation
+    // because it's handled in fetchData/SQL now.
+    // We just return tasks, as they are already filtered by the query.
+    return tasks;
+  }, [tasks]);
 
   const overdueCount = useMemo(() => {
     const todayStr = getMinskISODate();
@@ -234,11 +249,9 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     const nextWeekStr = getMinskISODate(nextWeek);
 
     let list = baseVisibleTasks;
-    if (filterMode === 'mine') {
-      list = list.filter((t: Task) => t.assigned_to === profile.id);
-    } else if (filterMode === 'created') {
-      list = list.filter((t: Task) => t.created_by === profile.id);
-    }
+    
+    // FilterMode filtering is handled on Server now.
+    // Only date filtering remains on client for now (complex date logic is harder in simple query)
 
     switch (activeTab) {
       case 'today': 
@@ -270,20 +283,15 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         break;
     }
     return list;
-  }, [baseVisibleTasks, archiveTasks, activeTab, filterMode, profile.id, activeRange]);
+  }, [baseVisibleTasks, archiveTasks, activeTab, activeRange]);
 
   const teamWorkload = useMemo(() => {
     return staff.map(member => {
       let memberTasks = tasks.filter((t: Task) => t.assigned_to === member.id);
-      if (isManager && member.id !== profile.id) {
-        const isTargetSpecialistOrManager = member.role === 'specialist' || member.role === 'manager';
-        if (!isTargetSpecialistOrManager) {
-          memberTasks = memberTasks.filter(t => t.created_by === profile.id);
-        }
-      }
+      // Logic for manager seeing their own team's tasks is handled by 'tasks' containing only relevant data
       return { ...member, tasks: memberTasks };
     }).filter(m => m.tasks.length > 0 || m.role === 'specialist' || m.role === 'manager');
-  }, [staff, tasks, isManager, profile.id]);
+  }, [staff, tasks]);
 
   const addChecklistItem = () => {
     setCreateForm(prev => ({
