@@ -47,14 +47,22 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
     const init = async () => {
       setLoading(true);
       try {
-        const [catRes, cliRes] = await Promise.all([
-          supabase.from('price_catalog').select('*').eq('is_active', true),
-          supabase.from('clients').select('id, name').is('deleted_at', null)
+        const [catRes, cliRes, configRes] = await Promise.all([
+          supabase.from('price_catalog').select('*').eq('is_active', true).neq('item_type', 'system_config'),
+          supabase.from('clients').select('id, name').is('deleted_at', null),
+          // Fetch default global settings
+          supabase.from('price_catalog').select('*').eq('item_type', 'system_config').eq('name', 'GLOBAL_CONFIG').maybeSingle()
         ]);
         
         const catalogData = catRes.data || [];
         setCatalog(catalogData);
         setClients(cliRes.data || []);
+
+        // Apply defaults from DB if available (and not editing existing)
+        if (configRes.data && !proposalId) {
+           setExchangeRate(configRes.data.price_eur || 3.5);
+           setGlobalMarkup(configRes.data.markup_percent || 0);
+        }
 
         // Load existing proposal if in edit mode
         if (proposalId) {
@@ -233,7 +241,6 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
     return Array.from(types).sort();
   }, [catalog, catFilter]);
 
-  // Reset type filter if selected type is not available in new category
   useEffect(() => {
     if (typeFilter !== 'all' && !availableTypes.includes(typeFilter)) {
       setTypeFilter('all');

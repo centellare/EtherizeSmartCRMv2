@@ -21,12 +21,12 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
   const [typeFilter, setTypeFilter] = useState('all');
   
   // Dynamic Options for Filters & Inputs
-  // Store raw pairs to handle cascading logic
   const [filterData, setFilterData] = useState<{global_category: string, item_type: string}[]>([]);
 
   // Global Settings
   const [exchangeRate, setExchangeRate] = useState<number>(3.5);
   const [globalMarkup, setGlobalMarkup] = useState<number>(0);
+  const [isSettingsSaving, setIsSettingsSaving] = useState(false);
 
   // Edit/Add State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -49,9 +49,84 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
 
   const canEdit = profile?.role === 'admin' || profile?.role === 'director';
 
+  // Load Global Settings
+  const fetchSettings = async () => {
+    try {
+      const { data } = await supabase
+        .from('price_catalog')
+        .select('*')
+        .eq('item_type', 'system_config')
+        .eq('name', 'GLOBAL_CONFIG')
+        .maybeSingle();
+
+      if (data) {
+        setExchangeRate(data.price_eur || 3.5);
+        setGlobalMarkup(data.markup_percent || 0);
+      } else {
+        // If config doesn't exist, create it (only if admin/director)
+        if (canEdit) {
+           await supabase.from('price_catalog').insert([{
+             item_type: 'system_config',
+             name: 'GLOBAL_CONFIG',
+             global_category: 'SYSTEM',
+             price_eur: 3.5,
+             markup_percent: 0,
+             is_active: true
+           }]);
+        }
+      }
+    } catch (e) {
+      console.error("Error fetching settings:", e);
+    }
+  };
+
+  const saveSettings = async () => {
+    if (!canEdit) return;
+    setIsSettingsSaving(true);
+    
+    // Check if exists
+    const { data } = await supabase
+      .from('price_catalog')
+      .select('id')
+      .eq('item_type', 'system_config')
+      .eq('name', 'GLOBAL_CONFIG')
+      .maybeSingle();
+
+    let error;
+    if (data) {
+      const res = await supabase.from('price_catalog').update({
+        price_eur: exchangeRate,
+        markup_percent: globalMarkup,
+        updated_at: new Date().toISOString()
+      }).eq('id', data.id);
+      error = res.error;
+    } else {
+      const res = await supabase.from('price_catalog').insert([{
+        item_type: 'system_config',
+        name: 'GLOBAL_CONFIG',
+        global_category: 'SYSTEM',
+        price_eur: exchangeRate,
+        markup_percent: globalMarkup,
+        is_active: true
+      }]);
+      error = res.error;
+    }
+
+    setIsSettingsSaving(false);
+    if (error) {
+      setToast({ message: 'Ошибка сохранения настроек', type: 'error' });
+    } else {
+      setToast({ message: 'Настройки обновлены для всех менеджеров', type: 'success' });
+    }
+  };
+
   // Fetch unique values for filters (Initial Load)
   const fetchFilterOptions = async () => {
-    const { data } = await supabase.from('price_catalog').select('global_category, item_type').eq('is_active', true);
+    const { data } = await supabase
+      .from('price_catalog')
+      .select('global_category, item_type')
+      .eq('is_active', true)
+      .neq('item_type', 'system_config'); // Exclude config
     if (data) {
       setFilterData(data);
     }
@@ -75,7 +150,7 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
     return Array.from(types).sort();
   }, [filterData, categoryFilter]);
 
-  // Derived Options for Modal (Independent Cascading)
+  // Derived Options for Modal
   const modalCategories = useMemo(() => {
     const cats = new Set(filterData.map(i => i.global_category));
     return Array.from(cats).sort();
@@ -86,20 +161,16 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
     let relevantItems = filterData;
     
     if (currentCat) {
-       // Filter types strictly by the entered category if it exists in DB
        const exactMatches = filterData.filter(i => i.global_category === currentCat);
        if (exactMatches.length > 0) {
          relevantItems = exactMatches;
        } else {
-         // If it's a new category (not in DB), don't suggest types from other categories
          relevantItems = [];
        }
     }
-    
     return Array.from(new Set(relevantItems.map(i => i.item_type))).sort();
   }, [filterData, formData.global_category]);
 
-  // Reset type filter if selected type doesn't exist in new category
   useEffect(() => {
     if (typeFilter !== 'all' && !availableTypes.includes(typeFilter)) {
       setTypeFilter('all');
@@ -112,9 +183,9 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
       let query = supabase
         .from('price_catalog')
         .select('*', { count: 'exact' })
-        .eq('is_active', true);
+        .eq('is_active', true)
+        .neq('item_type', 'system_config'); // CRITICAL: Exclude system config row
 
-      // Filters
       if (search) {
         query = query.or(`name.ilike.%${search}%,description.ilike.%${search}%`);
       }
@@ -125,12 +196,11 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
         query = query.eq('item_type', typeFilter);
       }
 
-      // Pagination
       const from = page * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
       
       const { data, count, error } = await query
-        .order('global_category', { ascending: true }) // Important for grouping
+        .order('global_category', { ascending: true })
         .order('item_type', { ascending: true })
         .order('name', { ascending: true })
         .range(from, to);
@@ -147,12 +217,12 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
     }
   }, [page, search, categoryFilter, typeFilter]);
 
-  // Reset page when filters change
   useEffect(() => { setPage(0); }, [search, categoryFilter, typeFilter]);
 
   useEffect(() => { 
     fetchData(); 
     fetchFilterOptions();
+    fetchSettings();
   }, [fetchData]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -160,13 +230,13 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
     if (!canEdit) return;
     setLoading(true);
     
-    // Duplicate Check (Only on Create or if Name changed)
     if (!editingItem || editingItem.name !== formData.name) {
       const { data: dup } = await supabase
         .from('price_catalog')
         .select('id')
         .eq('name', formData.name)
         .neq('is_active', false)
+        .neq('item_type', 'system_config')
         .maybeSingle();
       
       if (dup) {
@@ -268,14 +338,12 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
     return (eur * (1 + totalMarkup / 100)) * exchangeRate;
   };
 
-  // Pagination calculation
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
   const startRange = page * PAGE_SIZE + 1;
   const endRange = Math.min((page + 1) * PAGE_SIZE, totalCount);
 
   return (
     <div className="space-y-6 h-full flex flex-col">
-      {/* Hide native datalist arrow to prevent double arrows with our custom icon */}
       <style>{`
         input[list]::-webkit-calendar-picker-indicator {
           display: none !important;
@@ -287,18 +355,45 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
 
       {/* Settings & Filters Bar */}
       <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-        <div className="flex flex-wrap gap-6 items-end border-b border-slate-100 pb-4">
-          <div className="w-32">
-            <Input label="Курс EUR" type="number" step="0.01" value={exchangeRate} onChange={(e:any) => setExchangeRate(parseFloat(e.target.value) || 0)} />
-          </div>
-          <div className="w-32">
-            <Input label="Наценка %" type="number" value={globalMarkup} onChange={(e:any) => setGlobalMarkup(parseFloat(e.target.value) || 0)} />
-          </div>
-          {canEdit && (
-            <div className="ml-auto">
-              <Button icon="add" onClick={openCreate}>Добавить товар</Button>
+        <div className="flex flex-wrap gap-4 items-end border-b border-slate-100 pb-4">
+          <div className="flex items-end gap-2 bg-blue-50/50 p-3 rounded-2xl border border-blue-100">
+            <div className="w-28">
+              <Input 
+                label="Курс EUR" 
+                type="number" 
+                step="0.01" 
+                value={exchangeRate} 
+                onChange={(e:any) => setExchangeRate(parseFloat(e.target.value) || 0)} 
+                disabled={!canEdit}
+                className="bg-white border-blue-200 focus:border-blue-500"
+              />
             </div>
-          )}
+            <div className="w-28">
+              <Input 
+                label="Общая наценка %" 
+                type="number" 
+                value={globalMarkup} 
+                onChange={(e:any) => setGlobalMarkup(parseFloat(e.target.value) || 0)} 
+                disabled={!canEdit}
+                className="bg-white border-blue-200 focus:border-blue-500"
+              />
+            </div>
+            {canEdit && (
+              <Button 
+                variant="primary" 
+                className="h-12 w-12 !px-0 rounded-2xl shadow-none" 
+                onClick={saveSettings} 
+                loading={isSettingsSaving}
+                title="Сохранить настройки для всех"
+              >
+                <span className="material-icons-round">save</span>
+              </Button>
+            )}
+          </div>
+          
+          <div className="ml-auto self-center">
+            {canEdit && <Button icon="add" onClick={openCreate}>Добавить товар</Button>}
+          </div>
         </div>
 
         <div className="flex flex-col lg:flex-row gap-4 items-center">
@@ -318,7 +413,7 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
           </div>
           <div className="w-full lg:w-48">
             <Select 
-              value={typeFilter}
+              value={typeFilter} 
               onChange={(e:any) => setTypeFilter(e.target.value)}
               options={[
                 { value: 'all', label: 'Все типы' }, 
@@ -340,7 +435,7 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
                 <th className="p-4 text-[10px] font-bold text-slate-400 uppercase w-48 min-w-[12rem]">Тип</th>
                 <th className="p-4 text-[10px] font-bold text-slate-400 uppercase w-24">EUR</th>
                 <th className="p-4 text-[10px] font-bold text-slate-400 uppercase w-24">Наценка</th>
-                <th className="p-4 text-[10px] font-bold text-slate-400 uppercase w-32">BYN</th>
+                <th className="p-4 text-[10px] font-bold text-slate-400 uppercase w-32">BYN (Расчет)</th>
                 <th className="p-4 w-24"></th>
               </tr>
             </thead>
@@ -354,7 +449,6 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
                   return (
                     <React.Fragment key={item.id}>
                       {showHeader && (
-                        // Sticky Header for Category
                         <tr className="bg-slate-100/90 backdrop-blur-sm sticky top-[45px] z-10 shadow-sm border-y border-slate-200">
                           <td colSpan={6} className="px-4 py-2">
                             <div className="flex items-center gap-2">
@@ -419,7 +513,6 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
           </table>
         </div>
         
-        {/* Pagination Controls */}
         <div className="p-4 border-t border-slate-100 flex flex-wrap items-center justify-center sm:justify-between bg-slate-50 gap-4">
            <div className="flex items-center gap-1">
              <Button variant="ghost" disabled={page === 0 || loading} onClick={() => setPage(0)} className="h-8 w-8 !px-0" title="В начало">
@@ -445,7 +538,6 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
         </div>
       </div>
 
-      {/* Create/Edit Item Modal */}
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingItem ? "Редактирование" : "Новый товар"}>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -503,7 +595,6 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
         </form>
       </Modal>
 
-      {/* Rename Category Modal */}
       <Modal isOpen={renameModalOpen} onClose={() => setRenameModalOpen(false)} title="Переименовать категорию">
         <form onSubmit={handleRenameCategory} className="space-y-4">
           <p className="text-sm text-slate-500">
