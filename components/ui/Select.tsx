@@ -6,6 +6,7 @@ interface SelectProps extends Omit<React.SelectHTMLAttributes<HTMLSelectElement>
   icon?: string;
   options: { value: string; label: string; title?: string }[];
   onChange?: (e: any) => void;
+  placeholder?: string;
 }
 
 export const Select: React.FC<SelectProps> = ({ label, icon, options, className = '', value, onChange, disabled, placeholder, ...props }) => {
