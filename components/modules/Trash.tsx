@@ -31,15 +31,16 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
       { data: clients }, 
       { data: tasks }, 
       { data: transactions },
-      { data: inventoryCatalog },
       { data: inventoryItems }
     ] = await Promise.all([
       supabase.from('objects').select('id, name, deleted_at').is('is_deleted', true),
       supabase.from('clients').select('id, name, deleted_at').not('deleted_at', 'is', null),
       supabase.from('tasks').select('id, title, deleted_at').is('is_deleted', true),
       supabase.from('transactions').select('id, category, amount, type, deleted_at').not('deleted_at', 'is', null),
-      supabase.from('inventory_catalog').select('id, name, deleted_at').is('is_deleted', true),
-      supabase.from('inventory_items').select('id, serial_number, deleted_at, catalog:inventory_catalog(name, unit)').is('is_deleted', true)
+      // CHANGED: Use deleted_at and join with PRODUCTS instead of catalog
+      supabase.from('inventory_items')
+        .select('id, serial_number, deleted_at, product:products(name, unit)')
+        .not('deleted_at', 'is', null)
     ]);
     
     const combined: TrashItem[] = [
@@ -53,10 +54,9 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
         table: 'transactions',
         deleted_at: i.deleted_at || ''
       })),
-      ...(inventoryCatalog || []).map(i => ({ id: i.id, name: i.name, type: 'Тип оборудования', table: 'inventory_catalog', deleted_at: i.deleted_at || '' })),
       ...(inventoryItems || []).map((i: any) => ({ 
         id: i.id, 
-        name: `${i.catalog?.name || 'Товар'} ${i.serial_number ? `(S/N: ${i.serial_number})` : ''}`, 
+        name: `${i.product?.name || 'Товар'} ${i.serial_number ? `(S/N: ${i.serial_number})` : ''}`, 
         type: 'Товар со склада', 
         table: 'inventory_items', 
         deleted_at: i.deleted_at || '' 
@@ -75,7 +75,7 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
       if (filterType === 'clients') return item.table === 'clients';
       if (filterType === 'tasks') return item.table === 'tasks';
       if (filterType === 'finances') return item.table === 'transactions';
-      if (filterType === 'inventory') return item.table === 'inventory_items' || item.table === 'inventory_catalog';
+      if (filterType === 'inventory') return item.table === 'inventory_items';
       return true;
     });
   }, [deletedItems, filterType]);
@@ -98,11 +98,13 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
 
   const handleRestore = async (id: string, table: string) => {
     setLoading(true);
-    const field = (table === 'clients' || table === 'transactions') ? 'deleted_at' : 'is_deleted';
-    const value = (table === 'clients' || table === 'transactions') ? null : false;
+    // Determine which field to use for restoration
+    const usesDeletedAt = ['clients', 'transactions', 'inventory_items'].includes(table);
+    const field = usesDeletedAt ? 'deleted_at' : 'is_deleted';
+    const value = usesDeletedAt ? null : false;
     
     const updates: any = { [field]: value };
-    // Для инвентаря тоже сбрасываем deleted_at
+    // Legacy support for older tables (objects/tasks) that might have both or depend on is_deleted
     if (field === 'is_deleted') {
        updates.deleted_at = null;
     }
@@ -119,18 +121,6 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
     // 1. Очистка зависимостей для товара
     if (table === 'inventory_items') {
       await supabase.from('inventory_history').delete().eq('item_id', id);
-    }
-
-    // 2. Очистка зависимостей для каталога (сначала товары, потом их история)
-    if (table === 'inventory_catalog') {
-      const { data: items } = await supabase.from('inventory_items').select('id').eq('catalog_id', id);
-      if (items?.length) {
-        const itemIds = items.map(i => i.id);
-        // Сначала история товаров
-        await supabase.from('inventory_history').delete().in('item_id', itemIds);
-        // Потом сами товары
-        await supabase.from('inventory_items').delete().in('id', itemIds);
-      }
     }
 
     // Explicitly cast table to any to bypass strict typing for dynamic string
@@ -152,8 +142,9 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
     for (const table in grouped) {
       const ids = grouped[table];
       if (action === 'restore') {
-        const field = (table === 'clients' || table === 'transactions') ? 'deleted_at' : 'is_deleted';
-        const value = (table === 'clients' || table === 'transactions') ? null : false;
+        const usesDeletedAt = ['clients', 'transactions', 'inventory_items'].includes(table);
+        const field = usesDeletedAt ? 'deleted_at' : 'is_deleted';
+        const value = usesDeletedAt ? null : false;
         
         const updates: any = { [field]: value };
         if (field === 'is_deleted') {
@@ -163,20 +154,9 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
         await supabase.from(table as any).update(updates).in('id', ids);
       } else {
         // Очистка зависимостей при массовом удалении
-        
         // Товары
         if (table === 'inventory_items') {
            await supabase.from('inventory_history').delete().in('item_id', ids);
-        }
-        
-        // Каталог
-        if (table === 'inventory_catalog') {
-            const { data: items } = await supabase.from('inventory_items').select('id').in('catalog_id', ids);
-            if (items?.length) {
-                const itemIds = items.map(i => i.id);
-                await supabase.from('inventory_history').delete().in('item_id', itemIds);
-                await supabase.from('inventory_items').delete().in('id', itemIds);
-            }
         }
 
         await supabase.from(table as any).delete().in('id', ids);
@@ -203,15 +183,6 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
       // Очистка зависимостей при полной очистке
       if (table === 'inventory_items') {
          await supabase.from('inventory_history').delete().in('item_id', ids);
-      }
-      
-      if (table === 'inventory_catalog') {
-          const { data: items } = await supabase.from('inventory_items').select('id').in('catalog_id', ids);
-          if (items?.length) {
-              const itemIds = items.map(i => i.id);
-              await supabase.from('inventory_history').delete().in('item_id', itemIds);
-              await supabase.from('inventory_items').delete().in('id', itemIds);
-          }
       }
 
       await supabase.from(table as any).delete().in('id', ids);
@@ -311,8 +282,7 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
                       <Badge color={
                         item.table === 'transactions' ? 'emerald' : 
                         item.table === 'objects' ? 'blue' : 
-                        item.table === 'inventory_items' ? 'amber' :
-                        item.table === 'inventory_catalog' ? 'purple' : 'slate'
+                        item.table === 'inventory_items' ? 'amber' : 'slate'
                       }>
                         {item.type}
                       </Badge>

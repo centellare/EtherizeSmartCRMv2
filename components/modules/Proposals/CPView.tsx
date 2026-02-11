@@ -1,52 +1,169 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Button } from '../../ui';
+import { Button, Toast, ConfirmModal } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
 
 interface CPViewProps {
   proposalId: string;
   onClose: () => void;
+  onInvoiceCreated?: (invoiceId: string) => void;
 }
 
-const CPView: React.FC<CPViewProps> = ({ proposalId, onClose }) => {
+const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }) => {
   const [data, setData] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
+  const [companySettings, setCompanySettings] = useState<any>(null);
+  const [template, setTemplate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [creatingInvoice, setCreatingInvoice] = useState(false);
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const [stockWarning, setStockWarning] = useState<{open: boolean, missingItems: any[]}>({ open: false, missingItems: [] });
 
   useEffect(() => {
     const fetchCP = async () => {
       setLoading(true);
       
-      // Fetch Header
-      const { data: cp, error: cpError } = await supabase
+      const { data: cp } = await supabase
         .from('commercial_proposals')
-        .select('*, client:clients(name), creator:profiles(full_name)')
+        .select('*, client:clients(name, requisites, address:comment), creator:profiles(full_name)')
         .eq('id', proposalId)
         .single();
       
-      if (cpError) {
-        console.error("Error fetching CP header:", cpError);
-      }
-
-      // Fetch Items
-      const { data: cpItems, error: itemsError } = await supabase
+      const { data: cpItems } = await supabase
         .from('cp_items')
-        .select('*')
+        .select('*, product:products(has_serial)')
         .eq('cp_id', proposalId);
 
-      if (itemsError) {
-        console.error("Error fetching CP items:", itemsError);
-      }
+      const { data: settings } = await supabase.from('company_settings').select('*').limit(1).maybeSingle();
+      const { data: tpl } = await supabase.from('document_templates').select('*').eq('type', 'cp').limit(1).maybeSingle();
 
       setData(cp);
       setItems(cpItems || []);
+      setCompanySettings(settings || { company_name: 'Моя Компания', requisites: '', bank_details: '' });
+      setTemplate(tpl || { header_text: '', footer_text: '', signatory_1: 'Директор', signatory_2: 'Менеджер' });
       setLoading(false);
     };
     fetchCP();
   }, [proposalId]);
 
-  // Group items by category
+  const handleCreateInvoice = async () => {
+    setCreatingInvoice(true);
+    try {
+        // 1. Check stock
+        const productIds = items.map(i => i.product_id).filter(Boolean);
+        const { data: stockItems } = await supabase
+            .from('inventory_items')
+            .select('product_id, quantity')
+            .in('product_id', productIds)
+            .eq('status', 'in_stock')
+            .is('deleted_at', null);
+        
+        const stockMap: Record<string, number> = {};
+        stockItems?.forEach((si: any) => {
+            stockMap[si.product_id] = (stockMap[si.product_id] || 0) + si.quantity;
+        });
+
+        const missing: any[] = [];
+        items.forEach(item => {
+            if (item.product_id) {
+                const available = stockMap[item.product_id] || 0;
+                if (available < item.quantity) {
+                    missing.push({
+                        ...item,
+                        needed: item.quantity - available
+                    });
+                }
+            }
+        });
+
+        // 2. Create Invoice Record
+        const { data: inv, error: invError } = await supabase.from('invoices').insert([{
+            cp_id: proposalId,
+            client_id: data.client_id,
+            total_amount: data.total_amount_byn,
+            has_vat: data.has_vat,
+            created_by: data.created_by,
+            status: 'draft'
+        }]).select('id, number').single();
+
+        if (invError) throw invError;
+
+        // 3. Create Invoice Items
+        const invItemsPayload = items.map(item => ({
+            invoice_id: inv.id,
+            product_id: item.product_id,
+            name: item.snapshot_name || 'Товар',
+            quantity: item.quantity,
+            unit: item.snapshot_unit || 'шт',
+            price: item.final_price_byn,
+            total: item.final_price_byn * item.quantity
+        }));
+        await supabase.from('invoice_items').insert(invItemsPayload);
+
+        // 4. Create Supply Order if missing
+        let supplyMsg = '';
+        if (missing.length > 0) {
+            const { data: so, error: soError } = await supabase.from('supply_orders').insert([{
+                invoice_id: inv.id,
+                status: 'pending',
+                created_by: data.created_by
+            }]).select('id').single();
+
+            if (soError) throw soError;
+
+            const soItemsPayload = missing.map(m => ({
+                supply_order_id: so.id,
+                product_id: m.product_id,
+                quantity_needed: m.needed,
+                status: 'pending'
+            }));
+            await supabase.from('supply_order_items').insert(soItemsPayload);
+            supplyMsg = ` + Заказ поставщику (${missing.length} поз.)`;
+        }
+
+        // 5. Create Finance Plan (Income Transaction)
+        // Try to find the most relevant object for this client
+        const { data: relatedObject } = await supabase
+            .from('objects')
+            .select('id')
+            .eq('client_id', data.client_id)
+            .is('is_deleted', false)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+        if (relatedObject) {
+            const plannedDate = new Date();
+            plannedDate.setDate(plannedDate.getDate() + 3); // Default: Expect payment within 3 days
+
+            await supabase.from('transactions').insert([{
+                object_id: relatedObject.id,
+                type: 'income',
+                amount: data.total_amount_byn,
+                planned_amount: data.total_amount_byn,
+                planned_date: plannedDate.toISOString(),
+                category: 'Оплата по счету',
+                description: `Счет №${inv.number}. Ожидаемое поступление.`,
+                status: 'pending',
+                created_by: data.created_by
+            }]);
+            
+            setToast({ message: `Счет №${inv.number} создан${supplyMsg}. Добавлен план прихода в Финансы.`, type: 'success' });
+        } else {
+            setToast({ message: `Счет №${inv.number} создан${supplyMsg}.`, type: 'success' });
+        }
+
+        // Redirect to Invoice View
+        if (onInvoiceCreated) onInvoiceCreated(inv.id);
+
+    } catch (e: any) {
+        console.error(e);
+        setToast({ message: 'Ошибка создания счета: ' + e.message, type: 'error' });
+    }
+    setCreatingInvoice(false);
+  };
+
   const groupedItems = useMemo(() => {
     const groups: Record<string, any[]> = {};
     items.forEach(item => {
@@ -60,112 +177,59 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose }) => {
     }, {} as Record<string, any[]>);
   }, [items]);
 
-  const handlePrint = () => {
-    const content = document.getElementById('cp-printable-area');
-    if (!content) return;
-
-    const printWindow = window.open('', '_blank');
-    if (!printWindow) return;
-
-    // Генерируем HTML для печати
-    const htmlContent = content.outerHTML;
-
-    printWindow.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Коммерческое предложение ${data?.number ? `№${data.number}` : ''}</title>
-          <script src="https://cdn.tailwindcss.com"></script>
-          <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
-          <style>
-            body { 
-              font-family: 'Roboto', sans-serif; 
-              margin: 0; 
-              padding: 0; 
-              background-color: white;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-            @page {
-              size: A4;
-              margin: 10mm; 
-            }
-            /* Сброс стилей контейнера для печати на всю ширину */
-            #cp-printable-area {
-              margin: 0 !important;
-              box-shadow: none !important;
-              max-width: none !important;
-              width: 100% !important;
-              min-height: auto !important;
-              padding: 0 !important;
-            }
-            /* Скрываем элементы, которые не должны быть на бумаге (на всякий случай) */
-            .no-print { display: none !important; }
-          </style>
-        </head>
-        <body>
-          ${htmlContent}
-          <script>
-            // Задержка для загрузки Tailwind и шрифтов
-            setTimeout(() => {
-              window.print();
-              // window.close(); // Можно раскомментировать для авто-закрытия
-            }, 800);
-          </script>
-        </body>
-      </html>
-    `);
-    printWindow.document.close();
+  const handlePrintCP = () => {
+      const content = document.getElementById('cp-printable-area');
+      if (content) {
+          const printWindow = window.open('', '_blank');
+          if (printWindow) {
+              printWindow.document.write(`<html><head><title>КП №${data?.number}</title><script src="https://cdn.tailwindcss.com"></script></head><body>${content.outerHTML}<script>setTimeout(()=>window.print(), 800)</script></body></html>`);
+              printWindow.document.close();
+          }
+      }
   };
 
   if (loading) return <div className="p-10 text-center">Загрузка...</div>;
-  if (!data) return <div className="p-10 text-center">КП не найдено или доступ запрещен</div>;
+  if (!data) return <div className="p-10 text-center">КП не найдено</div>;
 
-  const calculatedBase = items.reduce((acc, i) => acc + (i.final_price_byn * i.quantity), 0);
-  const calculatedVat = data.has_vat ? calculatedBase * 0.2 : 0;
-  const calculatedTotal = calculatedBase + calculatedVat;
-  const displayTotal = calculatedTotal === 0 && data.total_amount_byn > 0 ? data.total_amount_byn : calculatedTotal;
-  
   return (
     <div className="h-full flex flex-col bg-slate-50">
+      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+      
       {/* Toolbar */}
       <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center shadow-sm sticky top-0 z-50">
         <div className="flex items-center gap-4">
           <Button variant="secondary" icon="arrow_back" onClick={onClose}>Назад</Button>
         </div>
         <div className="flex gap-2">
-          <Button icon="print" onClick={handlePrint}>Печать / PDF</Button>
+          <Button icon="receipt" variant="secondary" onClick={handleCreateInvoice} loading={creatingInvoice}>Выставить счет (Создать)</Button>
+          <Button icon="print" onClick={handlePrintCP}>Печать КП</Button>
         </div>
       </div>
 
       {/* Printable Area Wrapper */}
       <div className="flex-grow overflow-y-auto p-8">
-        {/* ID used for selecting content to print */}
         <div id="cp-printable-area" className="bg-white max-w-[210mm] mx-auto min-h-[297mm] p-[15mm] shadow-lg flex flex-col">
           
           {/* Header */}
-          <div className="flex justify-between items-start mb-10 border-b-2 border-slate-800 pb-6">
+          <div className="flex justify-between items-start mb-8 border-b-2 border-slate-800 pb-6">
             <div>
               <h1 className="text-3xl font-extrabold text-slate-900 uppercase tracking-tight mt-2">Коммерческое<br/>предложение</h1>
-              
-              {data.title && (
-                <p className="text-lg italic text-slate-600 mt-2 font-medium">{data.title}</p>
-              )}
-
               <div className="flex items-center gap-3 mt-4">
                 <span className="text-3xl font-bold text-slate-700">№ {data.number}</span>
-                <span className="text-3xl text-slate-300 font-light">|</span>
+                <span className="text-3xl font-light text-slate-300">|</span>
                 <span className="text-3xl font-bold text-slate-700">{formatDate(data.created_at)}</span>
               </div>
             </div>
             <div className="text-right">
-              <h2 className="text-xl font-bold text-blue-700">SmartHome CRM</h2>
-              <p className="text-sm text-slate-500 mt-1">Интеллектуальные системы</p>
-              <div className="text-xs text-slate-400 mt-4">
-                <p>Тел: +375 29 000 00 00</p>
-                <p>Email: info@smarthome.by</p>
+              <h2 className="text-xl font-bold text-blue-700">{companySettings.company_name}</h2>
+              <div className="text-xs text-slate-400 mt-2 max-w-[250px] ml-auto break-words">
+                <p>{companySettings.requisites}</p>
               </div>
             </div>
+          </div>
+
+          <div className="mb-8">
+             <p className="text-sm italic text-slate-600 whitespace-pre-wrap">{template.header_text}</p>
           </div>
 
           {/* Client Info */}
@@ -178,155 +242,61 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose }) => {
           <table className="w-full text-left text-sm mb-8 border-collapse table-fixed">
             <thead>
               <tr className="border-b-2 border-slate-800">
-                <th className="py-2 text-[10px] font-bold text-slate-500 uppercase w-8">№</th>
-                <th className="py-2 text-[10px] font-bold text-slate-500 uppercase w-[35%]">Наименование</th>
-                <th className="py-2 text-[10px] font-bold text-slate-500 uppercase text-center w-12">Ед.</th>
-                <th className="py-2 text-[10px] font-bold text-slate-500 uppercase text-center w-16">Кол-во</th>
-                <th className="py-2 text-[10px] font-bold text-slate-500 uppercase text-right w-24">Цена</th>
-                <th className="py-2 text-[10px] font-bold text-slate-500 uppercase text-right w-24">Сумма</th>
-                {data.has_vat && (
-                  <>
-                    <th className="py-2 text-[10px] font-bold text-slate-500 uppercase text-right w-20">НДС 20%</th>
-                    <th className="py-2 text-[10px] font-bold text-slate-500 uppercase text-right w-24">Всего</th>
-                  </>
-                )}
+                <th className="py-2 w-8 text-center">№</th>
+                <th className="py-2 w-[40%]">Наименование</th>
+                <th className="py-2 w-12 text-center">Ед.</th>
+                <th className="py-2 w-16 text-center">Кол-во</th>
+                <th className="py-2 w-24 text-right">Цена</th>
+                <th className="py-2 w-24 text-right">Сумма</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200 border-b border-slate-200">
-              {items.length > 0 ? (
-                Object.entries(groupedItems).map(([category, catItems]: [string, any[]]) => {
-                  const catQty = catItems.reduce((sum: number, i: any) => sum + i.quantity, 0);
-                  const catSum = catItems.reduce((sum: number, i: any) => sum + (i.final_price_byn * i.quantity), 0);
-                  const catVat = data.has_vat ? catSum * 0.2 : 0;
-                  const catTotal = catSum + catVat;
-
-                  return (
-                    <React.Fragment key={category}>
-                      {/* Category Header Row */}
-                      <tr className="bg-slate-100 break-inside-avoid">
-                        <td colSpan={3} className="py-2 px-2 font-bold text-xs text-slate-700 uppercase tracking-wide">{category}</td>
-                        <td className="py-2 px-1 text-center font-bold text-xs text-slate-700">{catQty}</td>
-                        <td className="py-2 px-1 text-right"></td>
-                        <td className="py-2 px-1 text-right font-bold text-xs text-slate-700">{catSum.toFixed(2)}</td>
-                        {data.has_vat && (
-                          <>
-                            <td className="py-2 px-1 text-right font-bold text-xs text-slate-500">{catVat.toFixed(2)}</td>
-                            <td className="py-2 px-1 text-right font-bold text-xs text-slate-700">{catTotal.toFixed(2)}</td>
-                          </>
-                        )}
-                      </tr>
-                      
-                      {/* Items Rows */}
-                      {catItems.map((item: any, idx: number) => {
-                        const rowSum = item.final_price_byn * item.quantity;
-                        const rowVat = data.has_vat ? rowSum * 0.2 : 0;
-                        const rowTotal = rowSum + rowVat;
-
-                        return (
-                          <tr key={item.id} className="break-inside-avoid">
-                            <td className="py-3 text-slate-400 text-xs align-top">{idx + 1}</td>
-                            <td className="py-3 font-medium text-slate-900 align-top pr-2">
-                              {item.snapshot_name || 'Архивный товар'}
-                            </td>
-                            <td className="py-3 text-center text-slate-500 align-top text-xs">
-                              {item.snapshot_unit || 'шт'}
-                            </td>
-                            <td className="py-3 text-center text-slate-900 align-top text-sm">
-                              {item.quantity}
-                            </td>
-                            <td className="py-3 text-right text-slate-600 align-top">{item.final_price_byn.toFixed(2)}</td>
-                            <td className="py-3 text-right text-slate-800 align-top">{rowSum.toFixed(2)}</td>
-                            {data.has_vat && (
-                              <>
-                                <td className="py-3 text-right text-slate-500 align-top text-xs">{rowVat.toFixed(2)}</td>
-                                <td className="py-3 text-right text-slate-900 align-top">{rowTotal.toFixed(2)}</td>
-                              </>
-                            )}
-                          </tr>
-                        );
-                      })}
-                    </React.Fragment>
-                  );
-                })
-              ) : (
-                <tr>
-                  <td colSpan={data.has_vat ? 8 : 6} className="py-8 text-center text-slate-400 italic bg-slate-50">
-                    Список позиций пуст или недоступен для просмотра
-                  </td>
-                </tr>
-              )}
+              {Object.entries(groupedItems).map(([category, catItems]: [string, any[]]) => (
+                <React.Fragment key={category}>
+                  <tr className="bg-slate-100"><td colSpan={6} className="py-1 px-2 font-bold text-xs uppercase">{category}</td></tr>
+                  {catItems.map((item: any, idx: number) => (
+                    <tr key={item.id}>
+                      <td className="py-2 text-center text-slate-400">{idx + 1}</td>
+                      <td className="py-2 pr-2">{item.snapshot_name}</td>
+                      <td className="py-2 text-center">{item.snapshot_unit}</td>
+                      <td className="py-2 text-center">{item.quantity}</td>
+                      <td className="py-2 text-right">{item.final_price_byn.toFixed(2)}</td>
+                      <td className="py-2 text-right font-bold">{(item.final_price_byn * item.quantity).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </React.Fragment>
+              ))}
             </tbody>
           </table>
 
           {/* Totals */}
-          <div className="flex justify-end mb-12 break-inside-avoid">
-            <div className="w-72 space-y-2 bg-slate-50 p-4 rounded-xl">
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-500">Сумма без НДС:</span>
-                <span className="font-bold">{calculatedBase.toFixed(2)} BYN</span>
-              </div>
-              {data.has_vat && (
-                <div className="flex justify-between text-sm">
-                  <span className="text-slate-500">НДС (20%):</span>
-                  <span className="font-bold">{calculatedVat.toFixed(2)} BYN</span>
+          <div className="flex justify-end mb-12">
+            <div className="w-64 text-right space-y-2">
+                <div className="flex justify-between font-bold text-lg">
+                    <span>ИТОГО:</span>
+                    <span>{data.total_amount_byn?.toFixed(2)} BYN</span>
                 </div>
-              )}
-              <div className="flex justify-between text-xl pt-4 border-t border-slate-300 mt-2">
-                <span className="font-bold text-slate-900">ИТОГО:</span>
-                <span className="font-bold text-blue-700">{displayTotal.toFixed(2)} BYN</span>
-              </div>
+                {data.has_vat && <p className="text-xs text-slate-500">В том числе НДС 20%</p>}
             </div>
           </div>
 
           <div className="flex-grow"></div>
 
-          {/* Signatures Footer */}
-          <div className="mt-12 pt-8 border-t-2 border-slate-800 break-inside-avoid">
-            <h3 className="text-lg font-bold text-slate-900 uppercase mb-8">Подписи сторон</h3>
-            <div className="flex flex-row justify-between gap-12">
-              
-              {/* Left: Supplier */}
-              <div className="w-1/2">
-                <p className="font-bold text-sm mb-6 uppercase tracking-wider">Поставщик:</p>
-                <div className="space-y-6">
-                  <div className="flex items-end gap-2">
-                    <span className="text-sm text-slate-500 w-16 shrink-0">Дата:</span>
-                    <div className="border-b border-black flex-grow"></div>
-                  </div>
-                  <div className="flex items-end gap-2">
-                    <span className="text-sm text-slate-500 w-16 shrink-0">Подпись:</span>
-                    <div className="border-b border-black flex-grow"></div>
-                  </div>
-                  <div className="mt-2 text-sm text-center font-medium text-slate-900">
-                    {data.creator?.full_name || '____________________'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Right: Buyer */}
-              <div className="w-1/2">
-                <p className="font-bold text-sm mb-6 uppercase tracking-wider">Покупатель:</p>
-                <div className="space-y-6">
-                  <div className="flex items-end gap-2">
-                    <span className="text-sm text-slate-500 w-16 shrink-0">Дата:</span>
-                    <div className="border-b border-black flex-grow"></div>
-                  </div>
-                  <div className="flex items-end gap-2">
-                    <span className="text-sm text-slate-500 w-16 shrink-0">Подпись:</span>
-                    <div className="border-b border-black flex-grow"></div>
-                  </div>
-                  <div className="mt-8 text-center text-slate-300 font-bold border-2 border-dashed border-slate-300 w-24 h-24 rounded-full flex items-center justify-center mx-auto opacity-50">
-                    М.П.
-                  </div>
-                </div>
-              </div>
-
-            </div>
+          <div className="mb-8 text-sm italic text-slate-500">
+             {template.footer_text}
           </div>
 
-          {/* Footer Note */}
-          <div className="mt-12 text-center text-[10px] text-slate-400">
-            <p>Предложение действительно в течение 5 рабочих дней с даты выставления.</p>
+          {/* Signatures */}
+          <div className="flex justify-between mt-12 pt-8 border-t-2 border-slate-800 break-inside-avoid">
+             <div className="w-1/3">
+                <p className="font-bold mb-8 uppercase text-xs">{template.signatory_1}</p>
+                <div className="border-b border-black"></div>
+                <p className="mt-2 text-sm">{data.creator?.full_name}</p>
+             </div>
+             <div className="w-1/3">
+                <p className="font-bold mb-8 uppercase text-xs">{template.signatory_2}</p>
+                <div className="border-b border-black"></div>
+             </div>
           </div>
 
         </div>

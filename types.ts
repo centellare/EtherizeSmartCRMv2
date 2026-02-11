@@ -50,7 +50,6 @@ export interface Task {
   last_edited_at?: string | null;
   last_edited_by?: string | null;
   checklist?: TaskChecklistItem[];
-  // Joins
   objects?: { name: string };
   creator?: { full_name: string };
   executor?: { full_name: string };
@@ -99,27 +98,34 @@ export interface Transaction {
   };
 }
 
-export interface InventoryCatalogItem {
+// --- Unified ERP 2.0 Product Master ---
+export interface Product {
   id: string;
   name: string;
-  item_type: 'product' | 'material'; // Тип ТМЦ
-  sku?: string | null; 
-  unit?: string | null; 
-  last_purchase_price?: number | null; 
+  sku?: string | null;
+  category: string;
+  type: 'product' | 'material' | 'service';
+  unit: string;
+  base_price: number; // Cost / Закупка (BYN)
+  retail_price: number; // Sales / Продажа (BYN)
   description?: string | null;
+  manufacturer?: string | null;
   has_serial: boolean;
-  warranty_period_months: number | null;
+  warranty_days: number | null;
+  stock_min_level?: number;
+  is_archived: boolean;
   created_at: string;
+  markup_percent?: number; 
 }
 
 export type InventoryItemStatus = 'in_stock' | 'deployed' | 'maintenance' | 'scrapped';
 
 export interface InventoryItem {
   id: string;
-  catalog_id: string;
+  product_id: string;
   serial_number?: string | null;
   quantity: number; 
-  purchase_price?: number | null; 
+  purchase_price?: number | null; // Фактическая цена партии (BYN)
   status: InventoryItemStatus;
   current_object_id?: string | null;
   assigned_to_id?: string | null;
@@ -128,8 +134,12 @@ export interface InventoryItem {
   created_at: string;
   
   // Joins
-  catalog?: InventoryCatalogItem;
+  product?: Product;
   object?: { id: string; name: string };
+  
+  // Legacy support placeholders (to prevent crash before full migration)
+  catalog_id?: string;
+  catalog?: any;
 }
 
 export interface TableSchema {
@@ -138,46 +148,19 @@ export interface TableSchema {
   columns: any[];
 }
 
-export interface CartItem {
-  id: string;
-  catalog_name: string;
-  quantity: number;
-  max_quantity: number;
-  serial_number?: string;
-  unit: string;
-}
-
-// --- Commercial Proposals Types ---
-
-export interface PriceCatalogItem {
-  id: string;
-  global_category: string;
-  item_type: string;
-  name: string;
-  description?: string | null;
-  price_eur: number;
-  markup_percent: number;
-  is_active: boolean;
-  created_at: string;
-  unit: string | null; // Ensure unit is in interface
-}
-
 export interface CommercialProposal {
   id: string;
   number: number;
-  title?: string | null; // Название проекта/КП
+  title?: string | null;
   client_id: string | null;
-  status: 'draft' | 'sent' | 'accepted';
-  exchange_rate: number;
-  global_markup: number | null;
+  status: 'draft' | 'sent' | 'accepted' | 'rejected';
+  exchange_rate: number; // Deprecated, always 1
+  discount_percent: number | null;
   has_vat: boolean;
   total_amount_byn?: number | null;
-  header_data?: any;
   created_by: string | null;
   created_at: string;
-  
-  // Joins
-  client?: { name: string };
+  client?: { name: string; requisites?: string; address?: string };
   creator?: { full_name: string };
   items?: CPItem[];
 }
@@ -185,17 +168,101 @@ export interface CommercialProposal {
 export interface CPItem {
   id: string;
   cp_id: string | null;
-  catalog_id: string | null; // Nullable if catalog item deleted, but we rely on snapshots now
+  product_id: string | null;
   quantity: number;
-  final_price_byn: number;
-  
-  // Snapshot Data (Historical integrity)
+  price_at_moment: number; // Price per unit in BYN
+  final_price_byn: number; // Total price or redundant unit price depending on context
   snapshot_name?: string | null;
   snapshot_description?: string | null;
   snapshot_unit?: string | null;
-  snapshot_base_price_eur?: number | null;
-  snapshot_global_category?: string | null;
+  product?: Product;
+  // Legacy
+  catalog_id?: string;
+  catalog?: any;
+}
+
+export interface CompanySettings {
+  id: string;
+  company_name: string;
+  requisites?: string;
+  bank_details?: string;
+  default_vat_percent: number;
+}
+
+// --- NEW TYPES FOR DOCUMENTS & ORDERS ---
+
+export interface DocumentTemplate {
+  id: string;
+  type: 'cp' | 'invoice';
+  header_text: string;
+  footer_text: string;
+  signatory_1: string; // Руководитель
+  signatory_2: string; // Бухгалтер
+  is_default: boolean;
+}
+
+export interface Invoice {
+  id: string;
+  number: number;
+  cp_id: string | null;
+  client_id: string | null;
+  total_amount: number;
+  has_vat: boolean;
+  status: 'draft' | 'sent' | 'paid' | 'cancelled';
+  created_at: string;
+  created_by: string;
   
-  // Legacy Join (Optional)
-  catalog?: PriceCatalogItem;
+  // Joins
+  client?: { name: string; requisites: string };
+  commercial_proposal?: { number: number };
+  items?: InvoiceItem[];
+  creator?: { full_name: string };
+}
+
+export interface InvoiceItem {
+  id: string;
+  invoice_id: string;
+  product_id: string | null;
+  name: string;
+  quantity: number;
+  unit: string;
+  price: number;
+  total: number;
+}
+
+export interface SupplyOrder {
+  id: string;
+  invoice_id: string | null; // Ссылка на счет, из-за которого возник дефицит
+  status: 'pending' | 'ordered' | 'received';
+  created_at: string;
+  created_by: string;
+  
+  // Joins
+  invoice?: { number: number; client?: { name: string } };
+  items?: SupplyOrderItem[];
+}
+
+export interface SupplyOrderItem {
+  id: string;
+  supply_order_id: string;
+  product_id: string;
+  quantity_needed: number;
+  quantity_ordered?: number;
+  status: 'pending' | 'ordered' | 'received';
+  
+  // Joins
+  product?: Product;
+}
+
+// Legacy Type needed for some components until refactor is complete
+export interface PriceCatalogItem {
+  id: string;
+  name: string;
+  description?: string | null;
+  price_eur: number; // Legacy name, now treated as BYN
+  markup_percent: number;
+  global_category: string;
+  item_type: string;
+  unit: string;
+  is_active: boolean;
 }

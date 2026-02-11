@@ -101,6 +101,8 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   }, [fetchData]);
 
   const filteredTransactions = useMemo(() => {
+    const todayStr = getMinskISODate();
+
     return transactions.filter((t: any) => {
       const tDateStr = getMinskISODate(t.created_at);
       const matchesStart = !startDate || tDateStr >= startDate;
@@ -120,7 +122,13 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
 
       if (summaryFilter === 'income') return t.type === 'income';
       if (summaryFilter === 'planned') return t.type === 'income' && t.status !== 'approved';
-      if (summaryFilter === 'debtors') return t.type === 'income' && (t.status === 'pending' || t.status === 'partial');
+      // UPDATED: Debtors now strictly means OVERDUE planned income
+      if (summaryFilter === 'debtors') {
+          return t.type === 'income' && 
+                 (t.status === 'pending' || t.status === 'partial') &&
+                 t.planned_date && 
+                 t.planned_date < todayStr;
+      }
       if (summaryFilter === 'expenses') return t.type === 'expense';
       
       return typeFilter === 'all' || t.type === typeFilter;
@@ -128,6 +136,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   }, [transactions, typeFilter, startDate, endDate, summaryFilter, unclosedDocsOnly, docSearchQuery]);
 
   const summary = useMemo(() => {
+    const todayStr = getMinskISODate();
     const data = transactions.filter(t => {
       const tDateStr = getMinskISODate(t.created_at);
       return (!startDate || tDateStr >= startDate) && (!endDate || tDateStr <= endDate);
@@ -136,8 +145,17 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     const incomeFact = data.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
     const expApprov = data.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0);
     const expPending = data.filter(t => t.type === 'expense' && t.status === 'pending');
+    
+    // Total Planned (Pending + Partial)
     const plannedRemain = data.filter(t => t.type === 'income' && t.status !== 'approved').reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
-    const debtorsTotal = data.filter(t => t.type === 'income' && t.status !== 'approved').reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
+    
+    // Total Debtors (Overdue Pending + Partial)
+    const debtorsTotal = data.filter(t => 
+        t.type === 'income' && 
+        t.status !== 'approved' &&
+        t.planned_date && 
+        t.planned_date < todayStr
+    ).reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
 
     return {
       balance: incomeFact - expApprov,

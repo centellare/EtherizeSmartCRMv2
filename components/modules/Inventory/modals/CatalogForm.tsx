@@ -2,7 +2,19 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../../lib/supabase';
 import { Input, Select, Button } from '../../../ui';
-import { InventoryCatalogItem } from '../../../../types';
+
+// Legacy interface defined locally to fix import error
+interface InventoryCatalogItem {
+  id: string;
+  name: string;
+  sku?: string | null;
+  unit?: string | null;
+  last_purchase_price?: number | null;
+  description?: string | null;
+  warranty_period_months?: number | null;
+  has_serial?: boolean | null;
+  item_type?: 'product' | 'material' | null;
+}
 
 interface CatalogFormProps {
   mode: 'create_catalog' | 'edit_catalog';
@@ -27,8 +39,8 @@ export const CatalogForm: React.FC<CatalogFormProps> = ({ mode, selectedItem, on
         last_purchase_price: selectedItem.last_purchase_price?.toString() || '',
         description: selectedItem.description || '',
         warranty_period_months: selectedItem.warranty_period_months?.toString() || '12',
-        has_serial: selectedItem.has_serial,
-        item_type: selectedItem.item_type || 'product'
+        has_serial: selectedItem.has_serial || false,
+        item_type: (selectedItem.item_type as 'product' | 'material') || 'product'
       });
     }
   }, [mode, selectedItem]);

@@ -2,13 +2,13 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../../lib/supabase';
 import { Input, Select, Button } from '../../../ui';
-import { InventoryCatalogItem, InventoryItem } from '../../../../types';
+import { Product, InventoryItem } from '../../../../types';
 import { CartItem } from '../index';
 
 interface DeployFormProps {
   selectedItem: InventoryItem | null;
   cartItems: CartItem[];
-  catalog: InventoryCatalogItem[];
+  catalog: Product[]; // Changed from InventoryCatalogItem
   items: InventoryItem[]; // Stock items
   objects: any[];
   profile: any;
@@ -30,7 +30,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
     if (isBulk) {
        const initialSerials: Record<string, string[]> = {};
        cartItems.forEach(c => {
-           const catItem = catalog.find(cat => cat.id === c.catalog_id);
+           const catItem = catalog.find(cat => cat.id === c.product_id); // Match by product_id
            const qty = Math.floor(c.quantity); 
            if (catItem?.has_serial && qty > 0) {
                const baseArr = Array(qty).fill('');
@@ -58,37 +58,36 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
       });
   };
 
-  // ... (Print Logic remains same)
   const handlePrint = (includeSerials: boolean) => {
     const objectName = objects.find(o => o.id === formData.object_id)?.name || '_____________';
     
     const grouped: Record<string, { name: string, quantity: number, unit: string, serials: string[] }> = {};
     const sourceItems = isBulk ? cartItems : (selectedItem ? [{ 
         id: selectedItem.id, 
-        catalog_id: selectedItem.catalog_id, 
-        catalog_name: selectedItem.catalog?.name || '', 
+        product_id: selectedItem.product_id, 
+        product_name: selectedItem.product?.name || '', 
         quantity: parseFloat(formData.quantity_to_deploy),
-        unit: selectedItem.catalog?.unit || 'шт',
+        unit: selectedItem.product?.unit || 'шт',
         serial_number: formData.serial_number || selectedItem.serial_number
     }] : []);
 
     sourceItems.forEach((item: any) => {
-        if (!grouped[item.catalog_id]) {
-            grouped[item.catalog_id] = {
-                name: item.catalog_name,
+        if (!grouped[item.product_id]) {
+            grouped[item.product_id] = {
+                name: item.product_name,
                 quantity: 0,
                 unit: item.unit,
                 serials: []
             };
         }
-        grouped[item.catalog_id].quantity += item.quantity;
+        grouped[item.product_id].quantity += item.quantity;
         
         if (includeSerials) {
             if (isBulk && bulkSerials[item.id]) {
                 const valid = bulkSerials[item.id].filter(s => s && s.trim() !== '');
-                grouped[item.catalog_id].serials.push(...valid);
+                grouped[item.product_id].serials.push(...valid);
             } else if (!isBulk && item.serial_number) {
-                grouped[item.catalog_id].serials.push(item.serial_number);
+                grouped[item.product_id].serials.push(item.serial_number);
             }
         }
     });
@@ -164,7 +163,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
         if (isBulk) {
             // Check missing serials
             const itemsMissingSerials = cartItems.filter(item => {
-                const catItem = catalog.find(c => c.id === item.catalog_id);
+                const catItem = catalog.find(c => c.id === item.product_id);
                 if (!catItem?.has_serial) return false;
                 const serials = bulkSerials[item.id] || [];
                 return serials.filter(s => s.trim() !== '').length < item.quantity;
@@ -176,23 +175,22 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
             }
 
             for (const item of cartItems) {
-                const catItem = catalog.find(c => c.id === item.catalog_id);
-                const warrantyMonths = catItem?.warranty_period_months || 0;
+                const catItem = catalog.find(c => c.id === item.product_id);
+                const warrantyDays = catItem?.warranty_days || 365;
                 const warrantyEnd = new Date(now);
-                warrantyEnd.setMonth(warrantyEnd.getMonth() + warrantyMonths);
+                warrantyEnd.setDate(warrantyEnd.getDate() + warrantyDays);
                 
                 const serialsToCreate = (bulkSerials[item.id] || []).slice(0, Math.floor(item.quantity));
                 const needsSplit = catItem?.has_serial && serialsToCreate.length > 0;
 
                 const { data: currentStockItem } = await supabase.from('inventory_items').select('quantity').eq('id', item.id).single();
                 
-                // FIX: Check for existence and safe access to quantity
                 if (currentStockItem) {
-                    // Safe access with null check
                     const currentQty = currentStockItem.quantity ?? 0;
                     const newQty = currentQty - item.quantity;
                     if (newQty <= 0.0001) {
-                        await supabase.from('inventory_items').update({ quantity: 0, is_deleted: true, deleted_at: now.toISOString() }).eq('id', item.id);
+                        // CHANGED: Use deleted_at only
+                        await supabase.from('inventory_items').update({ quantity: 0, deleted_at: now.toISOString() }).eq('id', item.id);
                     } else {
                         await supabase.from('inventory_items').update({ quantity: newQty }).eq('id', item.id);
                     }
@@ -201,7 +199,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
                 if (needsSplit) {
                     for (const sn of serialsToCreate) {
                         const { data: newItem } = await supabase.from('inventory_items').insert({
-                            catalog_id: item.catalog_id,
+                            product_id: item.product_id,
                             serial_number: sn || null,
                             quantity: 1,
                             purchase_price: item.purchase_price,
@@ -224,7 +222,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
                     }
                 } else {
                     const { data: newItem } = await supabase.from('inventory_items').insert({
-                        catalog_id: item.catalog_id,
+                        product_id: item.product_id,
                         serial_number: null,
                         quantity: item.quantity,
                         purchase_price: item.purchase_price,
@@ -252,9 +250,9 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
             if (isNaN(qtyToDeploy) || qtyToDeploy <= 0) throw new Error("Укажите корректное количество");
             if (qtyToDeploy > selectedItem.quantity) throw new Error("Нельзя отгрузить больше, чем есть на складе");
 
-            const warrantyMonths = selectedItem.catalog?.warranty_period_months || 0;
+            const warrantyDays = selectedItem.product?.warranty_days || 365;
             const warrantyEnd = new Date(now);
-            warrantyEnd.setMonth(warrantyEnd.getMonth() + warrantyMonths);
+            warrantyEnd.setDate(warrantyEnd.getDate() + warrantyDays);
 
             const deployedStatus = {
                 status: 'deployed',
@@ -271,7 +269,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
                 await supabase.from('inventory_items').update({ quantity: newStockQty }).eq('id', selectedItem.id);
 
                 const { data: newItem, error: createError } = await supabase.from('inventory_items').insert([{
-                    catalog_id: selectedItem.catalog_id,
+                    product_id: selectedItem.product_id,
                     purchase_price: selectedItem.purchase_price,
                     quantity: qtyToDeploy,
                     assigned_to_id: profile.id,
@@ -290,7 +288,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
                 action_type: 'deploy',
                 to_object_id: formData.object_id,
                 created_by: profile.id,
-                comment: `Отгрузка ${qtyToDeploy} ${selectedItem.catalog?.unit}. ${formData.serial_number ? `S/N: ${formData.serial_number}` : ''}`
+                comment: `Отгрузка ${qtyToDeploy} ${selectedItem.product?.unit}. ${formData.serial_number ? `S/N: ${formData.serial_number}` : ''}`
             }]);
         }
         onSuccess();
@@ -304,11 +302,10 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Render logic same as before... */}
         {isBulk ? (
             <div className="space-y-4 max-h-[60vh] overflow-y-auto bg-slate-50 p-3 rounded-2xl border border-slate-200">
                 {cartItems.map(item => {
-                    const catItem = catalog.find(c => c.id === item.catalog_id);
+                    const catItem = catalog.find(c => c.id === item.product_id);
                     const requiresSerial = catItem?.has_serial;
                     const stockItem = items.find(i => i.id === item.id);
                     const maxAvailable = stockItem?.quantity || item.quantity;
@@ -317,7 +314,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
                         <div key={item.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm transition-all">
                             <div className="flex justify-between items-center mb-4 pb-3 border-b border-slate-50">
                                 <div className="min-w-0 flex-grow pr-4">
-                                    <p className="text-sm font-bold text-slate-900 truncate">{item.catalog_name}</p>
+                                    <p className="text-sm font-bold text-slate-900 truncate">{item.product_name}</p>
                                     <p className="text-[10px] text-slate-400">На складе: {maxAvailable} {item.unit}</p>
                                 </div>
                                 <div className="w-24">
@@ -370,11 +367,11 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
                 <div className="flex justify-between items-start">
                     <div>
                         <p className="text-xs text-slate-500 mb-1">Отгружаемый товар</p>
-                        <p className="font-bold text-slate-900">{selectedItem?.catalog?.name}</p>
+                        <p className="font-bold text-slate-900">{selectedItem?.product?.name}</p>
                     </div>
                     <div className="text-right">
                         <p className="text-xs text-slate-500 mb-1">Доступно</p>
-                        <p className="font-bold text-slate-900">{selectedItem?.quantity} {selectedItem?.catalog?.unit}</p>
+                        <p className="font-bold text-slate-900">{selectedItem?.quantity} {selectedItem?.product?.unit}</p>
                     </div>
                 </div>
                 {selectedItem?.serial_number ? (

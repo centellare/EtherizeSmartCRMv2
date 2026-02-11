@@ -1,8 +1,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Button, Input, Select, Toast } from '../../ui';
-import { PriceCatalogItem } from '../../../types';
+import { Button, Input, Select, Toast, Badge } from '../../ui';
+import { Product } from '../../../types';
 
 interface CPGeneratorProps {
   profile: any;
@@ -12,27 +12,29 @@ interface CPGeneratorProps {
 }
 
 interface CartItem {
-  catalog_id: string;
+  product_id: string; 
   name: string;
   description?: string;
   quantity: number;
-  base_eur: number;
-  item_markup: number;
+  base_price: number; // Cost / Закупка (BYN)
+  retail_price: number; // Sales / Продажа (BYN)
   category: string;
   unit: string;
+  manual_markup_percent: number; // Editable Markup
 }
 
 const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSuccess, onCancel }) => {
-  const [catalog, setCatalog] = useState<PriceCatalogItem[]>([]);
-  const [clients, setClients] = useState<any[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [objects, setObjects] = useState<any[]>([]);
+  const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
   // Settings
   const [title, setTitle] = useState('');
-  const [clientId, setClientId] = useState('');
-  const [exchangeRate, setExchangeRate] = useState<number>(3.5);
-  const [globalMarkup, setGlobalMarkup] = useState<number>(0);
+  const [selectedObjectId, setSelectedObjectId] = useState('');
+  const [linkedClient, setLinkedClient] = useState<{id: string, name: string} | null>(null);
+  
   const [hasVat, setHasVat] = useState(true);
 
   // Cart
@@ -41,71 +43,75 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
   // Filters
   const [search, setSearch] = useState('');
   const [catFilter, setCatFilter] = useState('all');
-  const [typeFilter, setTypeFilter] = useState('all');
 
   useEffect(() => {
     const init = async () => {
       setLoading(true);
       try {
-        const [catRes, cliRes, configRes] = await Promise.all([
-          supabase.from('price_catalog').select('*').eq('is_active', true).neq('item_type', 'system_config'),
-          supabase.from('clients').select('id, name').is('deleted_at', null),
-          // Fetch default global settings
-          supabase.from('price_catalog').select('*').eq('item_type', 'system_config').eq('name', 'GLOBAL_CONFIG').maybeSingle()
+        const [prodRes, objRes, stockRes] = await Promise.all([
+          supabase.from('products').select('*').eq('is_archived', false).order('name'),
+          supabase.from('objects')
+            .select('id, name, address, client:clients(id, name)')
+            .is('is_deleted', false)
+            .order('name'),
+          supabase.from('inventory_items')
+            .select('product_id, quantity')
+            .eq('status', 'in_stock')
+            .is('deleted_at', null)
         ]);
         
-        if (catRes.data) {
-            // Map nullable fields to undefined or empty strings for React state
-            const mappedCatalog = catRes.data.map((c: any) => ({
-                ...c,
-                description: c.description || undefined,
-                unit: c.unit || 'шт'
-            }));
-            setCatalog(mappedCatalog);
-        }
+        if (prodRes.data) setProducts(prodRes.data);
+        if (objRes.data) setObjects(objRes.data);
         
-        setClients(cliRes.data || []);
-
-        // Apply defaults from DB if available (and not editing existing)
-        if (configRes.data && !proposalId) {
-           setExchangeRate(configRes.data.price_eur || 3.5);
-           setGlobalMarkup(configRes.data.markup_percent || 0);
+        // Calculate Stock
+        if (stockRes.data) {
+            const stocks = stockRes.data.reduce((acc: Record<string, number>, item: any) => {
+                acc[item.product_id] = (acc[item.product_id] || 0) + item.quantity;
+                return acc;
+            }, {});
+            setStockMap(stocks);
         }
 
         // Load existing proposal if in edit mode
         if (proposalId) {
           const { data: cp } = await supabase
             .from('commercial_proposals')
-            .select('*')
+            .select('*, client:clients(id, name)')
             .eq('id', proposalId)
             .single();
           
           if (cp) {
             setTitle(cp.title || '');
-            setClientId(cp.client_id || '');
-            setExchangeRate(cp.exchange_rate);
-            setGlobalMarkup(cp.global_markup || 0);
+            setLinkedClient(cp.client);
+            if (objRes.data) {
+                const relatedObject = objRes.data.find((o: any) => o.client?.id === cp.client_id);
+                if (relatedObject) setSelectedObjectId(relatedObject.id);
+            }
+            
             setHasVat(cp.has_vat || false);
 
-            const { data: items } = await supabase
-              .from('cp_items')
-              .select('*, catalog:price_catalog(*)') // Join just to get current catalog details if available
-              .eq('cp_id', proposalId);
+            const { data: items } = await supabase.from('cp_items').select('*').eq('cp_id', proposalId);
 
             if (items) {
-              const mappedCart: CartItem[] = items.map((i: any) => ({
-                catalog_id: i.catalog_id || '',
-                // Prefer snapshot data if available (implied), otherwise fallback to catalog
-                name: i.snapshot_name || i.catalog?.name || 'Unknown Item',
-                description: i.snapshot_description || i.catalog?.description || '',
-                unit: i.snapshot_unit || i.catalog?.unit || 'шт',
-                category: i.snapshot_global_category || i.catalog?.global_category || 'Uncategorized',
-                quantity: i.quantity,
-                base_eur: i.snapshot_base_price_eur || i.catalog?.price_eur || 0,
-                // Markup logic: approximate based on final price if strict field missing
-                item_markup: i.catalog?.markup_percent || 0,
-              }));
-              setCart(mappedCart);
+              // Re-hydrate logic
+              const hydratedCart: CartItem[] = items.map((i: any) => {
+                  const liveProd = prodRes.data?.find(p => p.id === i.product_id);
+                  const base = liveProd ? liveProd.base_price : 0;
+                  
+                  return {
+                    product_id: i.product_id,
+                    name: i.snapshot_name || liveProd?.name || 'Unknown',
+                    description: i.snapshot_description || '',
+                    unit: i.snapshot_unit || 'шт',
+                    category: i.snapshot_global_category || 'General',
+                    quantity: i.quantity,
+                    base_price: base,
+                    // Используем price_at_moment как цену за единицу в BYN
+                    retail_price: i.price_at_moment || 0,
+                    manual_markup_percent: i.manual_markup || 0
+                  };
+              });
+              setCart(hydratedCart);
             }
           }
         }
@@ -118,85 +124,103 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
     init();
   }, [proposalId]);
 
-  // ... (Rest of component remains largely the same, logic doesn't depend on strict types as much as setup)
-  const calculateUnitBYN = (item: CartItem) => {
-    const baseWithMarkups = item.base_eur * (1 + (item.item_markup + globalMarkup) / 100);
-    return baseWithMarkups * exchangeRate;
+  // AUTO-LINK Client
+  useEffect(() => {
+      if (selectedObjectId) {
+          const obj = objects.find(o => o.id === selectedObjectId);
+          if (obj && obj.client) {
+              setLinkedClient(obj.client);
+              if (!title) setTitle(`КП для объекта "${obj.name}"`);
+          } else if (selectedObjectId !== '') { 
+              setLinkedClient(null);
+          }
+      }
+  }, [selectedObjectId, objects]);
+
+  // Calculate Unit Price in BYN
+  const calculateItemPrice = (item: CartItem) => {
+      if (item.base_price > 0) {
+          return item.base_price * (1 + (item.manual_markup_percent / 100));
+      }
+      return item.retail_price; 
+  };
+
+  const calculateItemTotal = (item: CartItem) => {
+    const unitPrice = calculateItemPrice(item);
+    return unitPrice * item.quantity;
   };
 
   const totals = useMemo(() => {
     let subtotal = 0;
-    let cogs = 0; // Cost of Goods Sold (Себестоимость)
+    let costTotal = 0;
 
     cart.forEach(i => {
-      subtotal += calculateUnitBYN(i) * i.quantity;
-      cogs += i.base_eur * exchangeRate * i.quantity;
+      subtotal += calculateItemTotal(i);
+      costTotal += i.base_price * i.quantity;
     });
     
     const vat = hasVat ? subtotal * 0.2 : 0;
-    const profit = subtotal - cogs;
-    
-    // Calculate MARKUP % (Profit / COGS) instead of Margin (Profit / Revenue)
-    const markupPercent = cogs > 0 ? (profit / cogs) * 100 : 0;
+    const profit = subtotal - costTotal;
+    const markupPercent = costTotal > 0 ? (profit / costTotal) * 100 : 0;
 
     return { subtotal, vat, total: subtotal + vat, profit, markupPercent };
-  }, [cart, globalMarkup, exchangeRate, hasVat]);
+  }, [cart, hasVat]);
 
-  const addToCart = (item: PriceCatalogItem) => {
+  const addToCart = (product: Product) => {
     setCart(prev => {
-      const exists = prev.find(c => c.catalog_id === item.id);
+      const exists = prev.find(c => c.product_id === product.id);
       if (exists) {
-        return prev.map(c => c.catalog_id === item.id ? { ...c, quantity: c.quantity + 1 } : c);
+        return prev.map(c => c.product_id === product.id ? { ...c, quantity: c.quantity + 1 } : c);
       }
+      
+      // Calculate initial default markup from catalog
+      let initialMarkup = 0;
+      if (product.base_price > 0) {
+          initialMarkup = ((product.retail_price - product.base_price) / product.base_price) * 100;
+      }
+
       return [...prev, {
-        catalog_id: item.id,
-        name: item.name,
-        description: item.description || '',
-        unit: item.unit || 'шт',
+        product_id: product.id,
+        name: product.name,
+        description: product.description || '',
+        unit: product.unit,
         quantity: 1,
-        base_eur: item.price_eur,
-        item_markup: item.markup_percent,
-        category: item.global_category
+        base_price: product.base_price,
+        retail_price: product.retail_price,
+        category: product.category,
+        manual_markup_percent: parseFloat(initialMarkup.toFixed(2))
       }];
     });
   };
 
-  const updateQuantity = (id: string, qty: number) => {
-    if (qty < 1) {
-      setCart(prev => prev.filter(c => c.catalog_id !== id));
-    } else {
-      setCart(prev => prev.map(c => c.catalog_id === id ? { ...c, quantity: qty } : c));
-    }
+  const updateCartItem = (id: string, field: keyof CartItem, value: any) => {
+    setCart(prev => prev.map(c => c.product_id === id ? { ...c, [field]: value } : c));
   };
 
-  const updateMarkup = (id: string, markup: number) => {
-    setCart(prev => prev.map(c => c.catalog_id === id ? { ...c, item_markup: markup } : c));
+  const removeFromCart = (id: string) => {
+      setCart(prev => prev.filter(c => c.product_id !== id));
   };
 
   const handleSave = async () => {
-    if (!clientId) { setToast({ message: 'Выберите клиента', type: 'error' }); return; }
+    if (!linkedClient) { setToast({ message: 'Выберите объект с клиентом', type: 'error' }); return; }
     if (cart.length === 0) { setToast({ message: 'Корзина пуста', type: 'error' }); return; }
 
     setLoading(true);
     try {
       let cpId = proposalId;
 
-      // 1. Create or Update Header
       const headerPayload = {
         title: title || null,
-        client_id: clientId,
+        client_id: linkedClient.id,
         status: 'draft',
-        exchange_rate: exchangeRate,
-        global_markup: globalMarkup,
+        exchange_rate: 1, // ВСЕГДА 1 ДЛЯ BYN
         has_vat: hasVat,
         total_amount_byn: totals.total,
         created_by: profile.id
       };
 
       if (cpId) {
-        const { error } = await supabase.from('commercial_proposals').update(headerPayload).eq('id', cpId);
-        if (error) throw error;
-        // Clear old items to replace with new ones (simple strategy)
+        await supabase.from('commercial_proposals').update(headerPayload).eq('id', cpId);
         await supabase.from('cp_items').delete().eq('cp_id', cpId);
       } else {
         const { data, error } = await supabase.from('commercial_proposals').insert([headerPayload]).select('id').single();
@@ -204,18 +228,18 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
         cpId = data.id;
       }
 
-      // 2. Create Items with SNAPSHOT data
       if (cpId) {
         const itemsPayload = cart.map(item => ({
           cp_id: cpId,
-          catalog_id: item.catalog_id,
+          product_id: item.product_id,
           quantity: item.quantity,
-          final_price_byn: calculateUnitBYN(item),
-          // Snapshot Fields
+          final_price_byn: calculateItemTotal(item) / item.quantity, // Unit price BYN (Effective)
+          price_at_moment: calculateItemPrice(item), // Unit price BYN
+          manual_markup: item.manual_markup_percent,
+          // Snapshots
           snapshot_name: item.name,
           snapshot_description: item.description,
           snapshot_unit: item.unit,
-          snapshot_base_price_eur: item.base_eur,
           snapshot_global_category: item.category
         }));
 
@@ -223,47 +247,32 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
         if (itemsError) throw itemsError;
       }
 
-      setToast({ message: proposalId ? 'КП обновлено' : 'КП успешно создано', type: 'success' });
+      setToast({ message: 'КП успешно сохранено', type: 'success' });
       onSuccess();
     } catch (e: any) {
       console.error(e);
-      setToast({ message: 'Ошибка: ' + e.message, type: 'error' });
+      if (e.code === 'PGRST204' || e.message?.includes('manual_markup') || e.message?.includes('snapshot')) {
+        setToast({ 
+            message: 'Ошибка БД: Устаревшая структура. Выполните скрипт в разделе "База данных"!', 
+            type: 'error' 
+        });
+      } else {
+        setToast({ message: 'Ошибка: ' + e.message, type: 'error' });
+      }
     }
     setLoading(false);
   };
 
-  // Filter Logic (remains same)
-  const uniqueCategories = useMemo(() => {
-    const cats = new Set(catalog.map(i => i.global_category));
-    return Array.from(cats).sort();
-  }, [catalog]);
-
-  const availableTypes = useMemo(() => {
-    let types = new Set<string>();
-    if (catFilter === 'all') {
-      catalog.forEach(i => types.add(i.item_type));
-    } else {
-      catalog
-        .filter(i => i.global_category === catFilter)
-        .forEach(i => types.add(i.item_type));
-    }
-    return Array.from(types).sort();
-  }, [catalog, catFilter]);
-
-  useEffect(() => {
-    if (typeFilter !== 'all' && !availableTypes.includes(typeFilter)) {
-      setTypeFilter('all');
-    }
-  }, [catFilter, availableTypes]);
-
+  // Filters
+  const uniqueCategories = useMemo(() => Array.from(new Set(products.map(p => p.category))).sort(), [products]);
+  
   const filteredCatalog = useMemo(() => {
-    return catalog.filter(c => {
-      const matchSearch = c.name.toLowerCase().includes(search.toLowerCase());
-      const matchCat = catFilter === 'all' || c.global_category === catFilter;
-      const matchType = typeFilter === 'all' || c.item_type === typeFilter;
-      return matchSearch && matchCat && matchType;
+    return products.filter(p => {
+      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.sku?.toLowerCase().includes(search.toLowerCase());
+      const matchCat = catFilter === 'all' || p.category === catFilter;
+      return matchSearch && matchCat;
     });
-  }, [catalog, search, catFilter, typeFilter]);
+  }, [products, search, catFilter]);
 
   const groupedCart = useMemo(() => {
     const groups: Record<string, CartItem[]> = {};
@@ -275,33 +284,37 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
   }, [cart]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-140px)] gap-4">
+    <div className="flex flex-col h-[calc(100vh-220px)] min-h-[500px] gap-4">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       {/* Top Controls */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap gap-4 items-end shrink-0">
-        <div className="flex-grow min-w-[200px]">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap gap-4 items-end shrink-0 shadow-sm">
+        <div className="w-64">
+            <Select 
+                label="Объект" 
+                value={selectedObjectId} 
+                onChange={(e:any) => setSelectedObjectId(e.target.value)}
+                options={[{value:'', label:'Выберите объект...'}, ...objects.map(o => ({value:o.id, label:o.name}))]}
+                icon="home_work"
+            />
+        </div>
+        <div className="flex-grow min-w-[200px] flex flex-col justify-end">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Заказчик</p>
+            <div className={`h-[46px] px-4 rounded-xl border flex items-center transition-all ${linkedClient ? 'bg-blue-50 border-blue-200 text-blue-900 font-bold shadow-sm' : 'bg-slate-50 border-slate-200 text-slate-400'}`}>
+                <span className="material-icons-round text-lg mr-2">{linkedClient ? 'person' : 'no_accounts'}</span>
+                {linkedClient ? linkedClient.name : '—'}
+            </div>
+        </div>
+        
+        <div className="w-64">
           <Input 
-            label="Название проекта / Объекта" 
-            placeholder="Напр: Автоматизация офиса" 
+            label="Название КП" 
+            placeholder="Напр: Смета на оборудование" 
             value={title} 
             onChange={(e:any) => setTitle(e.target.value)} 
-            icon="business"
           />
         </div>
-        <Select 
-          label="Клиент" 
-          value={clientId} 
-          onChange={(e:any) => setClientId(e.target.value)}
-          options={[{value:'', label:'Выберите клиента'}, ...clients.map(c => ({value:c.id, label:c.name}))]}
-          className="w-64"
-        />
-        <div className="w-24">
-          <Input label="Курс EUR" type="number" step="0.01" value={exchangeRate} onChange={(e:any) => setExchangeRate(parseFloat(e.target.value))} />
-        </div>
-        <div className="w-24">
-          <Input label="Наценка %" type="number" value={globalMarkup} onChange={(e:any) => setGlobalMarkup(parseFloat(e.target.value))} />
-        </div>
+        
         <div className="pb-3 px-2">
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={hasVat} onChange={(e) => setHasVat(e.target.checked)} className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
@@ -310,14 +323,14 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
         </div>
         <div className="ml-auto flex gap-2">
           <Button variant="ghost" onClick={onCancel}>Отмена</Button>
-          <Button icon="save" onClick={handleSave} loading={loading}>Сохранить КП</Button>
+          <Button icon="save" onClick={handleSave} loading={loading}>Сохранить</Button>
         </div>
       </div>
 
-      <div className="flex-grow grid grid-cols-1 lg:grid-cols-10 gap-4 overflow-hidden">
-        {/* Left: Catalog (70% width -> col-span-7) */}
-        <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-slate-100 flex gap-2">
+      <div className="flex-grow grid grid-cols-1 lg:grid-cols-10 gap-4 overflow-hidden h-full">
+        {/* Left: Catalog */}
+        <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden h-full">
+          <div className="p-4 border-b border-slate-100 flex gap-2 shrink-0">
             <Input placeholder="Поиск товара..." value={search} onChange={(e:any) => setSearch(e.target.value)} className="flex-grow" icon="search" />
             <div className="w-48">
               <Select 
@@ -326,99 +339,117 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
                 options={[{value:'all', label:'Все категории'}, ...uniqueCategories.map(c => ({value:c, label:c}))]} 
               />
             </div>
-            <div className="w-40">
-              <Select 
-                value={typeFilter} 
-                onChange={(e:any) => setTypeFilter(e.target.value)} 
-                options={[{value:'all', label:'Все типы'}, ...availableTypes.map(c => ({value:c, label:c}))]} 
-              />
-            </div>
           </div>
-          <div className="flex-grow overflow-y-auto p-2">
-            {filteredCatalog.map(item => (
-              <div key={item.id} onClick={() => addToCart(item)} className="p-3 mb-1 rounded-xl border border-slate-100 hover:border-blue-300 hover:bg-slate-50 cursor-pointer transition-all flex justify-between items-center group">
-                <div className="flex flex-col gap-1 overflow-hidden">
-                  <div>
-                    <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mr-2">{item.global_category}</span>
-                    <span className="text-[10px] text-slate-300 font-bold uppercase tracking-wider">{item.item_type}</span>
+          <div className="flex-grow overflow-y-auto p-2 scrollbar-hide">
+            {filteredCatalog.map(p => {
+              const stockQty = stockMap[p.id] || 0;
+              const hasStock = stockQty > 0;
+              
+              return (
+                <div key={p.id} onClick={() => addToCart(p)} className="p-3 mb-1 rounded-xl border border-slate-100 hover:border-blue-300 hover:bg-slate-50 cursor-pointer transition-all flex justify-between items-center group">
+                  <div className="flex flex-col gap-1 overflow-hidden">
+                    <div>
+                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mr-2">{p.category}</span>
+                      {p.sku && <span className="text-[10px] text-slate-500 font-mono bg-slate-100 px-1 rounded">{p.sku}</span>}
+                    </div>
+                    <p className="text-sm font-bold text-slate-900 truncate">{p.name}</p>
                   </div>
-                  <p className="text-sm font-bold text-slate-900 truncate">{item.name}</p>
-                  {item.description && (
-                    <p className="text-xs text-slate-500 line-clamp-2 leading-tight">{item.description}</p>
-                  )}
+                  <div className="text-right pl-2 shrink-0">
+                    <div className="flex flex-col items-end">
+                        <p className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded mb-1">{p.retail_price} BYN</p>
+                        <div className="flex gap-2 items-center">
+                            {hasStock ? (
+                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Склад: {stockQty}</span>
+                            ) : (
+                                <span className="text-[10px] font-bold text-slate-300 bg-slate-50 px-1.5 py-0.5 rounded">Склад: 0</span>
+                            )}
+                        </div>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-right pl-2 shrink-0">
-                  <p className="text-xs font-mono text-blue-600 bg-blue-50 px-2 py-1 rounded">€{item.price_eur}</p>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
-        {/* Right: Cart (30% width -> col-span-3) */}
-        <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden">
-          <div className="p-4 border-b border-slate-100 bg-slate-50">
+        {/* Right: Cart */}
+        <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden h-full shadow-sm">
+          <div className="p-4 border-b border-slate-100 bg-slate-50 shrink-0">
             <h3 className="font-bold text-slate-900 flex items-center gap-2">
               <span className="material-icons-round text-slate-400">shopping_cart</span>
-              Корзина КП
+              Состав КП
             </h3>
           </div>
-          <div className="flex-grow overflow-y-auto p-4 space-y-6">
+          
+          <div className="flex-grow overflow-y-auto p-4 space-y-4 scrollbar-hide bg-white">
             {cart.length === 0 ? (
-              <p className="text-center text-slate-400 mt-10 italic text-sm">Добавьте товары из каталога</p>
+              <p className="text-center text-slate-400 mt-10 italic text-sm">Выберите товары из списка слева</p>
             ) : (
               Object.entries(groupedCart).map(([category, items]: [string, CartItem[]]) => {
-                const catTotal = items.reduce((sum, i) => sum + calculateUnitBYN(i) * i.quantity, 0);
-                const catCount = items.reduce((sum, i) => sum + i.quantity, 0);
-                
                 return (
                   <div key={category} className="space-y-2">
-                    <div className="bg-slate-100 px-3 py-2 rounded-lg flex justify-between items-center">
-                      <span className="text-xs font-bold text-slate-600 uppercase tracking-tight">{category}</span>
-                      <span className="text-[10px] font-bold text-slate-500">{catCount} шт. • {catTotal.toFixed(0)} BYN</span>
+                    <div className="bg-slate-100 px-3 py-1.5 rounded-lg sticky top-0 z-10 opacity-95 backdrop-blur-sm">
+                      <span className="text-[10px] font-bold text-slate-600 uppercase tracking-tight">{category}</span>
                     </div>
-                    {items.map(item => (
-                      <div key={item.catalog_id} className="flex items-center gap-2 pl-1 group">
-                        <div className="flex-grow min-w-0 flex flex-col">
-                          <div className="flex items-center gap-1">
-                            <p className="text-xs font-medium truncate text-slate-800 leading-tight">{item.name}</p>
-                            {item.description && (
-                              <span className="material-icons-round text-[14px] text-slate-300 hover:text-blue-500 cursor-help" title={item.description}>info</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <p className="text-[10px] text-slate-400">
-                              {calculateUnitBYN(item).toFixed(2)} BYN
-                            </p>
-                            <div className="flex flex-col items-end">
-                              <input 
-                                type="number" 
-                                value={item.item_markup} 
-                                onChange={(e) => updateMarkup(item.catalog_id, parseFloat(e.target.value))}
-                                className="w-14 h-6 text-[10px] bg-slate-50 border border-slate-200 rounded text-right px-1 focus:border-blue-500 outline-none text-slate-600"
-                                placeholder="%"
-                              />
+                    {items.map(item => {
+                        const unitPrice = calculateItemPrice(item);
+                        return (
+                          <div key={item.product_id} className="pl-1 group border-b border-slate-50 pb-2 last:border-0">
+                            <div className="flex justify-between items-start mb-1">
+                                <p className="text-xs font-medium text-slate-800 leading-tight w-[90%]">{item.name}</p>
+                                <button onClick={() => removeFromCart(item.product_id)} className="text-slate-300 hover:text-red-500 transition-colors">
+                                  <span className="material-icons-round text-sm">close</span>
+                                </button>
+                            </div>
+                            
+                            <div className="flex items-center gap-2 mt-1.5">
+                                {/* Quantity */}
+                                <div className="flex flex-col w-12">
+                                    <label className="text-[8px] text-slate-400 font-bold uppercase">Кол-во</label>
+                                    <input 
+                                      type="number" 
+                                      min="1" 
+                                      value={item.quantity} 
+                                      onChange={(e) => updateCartItem(item.product_id, 'quantity', parseInt(e.target.value) || 1)}
+                                      className="w-full h-7 bg-slate-50 border border-slate-200 rounded text-center font-bold text-xs focus:border-blue-500 outline-none"
+                                    />
+                                </div>
+
+                                {/* Markup % */}
+                                <div className="flex flex-col w-14">
+                                    <label className="text-[8px] text-slate-400 font-bold uppercase">Наценка %</label>
+                                    <input 
+                                      type="number" 
+                                      step="0.1"
+                                      value={item.manual_markup_percent} 
+                                      onChange={(e) => updateCartItem(item.product_id, 'manual_markup_percent', parseFloat(e.target.value) || 0)}
+                                      className={`w-full h-7 border rounded text-center font-bold text-xs focus:border-blue-500 outline-none ${item.manual_markup_percent < 0 ? 'text-red-500 bg-red-50 border-red-100' : 'text-emerald-600 bg-emerald-50 border-emerald-100'}`}
+                                    />
+                                </div>
+
+                                {/* Price Display */}
+                                <div className="flex flex-col flex-grow items-end">
+                                    <label className="text-[8px] text-slate-400 font-bold uppercase">Сумма (BYN)</label>
+                                    <div className="h-7 flex items-center">
+                                        <span className="font-bold text-sm text-slate-700">
+                                            {(unitPrice * item.quantity).toFixed(2)}
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="text-[9px] text-slate-400 text-right mt-0.5">
+                                {unitPrice.toFixed(2)} BYN / шт
                             </div>
                           </div>
-                        </div>
-                        <input 
-                          type="number" 
-                          min="1" 
-                          value={item.quantity} 
-                          onChange={(e) => updateQuantity(item.catalog_id, parseInt(e.target.value))}
-                          className="w-12 h-8 bg-white border border-slate-300 rounded text-center font-bold text-xs text-slate-900 focus:border-blue-500 outline-none"
-                        />
-                        <button onClick={() => updateQuantity(item.catalog_id, 0)} className="text-slate-300 hover:text-red-500 w-6 h-6 flex items-center justify-center rounded-full hover:bg-red-50 transition-colors">
-                          <span className="material-icons-round text-sm">close</span>
-                        </button>
-                      </div>
-                    ))}
+                        );
+                    })}
                   </div>
                 );
               })
             )}
           </div>
-          <div className="p-5 bg-slate-50 border-t border-slate-200">
+
+          <div className="p-5 bg-slate-50 border-t border-slate-200 shrink-0 z-10">
             <div className="space-y-1 mb-3">
               <div className="flex justify-between text-xs">
                 <span className="text-slate-500">Сумма без НДС:</span>
@@ -435,21 +466,10 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
               <span className="font-bold text-slate-900 text-sm">ИТОГО:</span>
               <span className="font-bold text-xl text-blue-600">{totals.total.toFixed(2)} BYN</span>
             </div>
-            
-            {/* Profit & Markup Analysis Block */}
-            <div className="mt-3 pt-2 border-t border-slate-200 flex justify-between items-center group cursor-help opacity-70 hover:opacity-100 transition-opacity" title="Расчет: Прибыль / Себестоимость * 100% (Наценка)">
-               <span className="text-[10px] text-slate-400">Ориентировочная прибыль:</span>
-               <div className="text-right">
-                 <span className="text-xs font-medium text-slate-500 mr-2">
-                   {totals.profit.toFixed(2)} BYN
+            <div className="mt-2 text-right">
+                 <span className={`text-[10px] font-bold ${totals.profit > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                   Прибыль: {totals.profit.toFixed(2)} BYN ({totals.markupPercent.toFixed(1)}%)
                  </span>
-                 <span className={`text-xs font-bold ${
-                   totals.markupPercent > 15 ? 'text-emerald-600' : 
-                   totals.markupPercent >= 10 ? 'text-amber-500' : 'text-red-500'
-                 }`}>
-                   {totals.markupPercent.toFixed(1)}%
-                 </span>
-               </div>
             </div>
           </div>
         </div>

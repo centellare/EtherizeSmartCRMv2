@@ -64,7 +64,7 @@ const ItemDetailsDrawer: React.FC<ItemDetailsDrawerProps> = ({ item, isOpen, onC
                     {item.status === 'deployed' ? 'На объекте' : item.status === 'in_stock' ? 'На складе' : item.status === 'scrapped' ? 'Списан' : 'В ремонте'}
                  </Badge>
               </div>
-              <h2 className="text-xl font-bold text-slate-900 leading-tight">{item.catalog?.name}</h2>
+              <h2 className="text-xl font-bold text-slate-900 leading-tight">{item.product?.name}</h2>
               <p className="text-xs text-slate-400 font-mono mt-1">
                 ID: {item.id.split('-')[0]}... 
                 {item.serial_number && <span className="text-slate-600 font-bold ml-1">| S/N: {item.serial_number}</span>}
@@ -104,12 +104,12 @@ const ItemDetailsDrawer: React.FC<ItemDetailsDrawerProps> = ({ item, isOpen, onC
                   <div className="grid grid-cols-2 divide-x divide-slate-100 border-b border-slate-100">
                     <div className="p-4">
                         <p className="text-[10px] text-slate-400 uppercase mb-1">Количество</p>
-                        <p className="font-bold text-slate-900">{item.quantity} {item.catalog?.unit}</p>
+                        <p className="font-bold text-slate-900">{item.quantity} {item.product?.unit}</p>
                     </div>
                     <div className="p-4">
                         <p className="text-[10px] text-slate-400 uppercase mb-1">Закупка</p>
                         <p className="font-bold text-slate-900">
-                            {(item.purchase_price || item.catalog?.last_purchase_price || 0).toLocaleString('ru-RU')} BYN
+                            {(item.purchase_price || item.product?.base_price || 0).toLocaleString('ru-RU')} BYN
                         </p>
                     </div>
                   </div>
@@ -123,9 +123,9 @@ const ItemDetailsDrawer: React.FC<ItemDetailsDrawerProps> = ({ item, isOpen, onC
                         </div>
                     </div>
                   )}
-                  {item.catalog?.description && (
+                  {item.product?.description && (
                       <div className="p-4 text-sm text-slate-600 italic border-t border-slate-100">
-                          {item.catalog.description}
+                          {item.product.description}
                       </div>
                   )}
               </div>

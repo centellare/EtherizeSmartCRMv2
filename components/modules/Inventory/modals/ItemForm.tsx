@@ -1,206 +1,226 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../../lib/supabase';
-import { Input, Select, Button } from '../../../ui';
-import { InventoryCatalogItem, InventoryItem } from '../../../../types';
+import { Input, Select, Button, ConfirmModal } from '../../../ui';
+import { Product, InventoryItem } from '../../../../types';
 
 interface ItemFormProps {
-  mode: 'add_item' | 'edit_item';
-  selectedItem: InventoryItem | null;
-  catalog: InventoryCatalogItem[];
+  mode: 'add_item' | 'edit_item' | 'receive_supply';
+  selectedItem: any | null; // Can be InventoryItem OR SupplyOrderItem
+  products?: Product[];
   profile: any;
   onSuccess: (keepOpen?: boolean) => void;
 }
 
-export const ItemForm: React.FC<ItemFormProps> = ({ mode, selectedItem, catalog, profile, onSuccess }) => {
+export const ItemForm: React.FC<ItemFormProps> = ({ mode, selectedItem, products = [], profile, onSuccess }) => {
   const [loading, setLoading] = useState(false);
-  const [skipSerial, setSkipSerial] = useState(false);
-  const [formData, setFormData] = useState({ catalog_id: '', serial_number: '', quantity: '1', purchase_price: '' });
+  const [formData, setFormData] = useState({ product_id: '', serial_number: '', quantity: '1', purchase_price: '' });
+  
+  // Warning State for ConfirmModal
+  const [warningOpen, setWarningOpen] = useState(false);
+  const [pendingKeepOpen, setPendingKeepOpen] = useState(false);
 
   useEffect(() => {
     if (mode === 'edit_item' && selectedItem) {
       setFormData({
-        catalog_id: selectedItem.catalog_id,
+        product_id: selectedItem.product_id,
         serial_number: selectedItem.serial_number || '',
         quantity: selectedItem.quantity?.toString() || '1',
         purchase_price: selectedItem.purchase_price?.toString() || ''
       });
+    } else if (mode === 'receive_supply' && selectedItem) {
+        // Pre-fill from Supply Order Item
+        setFormData({
+            product_id: selectedItem.product_id,
+            serial_number: '',
+            quantity: selectedItem.quantity_needed?.toString() || '1',
+            purchase_price: selectedItem.product?.base_price?.toString() || ''
+        });
     } else {
-      setFormData({ catalog_id: '', serial_number: '', quantity: '1', purchase_price: '' });
-      setSkipSerial(false);
+      setFormData({ product_id: '', serial_number: '', quantity: '1', purchase_price: '' });
     }
   }, [mode, selectedItem]);
 
-  const selectedCatalogItem = useMemo(() => 
-    catalog.find(c => c.id === formData.catalog_id), 
-  [formData.catalog_id, catalog]);
+  const selectedProduct = useMemo(() => products.find(p => p.id === formData.product_id), [formData.product_id, products]);
 
-  const isSerialRequired = selectedCatalogItem?.has_serial && !skipSerial;
-
-  // Force quantity to 1 if serial required
+  // Auto-fill price only for clean add
   useEffect(() => {
-    if (mode === 'add_item' && isSerialRequired) {
-      setFormData(prev => ({ ...prev, quantity: '1' }));
+    if (mode === 'add_item' && selectedProduct?.base_price && !formData.purchase_price) {
+      setFormData(prev => ({ ...prev, purchase_price: selectedProduct.base_price.toString() }));
     }
-  }, [isSerialRequired, mode]);
+  }, [selectedProduct, mode]);
 
-  // Update price default
-  useEffect(() => {
-    if (mode === 'add_item' && selectedCatalogItem?.last_purchase_price) {
-      setFormData(prev => ({ ...prev, purchase_price: selectedCatalogItem.last_purchase_price!.toString() }));
-    }
-  }, [selectedCatalogItem, mode]);
+  const handleSerialChange = (val: string) => {
+      setFormData(prev => {
+          const isSerialEntered = val.trim().length > 0;
+          return {
+            ...prev, 
+            serial_number: val,
+            quantity: isSerialEntered ? '1' : prev.quantity
+          };
+      });
+  };
 
-  const handleSubmit = async (e: React.FormEvent, keepOpen = false) => {
+  const handleFormSubmit = (e: React.FormEvent, keepOpen = false) => {
     e.preventDefault();
-    if (!formData.catalog_id) return;
-
+    
     const qty = parseFloat(formData.quantity);
     if (isNaN(qty) || qty <= 0) {
-        alert('Укажите корректное количество');
+        alert("Введите корректное количество");
         return;
     }
 
-    if (isSerialRequired) {
-        if (!formData.serial_number.trim()) {
-            alert('Необходимо ввести серийный номер');
-            return;
-        }
-        if (qty !== 1) {
-            alert('Для товаров с S/N количество должно быть равно 1');
-            return;
-        }
+    const hasSerialEntered = formData.serial_number.trim().length > 0;
+    const requiresSerial = selectedProduct?.has_serial;
+
+    if (hasSerialEntered && qty !== 1) {
+        alert("Ошибка: При вводе конкретного серийного номера количество должно быть равно 1.");
+        return;
     }
 
-    setLoading(true);
-    const finalSerial = skipSerial ? '[БЕЗ S/N]' : (formData.serial_number.trim() || null);
+    if (requiresSerial && !hasSerialEntered) {
+        setPendingKeepOpen(keepOpen);
+        setWarningOpen(true);
+        return; 
+    }
 
+    executeSave(keepOpen);
+  };
+
+  const executeSave = async (keepOpen: boolean) => {
+    setLoading(true);
+    setWarningOpen(false); 
+    
+    const qty = parseFloat(formData.quantity);
+    
     try {
       if (mode === 'edit_item' && selectedItem) {
+        // Update existing stock item
         const { error } = await supabase.from('inventory_items').update({
             serial_number: formData.serial_number || null,
             quantity: qty,
             purchase_price: parseFloat(formData.purchase_price) || 0
         }).eq('id', selectedItem.id);
+        
         if (error) throw error;
         onSuccess();
+
       } else {
-        const payload = {
-            catalog_id: formData.catalog_id,
-            serial_number: finalSerial,
+        // Create new stock item (add_item OR receive_supply)
+        const { data, error } = await supabase.from('inventory_items').insert([{
+            product_id: formData.product_id,
+            serial_number: formData.serial_number || null,
             quantity: qty,
             purchase_price: parseFloat(formData.purchase_price) || 0,
             status: 'in_stock',
             assigned_to_id: profile.id
-        };
-        const { data, error } = await supabase.from('inventory_items').insert([payload]).select('id').single();
-        if (error) throw error;
+        }]).select('id').single();
         
+        if (error) throw error;
+
         if (data) {
+            const comment = mode === 'receive_supply' 
+                ? `Приемка по заказу (дефицит). Кол-во: ${qty}` 
+                : `Приемка на склад. Кол-во: ${qty}`;
+
             await supabase.from('inventory_history').insert([{
                 item_id: data.id,
                 action_type: 'receive',
                 created_by: profile.id,
-                comment: `Приемка. Кол-во: ${qty}`
+                comment: comment
             }]);
+
+            // If coming from Supply Orders, close the order item
+            if (mode === 'receive_supply' && selectedItem?.id) {
+                await supabase.from('supply_order_items')
+                    .update({ status: 'received' })
+                    .eq('id', selectedItem.id);
+            }
         }
         
-        if (keepOpen) {
-            setFormData(prev => ({ ...prev, serial_number: '' }));
-            alert('Товар добавлен. Можно добавить следующий.');
-            onSuccess(true); // Signal refresh but keep modal
+        if (keepOpen && mode === 'add_item') {
+            setFormData(prev => ({ ...prev, serial_number: '', quantity: '1' }));
+            onSuccess(true);
         } else {
-            onSuccess();
+            onSuccess(false);
         }
       }
     } catch (error: any) {
-      alert('Ошибка: ' + error.message);
+      alert('Ошибка при сохранении: ' + error.message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <form onSubmit={(e) => handleSubmit(e, false)} className="space-y-4">
-        {mode === 'add_item' ? (
-            <Select 
-                label="Тип оборудования" 
-                required 
-                value={formData.catalog_id} 
-                onChange={(e: any) => setFormData({...formData, catalog_id: e.target.value})}
-                options={[{value: '', label: 'Выберите тип'}, ...catalog.map(c => ({value: c.id, label: c.name}))]}
-            />
-        ) : (
-            <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 mb-2">
-                <p className="text-xs text-blue-500 font-bold uppercase mb-1">Редактирование партии</p>
-                <p className="font-bold text-blue-900">{selectedItem?.catalog?.name}</p>
-            </div>
-        )}
-        
-        <div className="grid grid-cols-2 gap-4">
-            <Input 
-                label="Количество" 
-                type="number"
-                step="0.01"
-                required
-                disabled={isSerialRequired && mode === 'add_item'}
-                value={formData.quantity} 
-                onChange={(e: any) => setFormData({...formData, quantity: e.target.value})}
-                className={isSerialRequired && mode === 'add_item' ? 'bg-slate-100 text-slate-500' : ''} 
-            />
-            <Input 
-                label="Цена закупки (за ед.)"
-                type="number"
-                step="0.01"
-                required
-                value={formData.purchase_price}
-                onChange={(e: any) => setFormData({...formData, purchase_price: e.target.value})}
-            />
-        </div>
-        
-        <div className="mb-2">
-            <Input 
-                label="Серийный номер" 
-                value={formData.serial_number} 
-                onChange={(e: any) => setFormData({...formData, serial_number: e.target.value})} 
-                placeholder={isSerialRequired ? "Сканируйте S/N..." : "Номер не обязателен"}
-                disabled={skipSerial && mode === 'add_item'}
-                required={isSerialRequired}
-                className={skipSerial ? 'bg-slate-50 opacity-60' : ''}
-            />
-            {selectedCatalogItem?.has_serial && mode === 'add_item' && (
-                <label className="flex items-center gap-2 mt-2 cursor-pointer group">
-                    <input 
-                        type="checkbox" 
-                        checked={skipSerial} 
-                        onChange={(e) => setSkipSerial(e.target.checked)} 
-                        className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                    />
-                    <span className="text-xs font-bold text-slate-500 group-hover:text-blue-600 transition-colors">Принять без ввода S/N</span>
-                </label>
-            )}
-        </div>
-        
-        <div className="pt-2 flex gap-3">
+    <>
+        <form onSubmit={(e) => handleFormSubmit(e, false)} className="space-y-4">
             {mode === 'add_item' ? (
-                <>
-                    <Button 
-                        type="button" 
-                        variant="secondary" 
-                        className="flex-1" 
-                        loading={loading}
-                        onClick={(e) => handleSubmit(e, true)}
-                    >
-                        Добавить и еще
-                    </Button>
-                    <Button type="submit" className="flex-1" loading={loading}>
-                        Добавить и закрыть
-                    </Button>
-                </>
+                <Select 
+                    label="Выберите товар из номенклатуры" 
+                    required 
+                    value={formData.product_id} 
+                    onChange={(e: any) => setFormData({...formData, product_id: e.target.value})}
+                    options={[{value: '', label: 'Поиск товара...'}, ...products.map(p => ({value: p.id, label: p.name}))]}
+                />
             ) : (
-                <Button type="submit" className="w-full h-12" loading={loading}>Сохранить изменения</Button>
+                <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                    <p className="text-xs text-blue-500 font-bold uppercase">{mode === 'receive_supply' ? 'Приемка заказа' : 'Редактирование'}</p>
+                    <p className="font-bold text-blue-900 text-lg">{selectedProduct?.name || selectedItem?.product?.name}</p>
+                    {mode === 'receive_supply' && (
+                        <p className="text-xs text-slate-500 mt-1">Ожидалось: {selectedItem?.quantity_needed} шт.</p>
+                    )}
+                </div>
             )}
-        </div>
-    </form>
+            
+            <Input 
+                label={selectedProduct?.has_serial ? "Серийный номер (Требуется по регламенту)" : "Серийный номер (S/N)"}
+                value={formData.serial_number} 
+                onChange={(e: any) => handleSerialChange(e.target.value)} 
+                placeholder={selectedProduct?.has_serial ? "Введите S/N" : "Не обязательно"}
+                className={selectedProduct?.has_serial && !formData.serial_number ? "border-amber-400 bg-amber-50/30" : ""}
+            />
+
+            <div className="grid grid-cols-2 gap-4">
+                <div className="relative">
+                    <Input 
+                        label="Количество (факт)" 
+                        type="number" 
+                        step="0.01" 
+                        required 
+                        value={formData.quantity} 
+                        onChange={(e: any) => setFormData({...formData, quantity: e.target.value})} 
+                        disabled={!!formData.serial_number} 
+                    />
+                    {!!formData.serial_number && (
+                        <span className="absolute right-0 top-0 text-[9px] text-orange-500 font-bold bg-white px-1 border border-orange-200 rounded">1 шт (S/N)</span>
+                    )}
+                </div>
+                <Input label="Цена закупки (факт)" type="number" step="0.01" required value={formData.purchase_price} onChange={(e: any) => setFormData({...formData, purchase_price: e.target.value})} />
+            </div>
+            
+            <div className="pt-2 flex gap-3">
+                {mode === 'add_item' ? (
+                    <>
+                        <Button type="button" variant="secondary" className="flex-1" loading={loading} onClick={(e) => handleFormSubmit(e, true)}>Сохранить и еще</Button>
+                        <Button type="submit" className="flex-1" loading={loading}>Сохранить и закрыть</Button>
+                    </>
+                ) : (
+                    <Button type="submit" className="w-full h-12" loading={loading}>{mode === 'receive_supply' ? 'Принять на склад' : 'Сохранить изменения'}</Button>
+                )}
+            </div>
+        </form>
+
+        <ConfirmModal 
+            isOpen={warningOpen}
+            onClose={() => setWarningOpen(false)}
+            onConfirm={() => executeSave(pendingKeepOpen)}
+            title="Отсутствует серийный номер"
+            message={`В номенклатуре для "${selectedProduct?.name}" указано требование серийного номера.\n\nВы уверены, что хотите принять партию (${formData.quantity} шт.) без ввода S/N? Вам придется внести их вручную при отгрузке.`}
+            confirmLabel="Да, принять без S/N"
+            cancelLabel="Отмена"
+            confirmVariant="danger"
+        />
+    </>
   );
 };
