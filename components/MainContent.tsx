@@ -73,6 +73,7 @@ const MainContent: React.FC<MainContentProps> = ({
           setActiveModule={setActiveModule} 
           onNavigateToObject={onNavigateToObject}
           onAddObject={onAddObject}
+          initialClientId={activeObjectId} // Pass ID for deep linking
         />
       ));
     
@@ -88,7 +89,13 @@ const MainContent: React.FC<MainContentProps> = ({
       ));
     
     case 'tasks': 
-      return renderWithProtection('tasks', <Tasks profile={profile} onNavigateToObject={onNavigateToObject} />);
+      return renderWithProtection('tasks', (
+        <Tasks 
+          profile={profile} 
+          onNavigateToObject={onNavigateToObject} 
+          initialTaskId={activeObjectId} // Pass ID for deep linking
+        />
+      ));
     
     case 'finances': 
       return renderWithProtection('finances', <Finances profile={profile} />);

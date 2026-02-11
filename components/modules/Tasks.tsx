@@ -18,7 +18,13 @@ type TaskTab = 'active' | 'today' | 'week' | 'overdue' | 'team' | 'archive';
 
 const PAGE_SIZE = 50;
 
-const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, stageId?: string) => void }> = ({ profile, onNavigateToObject }) => {
+interface TasksProps {
+  profile: any;
+  onNavigateToObject: (objectId: string, stageId?: string) => void;
+  initialTaskId?: string | null;
+}
+
+const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskId }) => {
   const [activeTab, setActiveTab] = useState<TaskTab>('active');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
   const [loading, setLoading] = useState(true);
@@ -104,6 +110,26 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
 
   useEffect(() => { fetchData(); }, [fetchData, activeTab, filterMode, activeRange]);
 
+  // Deep Linking: Open specific task
+  useEffect(() => {
+    const handleInitialTask = async () => {
+      if (initialTaskId) {
+        // Проверяем в уже загруженных
+        let found = tasks.find(t => t.id === initialTaskId);
+        // Если нет, пробуем загрузить отдельно (может быть в архиве или у другого юзера)
+        if (!found) {
+          found = await fetchSingleTask(initialTaskId);
+        }
+        
+        if (found) {
+          setSelectedTask(found);
+          setModalMode('details');
+        }
+      }
+    };
+    handleInitialTask();
+  }, [initialTaskId, tasks]);
+
   const fetchArchive = useCallback(async (page = 0) => {
     if (!profile?.id) return;
     
@@ -150,7 +176,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     }
   }, [activeTab, fetchArchive, archiveDates, filterMode]);
 
-  // Realtime Logic (Same as before)
+  // Realtime Logic
   useEffect(() => {
     const channel = supabase.channel('tasks_smart_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async (payload) => {
@@ -265,6 +291,13 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
     }
   };
 
+  const handleCloseModal = () => {
+    setModalMode('none');
+    if (initialTaskId) {
+      window.location.hash = 'tasks';
+    }
+  };
+
   const showBlockingLoader = loading && (
     (activeTab === 'archive' && archiveTasks.length === 0) || 
     (activeTab !== 'archive' && activeTab !== 'team' && tasks.length === 0) ||
@@ -314,7 +347,7 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
 
       {/* --- MODALS --- */}
 
-      <Modal isOpen={modalMode === 'create' || modalMode === 'edit'} onClose={() => setModalMode('none')} title={modalMode === 'edit' ? "Редактирование задачи" : "Новая задача"}>
+      <Modal isOpen={modalMode === 'create' || modalMode === 'edit'} onClose={handleCloseModal} title={modalMode === 'edit' ? "Редактирование задачи" : "Новая задача"}>
         <TaskModal 
             mode={modalMode as 'create' | 'edit'}
             initialData={selectedTask}
@@ -322,21 +355,21 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
             staff={staff}
             objects={objects}
             onSuccess={() => {
-                setModalMode('none'); 
+                handleCloseModal(); 
                 setToast({message: 'Успешно сохранено', type: 'success'}); 
                 fetchData(true);
             }}
         />
       </Modal>
 
-      <Modal isOpen={modalMode === 'details'} onClose={() => setModalMode('none')} title="Детали задачи">
+      <Modal isOpen={modalMode === 'details'} onClose={handleCloseModal} title="Детали задачи">
         <TaskDetails 
             task={selectedTask}
             profile={profile}
             isAdmin={isAdmin}
             onEdit={() => setModalMode('edit')}
             onDelete={() => setDeleteConfirm({ open: true, id: selectedTask.id })}
-            onClose={() => setModalMode('none')}
+            onClose={handleCloseModal}
             onNavigateToObject={(objId, stageId) => {
                 onNavigateToObject(objId, stageId);
                 setModalMode('none');
@@ -349,11 +382,11 @@ const Tasks: React.FC<{ profile: any; onNavigateToObject: (objectId: string, sta
         )}
       </Modal>
 
-      <Modal isOpen={modalMode === 'completion'} onClose={() => setModalMode('none')} title="Отчет о выполнении">
+      <Modal isOpen={modalMode === 'completion'} onClose={handleCloseModal} title="Отчет о выполнении">
         <TaskCompletionModal 
             task={selectedTask} 
             onSuccess={() => {
-                setModalMode('none');
+                handleCloseModal();
                 setToast({message: 'Задача завершена', type: 'success'});
                 fetchData(true);
             }} 

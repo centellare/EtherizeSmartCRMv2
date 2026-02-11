@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Modal, Input, Button, Badge } from './ui';
 import { isModuleAllowed } from '../lib/access';
+import CommandPalette from './CommandPalette';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -18,6 +19,9 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
   const [loading, setLoading] = useState(false);
   const [isLive, setIsLive] = useState(true);
   const [profileForm, setProfileForm] = useState({ full_name: '', phone: '', birth_date: '' });
+  
+  // Search State
+  const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
     if (profile) {
@@ -98,6 +102,8 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#f7f9fc]">
+      <CommandPalette isOpen={isCommandPaletteOpen} setIsOpen={setIsCommandPaletteOpen} />
+
       <Modal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} title="Настройки профиля">
         <form onSubmit={handleProfileUpdate} className="space-y-6">
           <div className="flex flex-col items-center mb-6">
@@ -187,6 +193,18 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
             <h3 className="text-lg font-medium text-[#1c1b1f] truncate">{allMenuItems.find(i => i.id === activeModule)?.label}</h3>
           </div>
           <div className="flex items-center gap-2 md:gap-6 shrink-0">
+            {/* Global Search Button */}
+            <button 
+              onClick={() => setIsCommandPaletteOpen(true)} 
+              className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-[#f3f5f7] text-[#444746] transition-colors relative group"
+              title="Поиск (Ctrl+K)"
+            >
+              <span className="material-icons-round">search</span>
+              <span className="absolute top-10 right-0 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">Ctrl+K</span>
+            </button>
+
+            <div className="h-6 w-[1px] bg-slate-200"></div>
+
             <div className="flex items-center gap-2 px-2 md:px-3 py-1 bg-slate-50 rounded-full border border-slate-100">
                <div className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`}></div>
                <span className={`text-[10px] font-bold uppercase tracking-widest hidden sm:inline ${isLive ? 'text-emerald-600' : 'text-red-400'}`}>{isLive ? 'Live' : 'Offline'}</span>

@@ -9,8 +9,16 @@ import { ClientList } from './Clients/ClientList';
 import { ClientForm } from './Clients/modals/ClientForm';
 import { ClientDetails } from './Clients/modals/ClientDetails';
 
-const Clients: React.FC<{ profile: any; setActiveModule: (m: Module) => void; onNavigateToObject: (id: string) => void; onAddObject: (clientId: string) => void }> = ({ 
-  profile, setActiveModule, onNavigateToObject, onAddObject 
+interface ClientsProps {
+  profile: any;
+  setActiveModule: (m: Module) => void;
+  onNavigateToObject: (id: string) => void;
+  onAddObject: (clientId: string) => void;
+  initialClientId?: string | null;
+}
+
+const Clients: React.FC<ClientsProps> = ({ 
+  profile, setActiveModule, onNavigateToObject, onAddObject, initialClientId 
 }) => {
   const [clients, setClients] = useState<any[]>([]);
   const [staff, setStaff] = useState<any[]>([]);
@@ -48,6 +56,17 @@ const Clients: React.FC<{ profile: any; setActiveModule: (m: Module) => void; on
 
   useEffect(() => { fetchData(); }, [profile?.id]);
 
+  // Deep Linking: Open details if ID provided
+  useEffect(() => {
+    if (initialClientId && clients.length > 0) {
+      const target = clients.find(c => c.id === initialClientId);
+      if (target) {
+        setSelectedClient(target);
+        setModalMode('details');
+      }
+    }
+  }, [initialClientId, clients]);
+
   const filteredClients = useMemo(() => {
     return clients.filter(c => {
       const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -73,6 +92,14 @@ const Clients: React.FC<{ profile: any; setActiveModule: (m: Module) => void; on
         setToast({ message: 'Ошибка при удалении', type: 'error' });
     }
     setLoading(false);
+  };
+
+  const handleCloseModal = () => {
+    setModalMode('none');
+    // Очищаем хеш при закрытии, чтобы можно было снова открыть ту же ссылку
+    if (initialClientId) {
+      window.location.hash = 'clients';
+    }
   };
 
   if (!profile) return null;
@@ -124,7 +151,7 @@ const Clients: React.FC<{ profile: any; setActiveModule: (m: Module) => void; on
 
       <Modal 
         isOpen={modalMode === 'create' || modalMode === 'edit'} 
-        onClose={() => setModalMode('none')} 
+        onClose={handleCloseModal} 
         title={modalMode === 'edit' ? "Редактирование клиента" : "Новый клиент"}
       >
         <ClientForm 
@@ -133,17 +160,17 @@ const Clients: React.FC<{ profile: any; setActiveModule: (m: Module) => void; on
             staff={staff}
             profile={profile}
             onSuccess={() => {
-                setModalMode('none');
+                handleCloseModal();
                 setToast({ message: 'Успешно сохранено', type: 'success' });
                 fetchData();
             }}
         />
       </Modal>
 
-      <Modal isOpen={modalMode === 'details'} onClose={() => setModalMode('none')} title="Информация о клиенте">
+      <Modal isOpen={modalMode === 'details'} onClose={handleCloseModal} title="Информация о клиенте">
         <ClientDetails 
             client={selectedClient} 
-            onClose={() => setModalMode('none')} 
+            onClose={handleCloseModal} 
             onNavigateToObject={onNavigateToObject}
             onAddObject={onAddObject}
         />
