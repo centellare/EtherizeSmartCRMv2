@@ -1,179 +1,96 @@
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+
+// Типизация профиля
+export interface Profile {
+  id: string;
+  full_name: string;
+  email: string;
+  role: 'admin' | 'director' | 'manager' | 'specialist';
+  phone?: string;
+  birth_date?: string;
+  deleted_at?: string | null;
+}
 
 export const useAuth = () => {
-  const [session, setSession] = useState<any>(null);
-  const [profile, setProfile] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [isRecovering, setIsRecovering] = useState(false);
-  
-  const profileRef = useRef<any>(null);
-  const isFetchingProfile = useRef(false);
+  const queryClient = useQueryClient();
 
-  const fetchProfile = useCallback(async (userId: string, force = false) => {
-    if (isFetchingProfile.current && !force) return;
-    
-    // Если профиль уже есть в памяти и мы не форсируем обновление — не блокируем UI
-    const isBackgroundUpdate = !!profileRef.current;
-    if (!isBackgroundUpdate) setLoading(true);
-    
-    isFetchingProfile.current = true;
-    
-    try {
+  // 1. Получаем текущую сессию
+  const { data: session, isLoading: isSessionLoading } = useQuery({
+    queryKey: ['session'],
+    queryFn: async () => {
+      const { data: { session }, error } = await supabase.auth.getSession();
+      if (error) throw error;
+      return session;
+    },
+    staleTime: 1000 * 60 * 15, // Сессия свежая 15 минут
+  });
+
+  // 2. Получаем профиль только если есть сессия
+  const { data: profile, isLoading: isProfileLoading, error: profileError } = useQuery({
+    queryKey: ['profile', session?.user?.id],
+    queryFn: async () => {
+      if (!session?.user?.id) return null;
+      
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
-        .eq('id', userId)
+        .eq('id', session.user.id)
         .maybeSingle();
+
+      if (error) throw error;
       
-      if (error) {
-        console.error('Error fetching profile:', error.message);
-        // Если ошибка авторизации (401), это обработает recoverSession или initSession
-      } else if (data) {
-        if (data.deleted_at) {
-          // Пользователь удален администратором
-          console.warn('Profile is deleted');
-          setProfile(null);
-          profileRef.current = null;
-          setSession(null);
-          await supabase.auth.signOut();
-        } else {
-          setProfile(data);
-          profileRef.current = data;
-        }
-      } else {
-        console.warn('No profile data found');
-        setProfile(null);
-        profileRef.current = null;
+      if (data?.deleted_at) {
+        // Если пользователь удален, выбрасываем ошибку или возвращаем null
+        throw new Error('User deleted');
       }
-    } catch (err) {
-      console.error('Critical auth exception:', err);
-    } finally {
-      isFetchingProfile.current = false;
-      // Снимаем лоадер только если это была первичная загрузка, чтобы показать интерфейс (или ошибку)
-      if (!isBackgroundUpdate) setLoading(false);
-    }
-  }, []);
-
-  const recoverSession = async () => {
-    if (isRecovering) return;
-    setIsRecovering(true);
-    console.log('🔄 Attempting session recovery...');
-    
-    try {
-      const { data, error } = await supabase.auth.refreshSession();
-      if (error || !data.session) {
-        throw new Error(error?.message || 'Refresh failed');
-      }
-      setSession(data.session);
-      if (data.session.user) {
-        await fetchProfile(data.session.user.id, true);
-      }
-      console.log('✅ Session recovered');
-    } catch (e: any) {
-      console.warn('❌ Session recovery failed:', e.message);
       
-      // КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ:
-      // Если обновление токена не удалось (токен протух или отозван),
-      // мы должны принудительно разлогинить пользователя, иначе он зависнет на лоадере.
-      const isFatalError = e.message === 'Refresh failed' || 
-                           e.message?.includes('invalid_grant') || 
-                           e.message?.includes('not_found');
+      return data as Profile;
+    },
+    enabled: !!session?.user?.id, // Запрос идет только когда есть user.id
+    retry: 1,
+  });
 
-      if (isFatalError || !profileRef.current) {
-         console.warn('Force clearing invalid session to prevent stuck loading');
-         setSession(null);
-         setProfile(null);
-         profileRef.current = null;
-         setLoading(false); // Убираем спиннер, показываем Auth
-         
-         // Пытаемся почистить состояние SDK
-         try { await supabase.auth.signOut(); } catch {}
-      }
-    } finally {
-      setIsRecovering(false);
-    }
-  };
-
+  // Слушатель изменений авторизации
   useEffect(() => {
-    let isMounted = true;
-
-    const initSession = async () => {
-      try {
-        // Добавляем проверку error при инициализации
-        const { data: { session: currentSession }, error } = await supabase.auth.getSession();
-        
-        if (error) {
-          throw error;
-        }
-        
-        if (isMounted) {
-          if (currentSession?.user) {
-            setSession(currentSession);
-            await fetchProfile(currentSession.user.id);
-          } else {
-            // Сессии нет - показываем вход
-            setSession(null);
-            setLoading(false);
-          }
-        }
-      } catch (err) {
-        console.error('Init session error:', err);
-        // При ошибке инициализации (например, битый токен) сбрасываем все
-        if (isMounted) {
-          setSession(null);
-          setProfile(null);
-          setLoading(false);
-        }
-      }
-    };
-
-    initSession();
-
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
-      if (!isMounted) return;
-      
-      console.log(`Auth event: ${event}`);
-
       if (event === 'SIGNED_OUT') {
-        setSession(null);
-        setProfile(null);
-        profileRef.current = null;
-        setLoading(false);
-      } else if (currentSession) {
-        setSession(currentSession);
-        // Загружаем профиль, если его нет или юзер сменился
-        if (!profileRef.current || profileRef.current.id !== currentSession.user.id) {
-          await fetchProfile(currentSession.user.id);
-        }
+        queryClient.setQueryData(['session'], null);
+        queryClient.setQueryData(['profile', undefined], null);
+        queryClient.clear(); // Чистим весь кэш при выходе
+      } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+        queryClient.setQueryData(['session'], currentSession);
+        queryClient.invalidateQueries({ queryKey: ['profile'] });
       }
     });
 
-    // Восстановление при фокусе вкладки
-    const handleFocus = () => {
-      if (document.visibilityState === 'visible') {
-        recoverSession();
-      }
-    };
-    window.addEventListener('focus', handleFocus);
-    document.addEventListener('visibilitychange', handleFocus);
-
     return () => {
-      isMounted = false;
       subscription.unsubscribe();
-      window.removeEventListener('focus', handleFocus);
-      document.removeEventListener('visibilitychange', handleFocus);
     };
-  }, [fetchProfile]);
+  }, [queryClient]);
 
-  return { 
-    session, 
-    profile, 
-    loading, 
+  // Функция восстановления сессии (для ручного вызова при ошибках сети)
+  const recoverSession = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['session'] });
+    await queryClient.invalidateQueries({ queryKey: ['profile'] });
+  };
+
+  // Обработка случая, когда профиль удален
+  useEffect(() => {
+    if (profileError && profileError.message === 'User deleted') {
+      supabase.auth.signOut();
+    }
+  }, [profileError]);
+
+  return {
+    session,
+    profile,
+    loading: isSessionLoading || isProfileLoading,
     recoverSession,
     refreshProfile: async () => {
-      if (session?.user?.id) await fetchProfile(session.user.id, true);
-    } 
+      await queryClient.invalidateQueries({ queryKey: ['profile'] });
+    }
   };
 };

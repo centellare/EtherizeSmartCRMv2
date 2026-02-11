@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase';
 import { Modal, Input, Button, Badge } from './ui';
 import { isModuleAllowed } from '../lib/access';
 import CommandPalette from './CommandPalette';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,13 +16,13 @@ interface LayoutProps {
 
 const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setActiveModule, onProfileUpdate }) => {
   const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
-  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); // State для мобильного меню
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false); 
   const [loading, setLoading] = useState(false);
   const [isLive, setIsLive] = useState(true);
   const [profileForm, setProfileForm] = useState({ full_name: '', phone: '', birth_date: '' });
   
-  // Search State
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const queryClient = useQueryClient();
 
   useEffect(() => {
     if (profile) {
@@ -33,20 +34,23 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
     }
   }, [profile]);
 
-  // Мониторинг состояния Realtime соединения
+  // ОПТИМИЗИРОВАННЫЙ REALTIME
   useEffect(() => {
-    const channel = supabase.channel('system_status')
+    // Подписываемся только один раз на статус системы
+    const channel = supabase.channel('system_health')
       .on('presence', { event: 'sync' }, () => setIsLive(true))
       .subscribe((status) => {
-        // Если статус закрыт или ошибка - пробуем считать это потерей связи
-        if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
-           setIsLive(false);
-        } else {
-           setIsLive(status === 'SUBSCRIBED');
+        if (status === 'SUBSCRIBED') {
+            setIsLive(true);
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+            setIsLive(false);
+            // При потере соединения можно инвалидировать критичные данные
+            // queryClient.invalidateQueries({ queryKey: ['tasks'] }); 
         }
       });
+
     return () => { supabase.removeChannel(channel); };
-  }, []);
+  }, [queryClient]);
 
   const allMenuItems = [
     { id: 'dashboard', label: 'Дашборд', icon: 'dashboard' },
@@ -61,7 +65,6 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
     { id: 'trash', label: 'Корзина', icon: 'delete_outline' },
   ];
 
-  // Фильтруем элементы меню через общую логику доступа
   const menuItems = allMenuItems.filter(item => isModuleAllowed(profile?.role, item.id));
 
   const handleProfileUpdate = async (e: React.FormEvent) => {
@@ -77,15 +80,13 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
 
   const handleLogout = async () => {
     try {
-      // Пытаемся выйти штатно
       const { error } = await supabase.auth.signOut();
       if (error) throw error;
     } catch (e) {
-      console.warn('Server logout failed, forcing local cleanup', e);
-      // Если сервер не отвечает или токен протух - чистим локально
-      localStorage.clear(); // Грубая очистка Supabase токенов
+      console.warn('Force logout', e);
+      localStorage.clear();
     } finally {
-      // В любом случае перезагружаем приложение на дашборд
+      // React Query сам очистится благодаря подписке в useAuth
       window.location.hash = 'dashboard';
       window.location.reload();
     }
@@ -93,7 +94,7 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
 
   const handleMenuClick = (moduleId: string) => {
     setActiveModule(moduleId);
-    setIsMobileMenuOpen(false); // Закрываем меню на мобильном при клике
+    setIsMobileMenuOpen(false);
   };
 
   const userInitials = profile?.full_name 
@@ -130,7 +131,7 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
         ></div>
       )}
 
-      {/* Sidebar: Fixed on mobile (slide-in), Static on desktop */}
+      {/* Sidebar */}
       <aside className={`
         fixed md:static inset-y-0 left-0 z-[70] w-72 bg-[#f3f5f7] flex flex-col border-r border-[#e1e2e1] 
         transition-transform duration-300 ease-in-out shadow-2xl md:shadow-none
@@ -143,7 +144,6 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
             </div>
             <h2 className="text-xl font-bold text-[#1c1b1f] tracking-tight">SmartCRM</h2>
           </div>
-          {/* Close button for mobile */}
           <button 
             onClick={() => setIsMobileMenuOpen(false)} 
             className="md:hidden w-8 h-8 flex items-center justify-center rounded-full hover:bg-black/5 text-slate-500"
@@ -171,7 +171,7 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
             </div>
             <div className="flex gap-2">
               <button onClick={() => setIsProfileModalOpen(true)} className="flex-1 h-9 flex items-center justify-center gap-2 rounded-xl border border-[#e1e2e1] text-[#444746] hover:bg-[#f3f5f7] transition-all text-xs font-medium"><span className="material-icons-round text-sm">settings</span>Профиль</button>
-              <button onClick={handleLogout} className="w-9 h-9 flex items-center justify-center rounded-xl border border-[#ffdad6] text-[#ba1a1a] hover:bg-[#ffdad6] transition-all" title="Выйти (с принудительной очисткой при сбое)"><span className="material-icons-round text-sm">logout</span></button>
+              <button onClick={handleLogout} className="w-9 h-9 flex items-center justify-center rounded-xl border border-[#ffdad6] text-[#ba1a1a] hover:bg-[#ffdad6] transition-all" title="Выйти"><span className="material-icons-round text-sm">logout</span></button>
             </div>
           </div>
         </div>
@@ -180,7 +180,6 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
       <main className="flex-grow flex flex-col overflow-hidden w-full relative">
         <header className="h-16 bg-white border-b border-[#e1e2e1] flex items-center justify-between px-4 md:px-8 shrink-0 sticky top-0 z-30">
           <div className="flex items-center gap-4 min-w-0">
-            {/* Hamburger Button: Всегда доступна на мобильных */}
             <button 
               onClick={() => setIsMobileMenuOpen(true)}
               className="md:hidden w-10 h-10 -ml-2 rounded-full flex items-center justify-center hover:bg-slate-100 text-[#005ac1] shrink-0 active:scale-90 transition-transform"
@@ -193,7 +192,6 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
             <h3 className="text-lg font-medium text-[#1c1b1f] truncate">{allMenuItems.find(i => i.id === activeModule)?.label}</h3>
           </div>
           <div className="flex items-center gap-2 md:gap-6 shrink-0">
-            {/* Global Search Button */}
             <button 
               onClick={() => setIsCommandPaletteOpen(true)} 
               className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-[#f3f5f7] text-[#444746] transition-colors relative group"
@@ -215,7 +213,6 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
             </button>
           </div>
         </header>
-        {/* Адаптивный padding: p-4 на мобильных, p-8 на десктопах */}
         <div className="flex-grow p-4 md:p-8 overflow-y-auto bg-[#f7f9fc]">
           <div className="max-w-[1400px] mx-auto pb-12">{children}</div>
         </div>
