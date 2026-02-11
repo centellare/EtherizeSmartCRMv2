@@ -58,11 +58,10 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
       });
   };
 
-  // --- PRINT LOGIC ---
+  // ... (Print Logic remains same)
   const handlePrint = (includeSerials: boolean) => {
     const objectName = objects.find(o => o.id === formData.object_id)?.name || '_____________';
     
-    // Helper to group data
     const grouped: Record<string, { name: string, quantity: number, unit: string, serials: string[] }> = {};
     const sourceItems = isBulk ? cartItems : (selectedItem ? [{ 
         id: selectedItem.id, 
@@ -163,7 +162,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
 
     try {
         if (isBulk) {
-            // ... (Logic for bulk deploy from original component)
+            // Check missing serials
             const itemsMissingSerials = cartItems.filter(item => {
                 const catItem = catalog.find(c => c.id === item.catalog_id);
                 if (!catItem?.has_serial) return false;
@@ -187,6 +186,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
 
                 const { data: currentStockItem } = await supabase.from('inventory_items').select('quantity').eq('id', item.id).single();
                 
+                // FIX: Check for existence before accessing quantity
                 if (currentStockItem) {
                     const newQty = currentStockItem.quantity - item.quantity;
                     if (newQty <= 0.0001) {
@@ -302,6 +302,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Render logic same as before... */}
         {isBulk ? (
             <div className="space-y-4 max-h-[60vh] overflow-y-auto bg-slate-50 p-3 rounded-2xl border border-slate-200">
                 {cartItems.map(item => {

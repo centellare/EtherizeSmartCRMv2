@@ -10,6 +10,9 @@ const ROLES = [
   { value: 'specialist', label: 'Специалист' }
 ];
 
+// Define User Role Type explicitly locally if not imported
+type UserRole = 'admin' | 'director' | 'manager' | 'specialist';
+
 const Team: React.FC<{ profile: any }> = ({ profile }) => {
   const [members, setMembers] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
@@ -27,7 +30,7 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
   const [formData, setFormData] = useState({ 
     full_name: '', 
     email: '', 
-    role: 'specialist', 
+    role: 'specialist' as UserRole, 
     phone: '', 
     birth_date: '' 
   });
@@ -82,7 +85,7 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
     setFormData({
       full_name: member.full_name || '',
       email: member.email || '',
-      role: member.role || 'specialist',
+      role: (member.role as UserRole) || 'specialist',
       phone: member.phone || '',
       birth_date: member.birth_date || ''
     });
@@ -93,23 +96,27 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
     e.preventDefault();
     setLoading(true);
     
-    if (selectedMember) {
-      // Update
-      const { error } = await supabase.from('profiles').update({
+    // Explicit casting to match Supabase types for Role
+    const payload = {
         full_name: formData.full_name,
-        role: formData.role,
+        role: formData.role, // This is already typed as UserRole
         phone: formData.phone,
         birth_date: formData.birth_date
-      }).eq('id', selectedMember.id);
+    };
+
+    if (selectedMember) {
+      // Update
+      const { error } = await supabase.from('profiles').update(payload).eq('id', selectedMember.id);
       
       if (!error) {
         setIsEditModalOpen(false);
         fetchData();
       }
     } else {
-      // Create (Note: this only creates a profile, real user invite usually needs Auth API)
+      // Create
       const { error } = await supabase.from('profiles').insert([{
-        ...formData,
+        ...payload,
+        email: formData.email,
         must_change_password: true
       }]);
       
@@ -121,6 +128,7 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
     setLoading(false);
   };
 
+  // ... (rest of the component remains similar but inside the closure)
   const handleDelete = async () => {
     if (!selectedMember) return;
     setLoading(true);
@@ -297,7 +305,7 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
               label="Роль в системе" 
               required 
               value={formData.role} 
-              onChange={(e:any) => setFormData({...formData, role: e.target.value})} 
+              onChange={(e:any) => setFormData({...formData, role: e.target.value as UserRole})} 
               options={ROLES} 
               icon="verified_user" 
             />

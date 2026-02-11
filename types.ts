@@ -7,18 +7,18 @@ export type TransactionStatus = 'pending' | 'approved' | 'rejected' | 'partial';
 export interface Object {
   id: string;
   name: string;
-  address?: string;
-  comment?: string;
+  address?: string | null;
+  comment?: string | null;
   current_stage: StageName;
   current_status: ObjectStatus;
-  client_id: string;
-  responsible_id: string;
+  client_id: string | null;
+  responsible_id: string | null;
   created_at: string;
-  created_by: string;
-  updated_at: string;
-  updated_by: string;
+  created_by: string | null;
+  updated_at: string | null;
+  updated_by: string | null;
   is_deleted: boolean;
-  deleted_at?: string;
+  deleted_at?: string | null;
 }
 
 export interface TaskChecklistItem {
@@ -31,67 +31,71 @@ export interface TaskChecklistItem {
 
 export interface Task {
   id: string;
-  object_id: string;
-  stage_id?: string;
+  object_id: string | null;
+  stage_id?: string | null;
   title: string;
   assigned_to: string;
-  start_date: string;
-  deadline: string;
+  start_date: string | null;
+  deadline: string | null;
   status: 'pending' | 'completed';
-  comment?: string;
-  doc_link?: string;
-  doc_name?: string;
-  completion_comment?: string;
-  completion_doc_link?: string;
-  completion_doc_name?: string;
+  comment?: string | null;
+  doc_link?: string | null;
+  doc_name?: string | null;
+  completion_comment?: string | null;
+  completion_doc_link?: string | null;
+  completion_doc_name?: string | null;
   created_at: string;
-  created_by: string;
-  completed_at?: string;
-  last_edited_at?: string;
-  last_edited_by?: string;
+  created_by: string | null;
+  completed_at?: string | null;
+  last_edited_at?: string | null;
+  last_edited_by?: string | null;
   checklist?: TaskChecklistItem[];
+  // Joins
+  objects?: { name: string };
+  creator?: { full_name: string };
+  executor?: { full_name: string };
 }
 
 export interface TransactionPayment {
   id: string;
   transaction_id: string;
   amount: number;
-  comment?: string;
+  comment?: string | null;
   payment_date: string;
   created_by: string;
   created_by_name?: string;
   requires_doc?: boolean;
-  doc_type?: 'ТН' | 'ТТН' | 'Акт';
-  doc_number?: string;
-  doc_date?: string;
+  doc_type?: 'ТН' | 'ТТН' | 'Акт' | null;
+  doc_number?: string | null;
+  doc_date?: string | null;
 }
 
 export interface Transaction {
   id: string;
-  object_id: string;
+  object_id: string | null;
   type: TransactionType;
   amount: number;
-  requested_amount?: number;
-  planned_amount?: number;
-  planned_date?: string;
-  fact_amount?: number;
+  requested_amount?: number | null;
+  planned_amount?: number | null;
+  planned_date?: string | null;
+  fact_amount?: number | null;
   status: TransactionStatus;
-  category: string;
-  description: string;
-  doc_link?: string;
-  doc_name?: string;
+  category: string | null;
+  description: string | null;
+  doc_link?: string | null;
+  doc_name?: string | null;
   created_at: string;
-  created_by: string;
+  created_by: string | null;
   created_by_name?: string;
-  processed_by?: string;
-  processed_at?: string;
+  processed_by?: string | null;
+  processed_at?: string | null;
   processor_name?: string;
-  deleted_at?: string;
+  deleted_at?: string | null;
   payments?: TransactionPayment[];
   objects?: {
     id: string;
     name: string;
-    responsible_id: string;
+    responsible_id: string | null;
   };
 }
 
@@ -99,12 +103,12 @@ export interface InventoryCatalogItem {
   id: string;
   name: string;
   item_type: 'product' | 'material'; // Тип ТМЦ
-  sku?: string; 
-  unit?: string; 
-  last_purchase_price?: number; 
-  description?: string;
+  sku?: string | null; 
+  unit?: string | null; 
+  last_purchase_price?: number | null; 
+  description?: string | null;
   has_serial: boolean;
-  warranty_period_months: number;
+  warranty_period_months: number | null;
   created_at: string;
 }
 
@@ -113,14 +117,14 @@ export type InventoryItemStatus = 'in_stock' | 'deployed' | 'maintenance' | 'scr
 export interface InventoryItem {
   id: string;
   catalog_id: string;
-  serial_number?: string;
+  serial_number?: string | null;
   quantity: number; 
-  purchase_price?: number; 
+  purchase_price?: number | null; 
   status: InventoryItemStatus;
-  current_object_id?: string;
-  assigned_to_id?: string;
-  warranty_start?: string;
-  warranty_end?: string;
+  current_object_id?: string | null;
+  assigned_to_id?: string | null;
+  warranty_start?: string | null;
+  warranty_end?: string | null;
   created_at: string;
   
   // Joins
@@ -150,26 +154,26 @@ export interface PriceCatalogItem {
   global_category: string;
   item_type: string;
   name: string;
-  description?: string;
+  description?: string | null;
   price_eur: number;
   markup_percent: number;
   is_active: boolean;
   created_at: string;
-  unit: string; // Ensure unit is in interface
+  unit: string | null; // Ensure unit is in interface
 }
 
 export interface CommercialProposal {
   id: string;
   number: number;
-  title?: string; // Название проекта/КП
-  client_id: string;
+  title?: string | null; // Название проекта/КП
+  client_id: string | null;
   status: 'draft' | 'sent' | 'accepted';
   exchange_rate: number;
-  global_markup: number;
+  global_markup: number | null;
   has_vat: boolean;
-  total_amount_byn?: number;
+  total_amount_byn?: number | null;
   header_data?: any;
-  created_by: string;
+  created_by: string | null;
   created_at: string;
   
   // Joins
@@ -180,17 +184,17 @@ export interface CommercialProposal {
 
 export interface CPItem {
   id: string;
-  cp_id: string;
+  cp_id: string | null;
   catalog_id: string | null; // Nullable if catalog item deleted, but we rely on snapshots now
   quantity: number;
   final_price_byn: number;
   
   // Snapshot Data (Historical integrity)
-  snapshot_name?: string;
-  snapshot_description?: string;
-  snapshot_unit?: string;
-  snapshot_base_price_eur?: number;
-  snapshot_global_category?: string;
+  snapshot_name?: string | null;
+  snapshot_description?: string | null;
+  snapshot_unit?: string | null;
+  snapshot_base_price_eur?: number | null;
+  snapshot_global_category?: string | null;
   
   // Legacy Join (Optional)
   catalog?: PriceCatalogItem;

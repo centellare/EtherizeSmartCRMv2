@@ -54,8 +54,16 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
           supabase.from('price_catalog').select('*').eq('item_type', 'system_config').eq('name', 'GLOBAL_CONFIG').maybeSingle()
         ]);
         
-        const catalogData = catRes.data || [];
-        setCatalog(catalogData);
+        if (catRes.data) {
+            // Map nullable fields to undefined or empty strings for React state
+            const mappedCatalog = catRes.data.map((c: any) => ({
+                ...c,
+                description: c.description || undefined,
+                unit: c.unit || 'шт'
+            }));
+            setCatalog(mappedCatalog);
+        }
+        
         setClients(cliRes.data || []);
 
         // Apply defaults from DB if available (and not editing existing)
@@ -74,10 +82,10 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
           
           if (cp) {
             setTitle(cp.title || '');
-            setClientId(cp.client_id);
+            setClientId(cp.client_id || '');
             setExchangeRate(cp.exchange_rate);
-            setGlobalMarkup(cp.global_markup);
-            setHasVat(cp.has_vat);
+            setGlobalMarkup(cp.global_markup || 0);
+            setHasVat(cp.has_vat || false);
 
             const { data: items } = await supabase
               .from('cp_items')
@@ -86,7 +94,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
 
             if (items) {
               const mappedCart: CartItem[] = items.map((i: any) => ({
-                catalog_id: i.catalog_id,
+                catalog_id: i.catalog_id || '',
                 // Prefer snapshot data if available (implied), otherwise fallback to catalog
                 name: i.snapshot_name || i.catalog?.name || 'Unknown Item',
                 description: i.snapshot_description || i.catalog?.description || '',
@@ -110,6 +118,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
     init();
   }, [proposalId]);
 
+  // ... (Rest of component remains largely the same, logic doesn't depend on strict types as much as setup)
   const calculateUnitBYN = (item: CartItem) => {
     const baseWithMarkups = item.base_eur * (1 + (item.item_markup + globalMarkup) / 100);
     return baseWithMarkups * exchangeRate;
@@ -142,8 +151,8 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
       return [...prev, {
         catalog_id: item.id,
         name: item.name,
-        description: item.description,
-        unit: item.unit,
+        description: item.description || '',
+        unit: item.unit || 'шт',
         quantity: 1,
         base_eur: item.price_eur,
         item_markup: item.markup_percent,
@@ -223,7 +232,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
     setLoading(false);
   };
 
-  // Filter Logic
+  // Filter Logic (remains same)
   const uniqueCategories = useMemo(() => {
     const cats = new Set(catalog.map(i => i.global_category));
     return Array.from(cats).sort();
@@ -256,7 +265,6 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
     });
   }, [catalog, search, catFilter, typeFilter]);
 
-  // Group Cart by Category
   const groupedCart = useMemo(() => {
     const groups: Record<string, CartItem[]> = {};
     cart.forEach(item => {

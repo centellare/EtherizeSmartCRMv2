@@ -65,7 +65,9 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
       .select('*, checklist:task_checklists(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)')
       .eq('id', id)
       .single();
-    return data;
+    
+    // Cast null object_id to string | null explicitly if needed, but updated Task type handles this
+    return data as unknown as Task;
   };
 
   const fetchData = useCallback(async (silent = false) => {
@@ -96,7 +98,8 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
       ]);
 
       if (!activeResult.cancelled && activeResult.data) {
-        setTasks(activeResult.data);
+        // Explicit cast because Supabase types might be inferred loosely
+        setTasks(activeResult.data as unknown as Task[]);
       }
       if (staffResult.data) setStaff(staffResult.data);
       if (objectsResult.data) setObjects(objectsResult.data);
@@ -110,6 +113,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
 
   useEffect(() => { fetchData(); }, [fetchData, activeTab, filterMode, activeRange]);
 
+  // ... (Deep Linking & Archive Fetch logic remains the same)
   // Deep Linking: Open specific task
   useEffect(() => {
     const handleInitialTask = async () => {
@@ -159,7 +163,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
       if (!error) {
-        setArchiveTasks(data || []);
+        setArchiveTasks((data || []) as unknown as Task[]);
         setArchiveTotal(count || 0);
         setArchivePage(page);
       }
@@ -181,15 +185,18 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
     const channel = supabase.channel('tasks_smart_sync')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async (payload) => {
         if (payload.eventType === 'INSERT') {
-          if (payload.new.status === 'pending' && !payload.new.is_deleted) {
-             const newTask = await fetchSingleTask(payload.new.id);
+          // Cast payload.new safely
+          const newItem = payload.new as any;
+          if (newItem.status === 'pending' && !newItem.is_deleted) {
+             const newTask = await fetchSingleTask(newItem.id);
              if (newTask) setTasks(prev => [newTask, ...prev]);
           }
         } else if (payload.eventType === 'UPDATE') {
-          if (payload.new.is_deleted || payload.new.status === 'completed') {
-             setTasks(prev => prev.filter(t => t.id !== payload.new.id));
+          const newItem = payload.new as any;
+          if (newItem.is_deleted || newItem.status === 'completed') {
+             setTasks(prev => prev.filter(t => t.id !== newItem.id));
           } else {
-             const updatedTask = await fetchSingleTask(payload.new.id);
+             const updatedTask = await fetchSingleTask(newItem.id);
              if (updatedTask) setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
           }
         } else if (payload.eventType === 'DELETE') {
@@ -213,8 +220,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
 
-  // --- FILTER LOGIC ---
-
+  // --- FILTER LOGIC --- (remains same)
   const baseVisibleTasks = useMemo(() => tasks, [tasks]);
 
   const overdueCount = useMemo(() => {
@@ -269,8 +275,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
     }).filter(m => m.tasks.length > 0 || m.role === 'specialist' || m.role === 'manager');
   }, [staff, tasks]);
 
-  // --- ACTIONS ---
-
+  // --- ACTIONS --- (remains same)
   const handleDeleteConfirm = async () => {
     if (!deleteConfirm.id) return;
     setLoading(true);

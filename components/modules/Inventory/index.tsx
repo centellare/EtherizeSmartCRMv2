@@ -47,8 +47,34 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
         supabase.from('objects').select('id, name').is('is_deleted', false).order('name')
       ]);
 
-      if (catRes.data) setCatalog(catRes.data);
-      if (itemsRes.data) setItems(itemsRes.data);
+      if (catRes.data) {
+        // Явное приведение типов или маппинг для соответствия InventoryCatalogItem
+        const mappedCatalog: InventoryCatalogItem[] = catRes.data.map((c: any) => ({
+          ...c,
+          // Гарантируем, что item_type соответствует литеральному типу
+          item_type: (c.item_type === 'material' ? 'material' : 'product'),
+          sku: c.sku || null,
+          unit: c.unit || null,
+          description: c.description || null
+        }));
+        setCatalog(mappedCatalog);
+      }
+
+      if (itemsRes.data) {
+        // Явное приведение для элементов склада
+        const mappedItems: InventoryItem[] = itemsRes.data.map((i: any) => ({
+          ...i,
+          // Убеждаемся, что статус валиден
+          status: ['in_stock', 'deployed', 'maintenance', 'scrapped'].includes(i.status) ? i.status : 'in_stock',
+          serial_number: i.serial_number || null,
+          catalog: i.catalog ? {
+             ...i.catalog,
+             item_type: i.catalog.item_type === 'material' ? 'material' : 'product'
+          } : undefined
+        }));
+        setItems(mappedItems);
+      }
+      
       if (objRes.data) setObjects(objRes.data);
     } catch (e) {
       console.error(e);
@@ -72,9 +98,9 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
       catalog_name: item.catalog?.name || 'Неизвестный товар',
       quantity: item.quantity, // По умолчанию берем всё доступное количество
       max_quantity: item.quantity,
-      serial_number: item.serial_number,
+      serial_number: item.serial_number || undefined,
       unit: item.catalog?.unit || 'шт',
-      purchase_price: item.purchase_price,
+      purchase_price: item.purchase_price || 0,
       catalog_id: item.catalog_id
     };
     setCart(prev => [...prev, newItem]);

@@ -1,3 +1,4 @@
+
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { Button, Modal, Input, Select, ConfirmModal, Badge } from '../../ui';
@@ -142,7 +143,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({
       id: task.id,
       title: task.title,
       assigned_to: task.assigned_to,
-      start_date: getMinskISODate(task.start_date),
+      // Fix for nullable dates
+      start_date: task.start_date ? getMinskISODate(task.start_date) : getMinskISODate(),
       deadline: task.deadline ? getMinskISODate(task.deadline) : '',
       comment: task.comment || '',
       doc_link: task.doc_link || '',
@@ -377,7 +379,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
             return (
               <div key={task.id} onClick={() => { setSelectedTask(task); setIsTaskDetailsModalOpen(true); }}
                 className={`bg-white p-4 sm:p-5 rounded-3xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between group cursor-pointer hover:border-blue-300 gap-4 ${task.status === 'completed' ? 'border-slate-100 opacity-60' : 'border-slate-200 shadow-sm'}`}>
-                <div className="flex items-start sm:items-center gap-4 flex-grow min-w-0 pr-0 sm:pr-4">
+                <div className="flex items-start sm:items-center gap-4 sm:gap-5 min-w-0 flex-grow pr-0 sm:pr-4">
                     <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${task.status === 'completed' ? 'bg-emerald-50 text-emerald-500' : 'bg-blue-50 text-blue-500'}`}>
                       <span className="material-icons-round text-2xl">{task.status === 'completed' ? 'check_circle' : 'pending'}</span>
                     </div>
@@ -439,7 +441,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
             options={[{value: '', label: 'Выбрать исполнителя'}, ...availableExecutors.map(s => ({value: s.id, label: s.full_name}))]}
           />
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Дата старта" type="date" required value={taskForm.start_date} onChange={(e:any) => setTaskForm({...taskForm, start_date: e.target.value})} />
+            <Input label="Начало" type="date" required value={taskForm.start_date} onChange={(e:any) => setTaskForm({...taskForm, start_date: e.target.value})} />
             <Input label="Дедлайн" type="date" value={taskForm.deadline} onChange={(e:any) => setTaskForm({...taskForm, deadline: e.target.value})} className={isInvalidDates ? 'border-red-500' : ''} />
           </div>
 
@@ -517,7 +519,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                 {selectedTask.completion_doc_link && (
                   <a href={selectedTask.completion_doc_link} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-100 rounded-xl hover:border-emerald-300 transition-colors">
                     <span className="material-icons-round text-emerald-600">verified</span>
-                    <span className="text-xs font-medium text-slate-700 truncate">{selectedTask.completion_doc_name || 'Отчет о выполнении'}</span>
+                    <span className="text-xs font-medium text-emerald-900 truncate">{selectedTask.completion_doc_name || 'Отчет о выполнении'}</span>
                   </a>
                 )}
               </div>

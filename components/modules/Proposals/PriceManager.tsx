@@ -207,7 +207,18 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
 
       if (error) throw error;
 
-      setItems(data || []);
+      if (data) {
+        // Map data to handle nulls
+        const mappedItems: PriceCatalogItem[] = data.map((item: any) => ({
+            ...item,
+            description: item.description || null,
+            unit: item.unit || 'шт'
+        }));
+        setItems(mappedItems);
+      } else {
+        setItems([]);
+      }
+      
       setTotalCount(count || 0);
     } catch (e: any) {
       console.error(e);
@@ -225,6 +236,8 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
     fetchSettings();
   }, [fetchData]);
 
+  // ... (Rest of component methods remain similar)
+  
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canEdit) return;
@@ -513,6 +526,7 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
           </table>
         </div>
         
+        {/* Pagination */}
         <div className="p-4 border-t border-slate-100 flex flex-wrap items-center justify-center sm:justify-between bg-slate-50 gap-4">
            <div className="flex items-center gap-1">
              <Button variant="ghost" disabled={page === 0 || loading} onClick={() => setPage(0)} className="h-8 w-8 !px-0" title="В начало">

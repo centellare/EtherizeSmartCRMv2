@@ -43,23 +43,23 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
     ]);
     
     const combined: TrashItem[] = [
-      ...(objects || []).map(i => ({ id: i.id, name: i.name, type: 'Объект', table: 'objects', deleted_at: i.deleted_at })),
-      ...(clients || []).map(i => ({ id: i.id, name: i.name, type: 'Клиент', table: 'clients', deleted_at: i.deleted_at })),
-      ...(tasks || []).map(i => ({ id: i.id, name: i.title, type: 'Задача', table: 'tasks', deleted_at: i.deleted_at })),
+      ...(objects || []).map(i => ({ id: i.id, name: i.name, type: 'Объект', table: 'objects', deleted_at: i.deleted_at || '' })),
+      ...(clients || []).map(i => ({ id: i.id, name: i.name, type: 'Клиент', table: 'clients', deleted_at: i.deleted_at || '' })),
+      ...(tasks || []).map(i => ({ id: i.id, name: i.title, type: 'Задача', table: 'tasks', deleted_at: i.deleted_at || '' })),
       ...(transactions || []).map(i => ({ 
         id: i.id,
         name: `${i.type === 'income' ? 'Приход' : 'Расход'}: ${i.category} (${i.amount} BYN)`, 
         type: 'Финансы', 
         table: 'transactions',
-        deleted_at: i.deleted_at
+        deleted_at: i.deleted_at || ''
       })),
-      ...(inventoryCatalog || []).map(i => ({ id: i.id, name: i.name, type: 'Тип оборудования', table: 'inventory_catalog', deleted_at: i.deleted_at })),
+      ...(inventoryCatalog || []).map(i => ({ id: i.id, name: i.name, type: 'Тип оборудования', table: 'inventory_catalog', deleted_at: i.deleted_at || '' })),
       ...(inventoryItems || []).map((i: any) => ({ 
         id: i.id, 
         name: `${i.catalog?.name || 'Товар'} ${i.serial_number ? `(S/N: ${i.serial_number})` : ''}`, 
         type: 'Товар со склада', 
         table: 'inventory_items', 
-        deleted_at: i.deleted_at 
+        deleted_at: i.deleted_at || '' 
       })),
     ];
     setDeletedItems(combined.sort((a,b) => new Date(b.deleted_at || 0).getTime() - new Date(a.deleted_at || 0).getTime()));
@@ -107,7 +107,8 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
        updates.deleted_at = null;
     }
 
-    await supabase.from(table).update(updates).eq('id', id);
+    // Explicitly cast table to any to bypass strict typing for dynamic string
+    await supabase.from(table as any).update(updates).eq('id', id);
     await fetchDeleted();
     setLoading(false);
   };
@@ -132,7 +133,8 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
       }
     }
 
-    await supabase.from(table).delete().eq('id', id);
+    // Explicitly cast table to any to bypass strict typing for dynamic string
+    await supabase.from(table as any).delete().eq('id', id);
     setDeleteConfirm({ open: false, item: null });
     await fetchDeleted();
     setLoading(false);
@@ -158,7 +160,7 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
            updates.deleted_at = null;
         }
 
-        await supabase.from(table).update(updates).in('id', ids);
+        await supabase.from(table as any).update(updates).in('id', ids);
       } else {
         // Очистка зависимостей при массовом удалении
         
@@ -177,7 +179,7 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
             }
         }
 
-        await supabase.from(table).delete().in('id', ids);
+        await supabase.from(table as any).delete().in('id', ids);
       }
     }
 
@@ -212,7 +214,7 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
           }
       }
 
-      await supabase.from(table).delete().in('id', ids);
+      await supabase.from(table as any).delete().in('id', ids);
     }
 
     setClearAllConfirm(false);

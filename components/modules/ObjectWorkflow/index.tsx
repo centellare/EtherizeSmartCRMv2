@@ -30,7 +30,8 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
   const [activeTab, setActiveTab] = useState('stage');
   const [object, setObject] = useState(initialObject);
   const [allStagesData, setAllStagesData] = useState<any[]>([]);
-  const [viewedStageId, setViewedStageId] = useState<string>(initialStageId || initialObject.current_stage);
+  // Fix: handle possible null initialStageId
+  const [viewedStageId, setViewedStageId] = useState<string>(initialStageId || initialObject.current_stage || 'negotiation');
   const [tasks, setTasks] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
