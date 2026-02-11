@@ -142,8 +142,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     setTaskForm({
       id: task.id,
       title: task.title,
-      assigned_to: task.assigned_to,
-      // Fix for nullable dates
+      // Ensure assigned_to is treated as string, fallback to empty if null (though DB enforces NOT NULL, any type might be loose)
+      assigned_to: task.assigned_to || '',
       start_date: task.start_date ? getMinskISODate(task.start_date) : getMinskISODate(),
       deadline: task.deadline ? getMinskISODate(task.deadline) : '',
       comment: task.comment || '',

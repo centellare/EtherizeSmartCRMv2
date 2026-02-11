@@ -186,9 +186,10 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
 
                 const { data: currentStockItem } = await supabase.from('inventory_items').select('quantity').eq('id', item.id).single();
                 
-                // FIX: Check for existence before accessing quantity
+                // FIX: Check for existence and safe access to quantity
                 if (currentStockItem) {
-                    const newQty = currentStockItem.quantity - item.quantity;
+                    const currentQty = currentStockItem.quantity || 0;
+                    const newQty = currentQty - item.quantity;
                     if (newQty <= 0.0001) {
                         await supabase.from('inventory_items').update({ quantity: 0, is_deleted: true, deleted_at: now.toISOString() }).eq('id', item.id);
                     } else {
