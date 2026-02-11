@@ -18,10 +18,20 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   
+  // Date Helpers for Defaults
+  const today = getMinskISODate();
+  const getMonthBounds = () => {
+    const now = new Date();
+    const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
+    const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    return { start: getMinskISODate(firstDay), end: getMinskISODate(lastDay) };
+  };
+  const defaults = getMonthBounds();
+
   // Filters
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState(defaults.start);
+  const [endDate, setEndDate] = useState(defaults.end);
   const [summaryFilter, setSummaryFilter] = useState<string | null>(null);
   const [unclosedDocsOnly, setUnclosedDocsOnly] = useState(false);
   const [docSearchQuery, setDocSearchQuery] = useState('');
@@ -104,11 +114,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     const todayStr = getMinskISODate();
 
     return transactions.filter((t: any) => {
-      const tDateStr = getMinskISODate(t.created_at);
-      const matchesStart = !startDate || tDateStr >= startDate;
-      const matchesEnd = !endDate || tDateStr <= endDate;
-      if (!matchesStart || !matchesEnd) return false;
-
+      // 1. Text Search Filter (Documents)
       const searchLower = docSearchQuery.toLowerCase();
       const matchesDocSearch = !docSearchQuery || t.payments?.some((p: any) => 
         (p.doc_number?.toLowerCase().includes(searchLower)) ||
@@ -117,18 +123,27 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       );
       if (!matchesDocSearch) return false;
 
+      // 2. Unclosed Docs Filter
       const hasUnclosedDoc = t.payments?.some((p: any) => p.requires_doc && !p.doc_number);
       if (unclosedDocsOnly && !hasUnclosedDoc) return false;
 
-      if (summaryFilter === 'income') return t.type === 'income';
-      if (summaryFilter === 'planned') return t.type === 'income' && t.status !== 'approved';
-      // UPDATED: Debtors now strictly means OVERDUE planned income
+      // 3. Category/Status Filters & DATE LOGIC
+      // Debtors: ALWAYS SHOW ALL (Ignore Date)
       if (summaryFilter === 'debtors') {
           return t.type === 'income' && 
                  (t.status === 'pending' || t.status === 'partial') &&
                  t.planned_date && 
                  t.planned_date < todayStr;
       }
+
+      // Date Filter (Applied to everything else)
+      const tDateStr = getMinskISODate(t.created_at);
+      const matchesStart = !startDate || tDateStr >= startDate;
+      const matchesEnd = !endDate || tDateStr <= endDate;
+      if (!matchesStart || !matchesEnd) return false;
+
+      if (summaryFilter === 'income') return t.type === 'income';
+      if (summaryFilter === 'planned') return t.type === 'income' && t.status !== 'approved';
       if (summaryFilter === 'expenses') return t.type === 'expense';
       
       return typeFilter === 'all' || t.type === typeFilter;
@@ -137,20 +152,29 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
 
   const summary = useMemo(() => {
     const todayStr = getMinskISODate();
-    const data = transactions.filter(t => {
+    
+    // Data filtered by date range (Flow metrics)
+    const rangeData = transactions.filter(t => {
       const tDateStr = getMinskISODate(t.created_at);
       return (!startDate || tDateStr >= startDate) && (!endDate || tDateStr <= endDate);
     });
     
-    const incomeFact = data.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
-    const expApprov = data.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0);
-    const expPending = data.filter(t => t.type === 'expense' && t.status === 'pending');
+    // 1. Flow Metrics (Range Dependent)
+    const incomeFact = rangeData.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
+    const expApprov = rangeData.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0);
+    const expPending = rangeData.filter(t => t.type === 'expense' && t.status === 'pending');
     
-    // Total Planned (Pending + Partial)
-    const plannedRemain = data.filter(t => t.type === 'income' && t.status !== 'approved').reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
+    // Total Planned (Pending + Partial) in current range
+    const plannedRemain = rangeData.filter(t => t.type === 'income' && t.status !== 'approved').reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
     
-    // Total Debtors (Overdue Pending + Partial)
-    const debtorsTotal = data.filter(t => 
+    // 2. State Metrics (All Time)
+    // Balance: Total Income (Fact) - Total Expenses (Approved) [All Time]
+    const allIncome = transactions.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
+    const allExpense = transactions.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0);
+    const balance = allIncome - allExpense;
+
+    // Debtors: Overdue Planned Income [All Time]
+    const debtorsTotal = transactions.filter(t => 
         t.type === 'income' && 
         t.status !== 'approved' &&
         t.planned_date && 
@@ -158,11 +182,11 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     ).reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
 
     return {
-      balance: incomeFact - expApprov,
-      incomeTotal: incomeFact,
-      planned: plannedRemain,
-      debtors: debtorsTotal,
-      expensesApproved: expApprov,
+      balance: balance, // All Time
+      incomeTotal: incomeFact, // Range
+      planned: plannedRemain, // Range
+      debtors: debtorsTotal, // All Time
+      expensesApproved: expApprov, // Range
       expensesPendingSum: expPending.reduce((s, t) => s + t.amount, 0),
       expensesPendingCount: expPending.length
     };
@@ -226,6 +250,17 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       setLoading(false);
   };
 
+  const handleResetDates = () => {
+      setStartDate('');
+      setEndDate('');
+  };
+
+  const handleSetMonth = () => {
+      const d = getMonthBounds();
+      setStartDate(d.start);
+      setEndDate(d.end);
+  };
+
   return (
     <div className="animate-in fade-in duration-500">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -247,9 +282,22 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         </div>
         <div className="flex flex-col sm:flex-row items-center gap-2 w-full lg:w-auto">
            <div className="flex items-center gap-2 flex-grow sm:flex-grow-0">
-              <Input placeholder="Акт № / Дата..." value={docSearchQuery} onChange={(e:any) => setDocSearchQuery(e.target.value)} icon="search" className="h-12 !py-2 !text-xs w-full sm:w-[180px]" />
-              <Input type="date" value={startDate} onChange={(e:any) => setStartDate(e.target.value)} icon="event" className="h-12 !py-2 !text-xs w-[140px]" />
-              <Input type="date" value={endDate} onChange={(e:any) => setEndDate(e.target.value)} icon="event" className="h-12 !py-2 !text-xs w-[140px]" />
+              <Input placeholder="Акт № / Дата..." value={docSearchQuery} onChange={(e:any) => setDocSearchQuery(e.target.value)} icon="search" className="h-12 !py-2 !text-xs w-full sm:w-[140px]" />
+              <div className="flex items-center bg-white border border-slate-200 rounded-2xl px-1">
+                  <Input type="date" value={startDate} onChange={(e:any) => setStartDate(e.target.value)} className="h-12 !py-2 !text-xs w-[110px] !border-0" title="Начало периода" />
+                  <span className="text-slate-300 font-bold text-[10px]">-</span>
+                  <Input type="date" value={endDate} onChange={(e:any) => setEndDate(e.target.value)} className="h-12 !py-2 !text-xs w-[110px] !border-0" title="Конец периода" />
+              </div>
+              
+              {/* Quick Date Actions */}
+              <div className="flex flex-col gap-1">
+                  <button onClick={handleResetDates} className="w-6 h-5 rounded bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200" title="За всё время">
+                      <span className="material-icons-round text-[10px]">all_inclusive</span>
+                  </button>
+                  <button onClick={handleSetMonth} className="w-6 h-5 rounded bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100" title="Этот месяц">
+                      <span className="material-icons-round text-[10px]">calendar_today</span>
+                  </button>
+              </div>
            </div>
            <div className="flex gap-2 w-full sm:w-auto">
               <Button variant="tonal" onClick={() => setModalMode('create_expense')} icon="request_quote" className="flex-1 sm:flex-initial">Расход</Button>

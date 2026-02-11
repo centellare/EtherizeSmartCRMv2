@@ -33,6 +33,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
   const [dateTo, setDateTo] = useState('');
   const [selectedDrawerItem, setSelectedDrawerItem] = useState<InventoryItem | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const isAdmin = profile?.role === 'admin';
 
@@ -71,6 +72,38 @@ const InventoryList: React.FC<InventoryListProps> = ({
     });
   }, [items, search, statusFilter, dateFrom, dateTo, activeTab]);
 
+  // Grouping Logic for Stock Tab
+  const stockGroups = useMemo(() => {
+    if (activeTab !== 'stock') return [];
+    
+    const groups: Record<string, { 
+      product: any, 
+      totalQty: number, 
+      totalValue: number, 
+      items: InventoryItem[] 
+    }> = {};
+
+    filteredItems.forEach(item => {
+      const pId = item.product_id;
+      if (!groups[pId]) {
+        groups[pId] = {
+          product: item.product,
+          totalQty: 0,
+          totalValue: 0,
+          items: []
+        };
+      }
+      
+      const unitPrice = item.purchase_price || item.product?.base_price || 0;
+      
+      groups[pId].items.push(item);
+      groups[pId].totalQty += item.quantity;
+      groups[pId].totalValue += (item.quantity * unitPrice);
+    });
+
+    return Object.values(groups).sort((a,b) => (a.product?.name || '').localeCompare(b.product?.name || ''));
+  }, [filteredItems, activeTab]);
+
   const totalSum = useMemo(() => {
     return filteredItems.reduce((acc, item) => {
         const price = item.purchase_price || item.product?.base_price || 0;
@@ -99,6 +132,15 @@ const InventoryList: React.FC<InventoryListProps> = ({
     });
     return Object.values(groups).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   }, [filteredItems, activeTab]);
+
+  const toggleGroup = (productId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(productId)) next.delete(productId);
+      else next.add(productId);
+      return next;
+    });
+  };
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('ru-BY', { style: 'currency', currency: 'BYN', maximumFractionDigits: 2 }).format(val);
 
@@ -139,6 +181,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
       )}
 
       {activeTab === 'warranty' ? (
+        // --- WARRANTY TAB (Unchanged) ---
         <div className="space-y-4">
           {groupedWarrantyItems.map(group => (
             <details key={group.id} className="group bg-white border border-slate-200 rounded-2xl overflow-hidden transition-all hover:shadow-sm">
@@ -180,73 +223,128 @@ const InventoryList: React.FC<InventoryListProps> = ({
           ))}
         </div>
       ) : (
+        // --- STOCK TAB (Grouped) ---
         <div className="bg-white rounded-[32px] border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-left min-w-[800px]">
               <thead className="bg-slate-50 border-b border-slate-100">
                 <tr>
-                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Наименование</th>
-                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Дата</th>
-                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Кол-во</th>
-                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Цена / Сумма</th>
-                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">S/N</th>
-                  <th className="p-4 text-right"></th>
+                  <th className="p-4 w-12"></th>
+                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Номенклатура</th>
+                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Артикул / Тип</th>
+                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Остаток</th>
+                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Общая стоимость</th>
+                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase text-right">Действия</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredItems.length === 0 ? (
+                {stockGroups.length === 0 ? (
                     <tr>
                         <td colSpan={6} className="p-10 text-center text-slate-400">
-                            {items.length > 0 ? 'Товары скрыты фильтрами' : 'Нет товаров на складе'}
+                            {items.length > 0 ? 'Товары скрыты фильтрами' : 'Склад пуст'}
                         </td>
                     </tr>
                 ) : (
-                    filteredItems.map(item => {
-                    const unitPrice = item.purchase_price || item.product?.base_price || 0;
-                    const totalValue = item.quantity * unitPrice;
-                    const isInCart = cart.some(c => c.id === item.id);
+                    stockGroups.map((group, groupIdx) => {
+                      const productId = group.items[0].product_id;
+                      const isExpanded = expandedGroups.has(productId);
+                      const hasDifferentPrices = group.items.some(i => i.purchase_price !== group.items[0].purchase_price);
 
-                    return (
-                        <tr key={item.id} className={`hover:bg-slate-50 transition-colors ${isInCart ? 'bg-blue-50/30' : ''}`}>
-                        <td className="p-4 cursor-pointer" onClick={() => setSelectedDrawerItem(item)}>
-                            {item.product ? (
-                                <>
-                                    <p className="font-bold text-slate-900">{item.product.name}</p>
-                                    <div className="flex gap-2">
-                                        {item.product.sku && <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-1 rounded">{item.product.sku}</span>}
-                                        {item.product.type && <span className="text-[10px] text-slate-400 bg-slate-50 px-1 rounded">{item.product.type}</span>}
+                      return (
+                        <React.Fragment key={productId}>
+                          {/* Group Header Row */}
+                          <tr className={`transition-colors cursor-pointer group ${isExpanded ? 'bg-slate-50' : 'hover:bg-slate-50'}`} onClick={() => toggleGroup(productId)}>
+                            <td className="p-4 text-center">
+                               <button className="w-6 h-6 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center hover:bg-blue-100 hover:text-blue-600 transition-colors">
+                                  <span className={`material-icons-round text-sm transition-transform ${isExpanded ? 'rotate-180' : ''}`}>expand_more</span>
+                               </button>
+                            </td>
+                            <td className="p-4">
+                                <p className="font-bold text-slate-900 text-sm">{group.product?.name || <span className="text-red-400">Удаленный товар</span>}</p>
+                                <p className="text-[10px] text-slate-400 mt-0.5">{group.items.length} партий</p>
+                            </td>
+                            <td className="p-4">
+                                <div className="flex flex-col gap-1">
+                                    {group.product?.sku && <span className="text-[10px] font-mono bg-slate-100 px-1.5 py-0.5 rounded text-slate-600 w-fit">{group.product.sku}</span>}
+                                    <span className="text-[10px] text-slate-400">{group.product?.type}</span>
+                                </div>
+                            </td>
+                            <td className="p-4">
+                                <Badge color={group.totalQty > 0 ? 'emerald' : 'slate'}>{group.totalQty} {group.product?.unit}</Badge>
+                            </td>
+                            <td className="p-4">
+                                <span className="font-bold text-slate-700">{formatCurrency(group.totalValue)}</span>
+                                {hasDifferentPrices && <p className="text-[9px] text-orange-500 font-medium">Разные цены партий</p>}
+                            </td>
+                            <td className="p-4 text-right">
+                                <Button variant="ghost" className="h-8 text-xs" onClick={(e) => { e.stopPropagation(); toggleGroup(productId); }}>
+                                    {isExpanded ? 'Свернуть' : 'Развернуть'}
+                                </Button>
+                            </td>
+                          </tr>
+
+                          {/* Expanded Items (Batches) */}
+                          {isExpanded && (
+                            <tr className="bg-slate-50/50">
+                                <td colSpan={6} className="p-0">
+                                    <div className="px-4 pb-4">
+                                        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-inner">
+                                            <table className="w-full text-left">
+                                                <thead className="bg-slate-100 text-[10px] text-slate-500 uppercase border-b border-slate-200">
+                                                    <tr>
+                                                        <th className="p-3 pl-6">Дата прихода</th>
+                                                        <th className="p-3">Кол-во</th>
+                                                        <th className="p-3">Цена закупки</th>
+                                                        <th className="p-3">Серийный номер</th>
+                                                        <th className="p-3 text-right">Действия</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody className="divide-y divide-slate-100">
+                                                    {group.items.map(item => {
+                                                        const unitPrice = item.purchase_price || item.product?.base_price || 0;
+                                                        const isInCart = cart.some(c => c.id === item.id);
+                                                        
+                                                        return (
+                                                            <tr key={item.id} className="hover:bg-blue-50/20 transition-colors">
+                                                                <td className="p-3 pl-6 text-xs text-slate-600 cursor-pointer" onClick={() => setSelectedDrawerItem(item)}>
+                                                                    {formatDate(item.created_at)}
+                                                                </td>
+                                                                <td className="p-3 text-sm font-bold text-slate-800">{item.quantity} {item.product?.unit}</td>
+                                                                <td className="p-3 text-xs font-mono">{formatCurrency(unitPrice)}</td>
+                                                                <td className="p-3">
+                                                                    {item.serial_number ? 
+                                                                        <span className="font-mono text-[10px] font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded border border-slate-200">{item.serial_number}</span> 
+                                                                        : <span className="text-[10px] text-slate-300 italic">Нет S/N</span>}
+                                                                </td>
+                                                                <td className="p-3 text-right">
+                                                                    <div className="flex justify-end gap-1">
+                                                                        <button onClick={() => isInCart ? onRemoveFromCart(item.id) : onAddToCart(item)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isInCart ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500 hover:bg-blue-50 hover:text-blue-600'}`} title={isInCart ? "Убрать из отгрузки" : "Добавить к отгрузке"}>
+                                                                            <span className="material-icons-round text-sm">{isInCart ? 'remove_shopping_cart' : 'add_shopping_cart'}</span>
+                                                                        </button>
+                                                                        {isAdmin && (
+                                                                            <>
+                                                                                <button onClick={() => onEdit(item)} className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all" title="Редактировать партию">
+                                                                                    <span className="material-icons-round text-sm">edit</span>
+                                                                                </button>
+                                                                                <button onClick={() => setDeleteId(item.id)} className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center transition-all" title="Списать">
+                                                                                    <span className="material-icons-round text-sm">delete</span>
+                                                                                </button>
+                                                                            </>
+                                                                        )}
+                                                                    </div>
+                                                                </td>
+                                                            </tr>
+                                                        );
+                                                    })}
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
-                                </>
-                            ) : (
-                                <p className="font-bold text-red-500 italic">Связь с товаром потеряна (ID: {item.product_id})</p>
-                            )}
-                        </td>
-                        <td className="p-4 text-xs text-slate-500">{formatDate(item.created_at)}</td>
-                        <td className="p-4"><span className="font-bold text-sm">{item.quantity}</span> <span className="text-xs text-slate-500">{item.product?.unit || 'шт'}</span></td>
-                        <td className="p-4">
-                            <div className="flex flex-col">
-                            <span className="text-xs text-slate-500">{formatCurrency(unitPrice)}</span>
-                            <span className="text-xs font-bold text-slate-700">{formatCurrency(totalValue)}</span>
-                            </div>
-                        </td>
-                        <td className="p-4">
-                            {item.serial_number ? <span className="font-mono text-xs font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded">{item.serial_number}</span> : <span className="text-xs text-slate-300 italic">Нет</span>}
-                        </td>
-                        <td className="p-4 text-right">
-                            <div className="flex justify-end gap-1">
-                            <button onClick={() => isInCart ? onRemoveFromCart(item.id) : onAddToCart(item)} className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${isInCart ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500 hover:bg-blue-50 hover:text-blue-600'}`}>
-                                <span className="material-icons-round text-sm">{isInCart ? 'shopping_cart_checkout' : 'add_shopping_cart'}</span>
-                            </button>
-                            {isAdmin && (
-                                <>
-                                <button onClick={() => onEdit(item)} className="w-8 h-8 rounded-xl bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all"><span className="material-icons-round text-sm">edit</span></button>
-                                <button onClick={() => setDeleteId(item.id)} className="w-8 h-8 rounded-xl bg-slate-50 text-slate-400 hover:bg-red-50 hover:text-red-600 flex items-center justify-center transition-all"><span className="material-icons-round text-sm">delete</span></button>
-                                </>
-                            )}
-                            </div>
-                        </td>
-                        </tr>
-                    );
+                                </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
                     })
                 )}
               </tbody>
