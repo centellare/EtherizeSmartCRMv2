@@ -41,7 +41,7 @@ export const ObjectDetails: React.FC<ObjectDetailsProps> = ({ object, onClose })
           <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">Клиент</p>
           <div className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center gap-3">
             <span className="material-icons-round text-slate-400">person</span>
-            <span className="text-sm text-slate-700 font-medium">{object.client?.name || '—'}</p>
+            <span className="text-sm text-slate-700 font-medium">{object.client?.name || '—'}</span>
           </div>
         </div>
         <div>
