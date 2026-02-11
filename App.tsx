@@ -28,6 +28,7 @@ const App: React.FC = () => {
   const [activeModule, setActiveModule] = useState<Module>(initialState.module);
   const [activeObjectId, setActiveObjectId] = useState<string | null>(initialState.id);
   const [activeStageId, setActiveStageId] = useState<string | null>(null);
+  const [initialClientId, setInitialClientId] = useState<string | null>(null); // New State for creating object from client
 
   // Проверка прав при изменении роли или модуля
   useEffect(() => {
@@ -80,6 +81,11 @@ const App: React.FC = () => {
     setActiveModule('objects');
   };
 
+  const handleAddObjectToClient = (clientId: string) => {
+    setInitialClientId(clientId);
+    setActiveModule('objects');
+  };
+
   const handleModuleChange = async (module: Module) => {
     // Проверка доступа перед переключением
     if (profile && !isModuleAllowed(profile.role, module)) {
@@ -101,6 +107,7 @@ const App: React.FC = () => {
     if (module !== 'objects') {
       setActiveObjectId(null);
       setActiveStageId(null);
+      setInitialClientId(null);
     }
   };
 
@@ -185,9 +192,12 @@ const App: React.FC = () => {
         activeObjectId={activeObjectId}
         activeStageId={activeStageId}
         onNavigateToObject={handleNavigateToObject}
+        onAddObject={handleAddObjectToClient}
+        initialClientId={initialClientId}
         clearActiveObject={() => {
           setActiveObjectId(null);
           setActiveStageId(null);
+          setInitialClientId(null);
         }}
       />
     </Layout>

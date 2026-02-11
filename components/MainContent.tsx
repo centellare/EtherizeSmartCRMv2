@@ -23,7 +23,9 @@ interface MainContentProps {
   setActiveModule: (m: Module) => void;
   activeObjectId: string | null;
   activeStageId: string | null;
+  initialClientId?: string | null;
   onNavigateToObject: (id: string, stageId?: string) => void;
+  onAddObject: (clientId: string) => void;
   clearActiveObject: () => void;
 }
 
@@ -42,7 +44,9 @@ const MainContent: React.FC<MainContentProps> = ({
   setActiveModule, 
   activeObjectId, 
   activeStageId,
+  initialClientId,
   onNavigateToObject,
+  onAddObject,
   clearActiveObject
 }) => {
   // Функция для рендеринга модуля внутри защиты
@@ -67,7 +71,8 @@ const MainContent: React.FC<MainContentProps> = ({
         <Clients 
           profile={profile} 
           setActiveModule={setActiveModule} 
-          onNavigateToObject={onNavigateToObject} 
+          onNavigateToObject={onNavigateToObject}
+          onAddObject={onAddObject}
         />
       ));
     
@@ -77,6 +82,7 @@ const MainContent: React.FC<MainContentProps> = ({
           profile={profile} 
           initialObjectId={activeObjectId} 
           initialStageId={activeStageId}
+          initialClientId={initialClientId}
           onClearInitialId={clearActiveObject} 
         />
       ));
