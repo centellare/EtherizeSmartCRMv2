@@ -1,10 +1,11 @@
 
 import { createClient } from '@supabase/supabase-js';
+import { Database } from '../database.types';
 
 const supabaseUrl = 'https://rlwqwkoihrezbtftmodu.supabase.co';
 const supabaseAnonKey = 'sb_publishable_vu4aaeNtWF_l-u9XwOwVbA_QvygsNnS';
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
