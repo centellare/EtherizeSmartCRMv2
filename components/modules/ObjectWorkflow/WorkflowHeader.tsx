@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import { Button, Badge } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
 
@@ -32,6 +32,8 @@ interface WorkflowHeaderProps {
   onBack: () => void;
   onUpdateStatus: (status: string) => void;
   canManage: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
 }
 
 export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({ 
@@ -40,9 +42,10 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
   profile, 
   onBack, 
   onUpdateStatus, 
-  canManage 
+  canManage,
+  isExpanded,
+  onToggle
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
   const isSpecialist = profile.role === 'specialist';
   
   const activeStageRecord = allStagesData.find(s => s.status === 'active');
@@ -56,7 +59,7 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
   const isOverdue = deadlineDate && new Date(deadlineDate) < new Date();
 
   return (
-    <div className="flex flex-col space-y-6 mb-4 transition-all">
+    <div className="flex flex-col space-y-6 transition-all">
       <div className="flex flex-col xl:flex-row justify-between items-start gap-4">
         <div className="flex items-center gap-4 flex-grow min-w-0">
           <button onClick={onBack} className="w-10 h-10 rounded-full bg-slate-50 hover:bg-slate-100 flex items-center justify-center transition-colors shrink-0 text-slate-500">
@@ -64,13 +67,21 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
           </button>
           
           <div className="min-w-0">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <h2 className="text-2xl font-medium leading-tight text-slate-900 truncate">{object.name}</h2>
               
               {/* Collapsed Compact Info */}
               {!isExpanded && (
-                <div className="hidden md:flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-300">
-                  <div className="h-4 w-[1px] bg-slate-300 mx-1"></div>
+                <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-300">
+                  <div className="h-4 w-[1px] bg-slate-300 mx-1 hidden md:block"></div>
+                  
+                  {/* Client name in compact view */}
+                  <span className="text-sm font-bold text-slate-400 truncate max-w-[150px]">
+                    {object.client?.name || 'Без клиента'}
+                  </span>
+                  
+                  <span className="text-slate-200 hidden md:block">|</span>
+
                   <Badge color="blue">{STAGES_MAP[object.current_stage] || object.current_stage}</Badge>
                   <Badge color={
                       object.current_status === 'completed' ? 'emerald' : 
@@ -80,8 +91,8 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
                     {STATUS_MAP[object.current_status] || object.current_status}
                   </Badge>
                   {deadlineDate && (
-                    <span className={`text-xs font-bold ml-2 ${isOverdue ? 'text-red-500' : 'text-emerald-600'}`}>
-                      {isOverdue ? '🔥 Просрочено: ' : '📅 Срок: '} {formatDate(deadlineDate)}
+                    <span className={`hidden lg:inline text-xs font-bold ml-2 ${isOverdue ? 'text-red-500' : 'text-emerald-600'}`}>
+                      {isOverdue ? '🔥 Срок: ' : '📅 Срок: '} {formatDate(deadlineDate)}
                     </span>
                   )}
                 </div>
@@ -105,13 +116,11 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
               </div>
             )}
             
-            {/* Mobile Compact Info (Visible on mobile when collapsed) */}
-            {!isExpanded && (
-              <div className="md:hidden flex flex-wrap gap-2 mt-1">
-                 <span className="text-[10px] font-bold text-slate-500 uppercase">{STAGES_MAP[object.current_stage]}</span>
-                 <span className="text-[10px] text-slate-300">•</span>
-                 <span className={`text-[10px] font-bold ${isOverdue ? 'text-red-500' : 'text-slate-500'}`}>
-                   {deadlineDate ? formatDate(deadlineDate) : 'Без срока'}
+            {/* Mobile/Small Screens Compact Info (Visible when collapsed) */}
+            {!isExpanded && deadlineDate && (
+              <div className="lg:hidden flex flex-wrap gap-2 mt-1 animate-in fade-in duration-300">
+                 <span className={`text-[10px] font-bold ${isOverdue ? 'text-red-500' : 'text-slate-500 uppercase'}`}>
+                   {isOverdue ? '🔥 ПРОСРОЧЕНО: ' : 'СРОК: '} {formatDate(deadlineDate)}
                  </span>
               </div>
             )}
@@ -145,9 +154,9 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
           )}
           
           <button 
-            onClick={() => setIsExpanded(!isExpanded)}
+            onClick={onToggle}
             className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isExpanded ? 'bg-slate-100 text-slate-600' : 'bg-white border border-slate-200 text-slate-400 hover:border-slate-300'}`}
-            title={isExpanded ? "Свернуть шапку" : "Развернуть подробности"}
+            title={isExpanded ? "Свернуть шапку" : "Развернуть подробности и workflow"}
           >
             <span className={`material-icons-round text-xl transition-transform duration-300 ${isExpanded ? 'rotate-180' : ''}`}>expand_more</span>
           </button>

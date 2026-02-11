@@ -35,6 +35,7 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
   const [transactions, setTransactions] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<any[]>([]);
+  const [isHeaderExpanded, setIsHeaderExpanded] = useState(false); // Поднятое состояние
   
   // Feedback
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
@@ -170,7 +171,6 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
   const handleFinalizeProject = async () => {
     setLoading(true);
     try {
-      // Атомарное закрытие проекта через RPC (новая рекомендация)
       const { error } = await supabase.rpc('finalize_project', {
         p_object_id: object.id,
         p_user_id: profile.id
@@ -255,13 +255,18 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
           onBack={onBack} 
           onUpdateStatus={updateObjectStatus}
           canManage={canManage}
+          isExpanded={isHeaderExpanded}
+          onToggle={() => setIsHeaderExpanded(!isHeaderExpanded)}
         />
-        <StageTimeline 
-          object={object}
-          allStagesData={allStagesData}
-          viewedStageId={viewedStageId}
-          setViewedStageId={setViewedStageId}
-        />
+        {/* StageTimeline рендерится только когда шапка развернута */}
+        {isHeaderExpanded && (
+          <StageTimeline 
+            object={object}
+            allStagesData={allStagesData}
+            viewedStageId={viewedStageId}
+            setViewedStageId={setViewedStageId}
+          />
+        )}
       </div>
 
       <div className="flex gap-2 mb-6 bg-slate-100 p-1.5 rounded-full w-fit">
