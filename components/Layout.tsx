@@ -48,9 +48,9 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
     { id: 'dashboard', label: 'Дашборд', icon: 'dashboard' },
     { id: 'tasks', label: 'Задачи', icon: 'check_circle' },
     { id: 'objects', label: 'Объекты', icon: 'home_work' },
-    { id: 'proposals', label: 'КП и Цены', icon: 'description' }, // New Item
-    { id: 'inventory', label: 'Склад', icon: 'inventory_2' },
     { id: 'clients', label: 'Клиенты', icon: 'group' },
+    { id: 'proposals', label: 'КП и Цены', icon: 'description' },
+    { id: 'inventory', label: 'Склад', icon: 'inventory_2' },
     { id: 'finances', label: 'Финансы', icon: 'account_balance' },
     { id: 'team', label: 'Команда', icon: 'people_alt' },
     { id: 'database', label: 'База данных', icon: 'storage' },

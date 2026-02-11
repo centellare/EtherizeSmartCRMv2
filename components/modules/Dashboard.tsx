@@ -35,6 +35,17 @@ const FinancialTrendChart: React.FC<{ transactions: any[] }> = ({ transactions }
     return last6Months;
   }, [transactions]);
 
+  const hasData = data.some(d => d.income > 0 || d.expense > 0);
+
+  if (!hasData) {
+    return (
+      <div className="w-full h-[160px] flex flex-col items-center justify-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200 mt-4 opacity-50">
+        <span className="material-icons-round text-3xl text-slate-300 mb-2">bar_chart</span>
+        <p className="text-[10px] font-bold text-slate-400 uppercase">Нет данных для графика</p>
+      </div>
+    );
+  }
+
   const maxVal = Math.max(...data.map(d => Math.max(d.income, d.expense)), 1000);
   const height = 120;
   const width = 100; // percent
@@ -101,7 +112,14 @@ const ProjectTimeline: React.FC<{ objects: any[] }> = ({ objects }) => {
       .slice(0, 5); // Show top 5 urgent
   }, [objects]);
 
-  if (timelineData.length === 0) return <div className="text-slate-400 text-sm italic p-4">Нет активных проектов для отображения таймлайна</div>;
+  if (timelineData.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 opacity-30 italic text-center">
+        <span className="material-icons-round text-4xl mb-2">work_outline</span>
+        <p className="text-xs font-bold uppercase">Активных проектов нет</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4 mt-2">
@@ -146,6 +164,15 @@ const TeamWorkloadChart: React.FC<{ staff: any[], tasks: any[] }> = ({ staff, ta
   }, [staff, tasks]);
 
   const maxTasks = Math.max(...workload.map(w => w.count), 5);
+
+  if (workload.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[140px] opacity-30 italic text-center">
+        <span className="material-icons-round text-4xl mb-2">people_outline</span>
+        <p className="text-xs font-bold uppercase">Нет данных по команде</p>
+      </div>
+    );
+  }
 
   return (
     <div 

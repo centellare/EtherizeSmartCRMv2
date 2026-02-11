@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from './hooks/useAuth';
 import { supabase, checkConnection } from './lib/supabase';
 import Auth from './components/Auth';
@@ -13,6 +13,7 @@ export type Module = 'dashboard' | 'clients' | 'objects' | 'tasks' | 'finances' 
 const App: React.FC = () => {
   const { session, profile, loading, refreshProfile, recoverSession } = useAuth();
   const [showLongLoadingControl, setShowLongLoadingControl] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0); // Счетчик для принудительного обновления
   
   // Инициализация из URL Hash
   const getInitialStateFromHash = () => {
@@ -81,14 +82,18 @@ const App: React.FC = () => {
   };
 
   const handleModuleChange = async (module: Module) => {
+    // Если модуль тот же — инкрементируем триггер обновления
+    if (activeModule === module) {
+      setRefreshTrigger(prev => prev + 1);
+    }
+
     // Проверка доступа перед переключением
     if (profile && !isModuleAllowed(profile.role, module)) {
       console.error("Access denied");
       return;
     }
 
-    // Умная проверка перед переключением:
-    // Если мы переключаемся на важный модуль, проверяем связь
+    // Умная проверка перед переключением
     if (['dashboard', 'tasks', 'objects', 'finances', 'inventory'].includes(module)) {
       const isConnected = await checkConnection();
       if (!isConnected) {
@@ -105,10 +110,8 @@ const App: React.FC = () => {
   };
 
   const handleHardLogout = () => {
-    // Полная очистка при сбое
     localStorage.clear();
     sessionStorage.clear();
-    // Чистим куки Supabase если есть (грубый метод, но надежный для сброса)
     document.cookie.split(";").forEach((c) => {
       document.cookie = c.replace(/^ +/, "").replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
     });
@@ -116,7 +119,6 @@ const App: React.FC = () => {
     window.location.reload();
   };
 
-  // 1. Показываем загрузку ТОЛЬКО если идет процесс и профиля еще нет в памяти.
   if (loading && !profile) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#f8fafc]">
@@ -124,11 +126,8 @@ const App: React.FC = () => {
           <div className="relative">
              <div className="w-12 h-12 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
           </div>
-          
           <div className="flex flex-col items-center gap-3">
              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Загрузка системы...</p>
-             
-             {/* Fail-safe кнопка, если загрузка зависла */}
              {showLongLoadingControl && (
                <div className="animate-in fade-in slide-in-from-top-2 duration-500 flex flex-col items-center gap-2 mt-4">
                  <p className="text-[10px] text-slate-400">Возникли проблемы?</p>
@@ -148,10 +147,8 @@ const App: React.FC = () => {
     );
   }
 
-  // 2. Если загрузка не идет и сессии нет — показываем вход
   if (!loading && !session) return <Auth />;
 
-  // 3. Экран ошибки "Профиль не найден" (или ошибки сети при первой загрузке)
   if (!loading && !profile) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#f8fafc] p-6 text-center animate-in fade-in duration-500">
@@ -159,9 +156,6 @@ const App: React.FC = () => {
           <span className="material-icons-round text-3xl">wifi_off</span>
         </div>
         <h2 className="text-xl font-medium text-slate-900 mb-2">Нет связи с сервером</h2>
-        <p className="text-slate-500 max-w-xs mb-8 leading-relaxed">
-          Не удалось загрузить ваш профиль. Это может быть связано с плохим интернетом или устаревшей сессией.
-        </p>
         <div className="flex flex-col gap-3 w-full max-w-[240px]">
           <Button onClick={() => window.location.reload()} icon="refresh" className="w-full">Обновить страницу</Button>
           <Button variant="ghost" onClick={handleHardLogout} icon="logout" className="w-full text-red-600 hover:bg-red-50">Выйти и очистить кеш</Button>
@@ -170,7 +164,6 @@ const App: React.FC = () => {
     );
   }
 
-  // 4. Основной интерфейс
   return (
     <Layout 
       profile={profile} 
@@ -189,6 +182,7 @@ const App: React.FC = () => {
           setActiveObjectId(null);
           setActiveStageId(null);
         }}
+        refreshTrigger={refreshTrigger} // Передаем триггер вниз
       />
     </Layout>
   );
