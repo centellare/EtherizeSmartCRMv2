@@ -60,7 +60,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
             .is('deleted_at', null)
         ]);
         
-        if (prodRes.data) setProducts(prodRes.data);
+        if (prodRes.data) setProducts(prodRes.data as unknown as Product[]);
         if (objRes.data) setObjects(objRes.data);
         
         // Calculate Stock
@@ -95,7 +95,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
             if (items) {
               // Re-hydrate logic
               const hydratedCart: CartItem[] = items.map((i: any) => {
-                  const liveProd = prodRes.data?.find(p => p.id === i.product_id);
+                  const liveProd = (prodRes.data as unknown as Product[])?.find(p => p.id === i.product_id);
                   const base = liveProd ? liveProd.base_price : 0;
                   
                   return {

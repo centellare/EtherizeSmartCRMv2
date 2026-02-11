@@ -26,7 +26,8 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from('products').select('*').eq('is_archived', false).order('category').order('name');
-    setProducts(data || []);
+    // Explicit type casting to align DB types (string) with App types (union)
+    setProducts((data || []) as unknown as Product[]);
     setLoading(false);
   }, []);
 

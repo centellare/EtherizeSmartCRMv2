@@ -24,11 +24,13 @@ const FormSettings: React.FC<{ profile: any }> = ({ profile }) => {
     setLoading(true);
     const { data } = await supabase.from('document_templates').select('*');
     if (data) {
-        const cp = data.find(t => t.type === 'cp');
-        const inv = data.find(t => t.type === 'invoice');
+        // Explicit casting to match local types
+        const typedData = data as unknown as DocumentTemplate[];
+        const cp = typedData.find(t => t.type === 'cp');
+        const inv = typedData.find(t => t.type === 'invoice');
         if (cp) setCpTemplate(cp);
         if (inv) setInvoiceTemplate(inv);
-        setTemplates(data);
+        setTemplates(typedData);
     }
     setLoading(false);
   };

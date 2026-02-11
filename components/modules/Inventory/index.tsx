@@ -51,9 +51,10 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
         supabase.from('objects').select('id, name').is('is_deleted', false).order('name')
       ]);
 
-      if (prodRes.data) setProducts(prodRes.data);
+      if (prodRes.data) setProducts(prodRes.data as unknown as Product[]);
       if (itemsRes.data) {
-          setItems(itemsRes.data);
+          // Cast data safely to InventoryItem[], assuming application logic ensures data integrity
+          setItems(itemsRes.data as unknown as InventoryItem[]);
       }
       if (objRes.data) setObjects(objRes.data);
     } catch (e) {

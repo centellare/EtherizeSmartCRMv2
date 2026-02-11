@@ -23,7 +23,8 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     const { data } = await supabase.from('products').select('*').eq('is_archived', false).order('category').order('name');
-    setProducts(data || []);
+    // Explicit casting to match Application types with Database string types
+    setProducts((data || []) as unknown as Product[]);
     setLoading(false);
   }, []);
 

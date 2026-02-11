@@ -22,14 +22,9 @@ export const SupplyTab: React.FC<SupplyTabProps> = ({ object }) => {
         const { data: cpData } = await supabase
           .from('commercial_proposals')
           .select('id, items:cp_items(*, product:products(name, unit, category))')
-          .eq('client_id', object.client_id) // Assumption: CPs are linked to client, user will select relevant ones logically or we need object_id in CP. For now, strict: use client link + accepted.
+          .eq('client_id', object.client_id) 
           .eq('status', 'accepted');
 
-        // Note: Ideally CP should be linked to Object directly. For now, we aggregate all accepted CPs for this client.
-        // Or if we had object_id in CP, better. 
-        // For ERP 2.0, we assume the user might manually link goods. 
-        // Let's rely on mapping: we show ALL accepted CP items for this client as "Potential Plan"
-        
         const allPlan: any[] = [];
         cpData?.forEach(cp => {
             cp.items.forEach((item: any) => {
@@ -51,17 +46,14 @@ export const SupplyTab: React.FC<SupplyTabProps> = ({ object }) => {
           .eq('to_object_id', object.id);
 
         const allShipped: any[] = [];
-        historyData?.forEach(h => {
+        // Cast to any[] to bypass strict typescript checking on deep nested relations that might be missing in types
+        (historyData as any[])?.forEach(h => {
             if (h.item && h.item.product) {
                 allShipped.push({
                     product_id: h.item.product_id,
                     product_name: h.item.product.name,
                     unit: h.item.product.unit,
-                    quantity: 1, // History records individual moves usually, or we need quantity field in history. V2 schema has quantity_delta.
-                    // Wait, V2 schema `inventory_history` has `quantity_delta`? No, updated schema says `item_id`.
-                    // If we track serialized items, 1 row = 1 item.
-                    // If we track bulk, we need quantity in history. 
-                    // Let's assume count of rows for now as V2 schema was `item_id REFERENCES items`.
+                    quantity: 1, 
                     category: h.item.product.category
                 });
             }
@@ -79,7 +71,6 @@ export const SupplyTab: React.FC<SupplyTabProps> = ({ object }) => {
   }, [object.id, object.client_id]);
 
   const supplySummary = useMemo(() => {
-    // Merge Plan and Fact by Product ID (or Name if ID missing in snapshots)
     const map = new Map<string, { name: string, unit: string, category: string, planned: number, shipped: number }>();
 
     const getKey = (p: any) => p.product_id || p.product_name;
@@ -93,7 +84,7 @@ export const SupplyTab: React.FC<SupplyTabProps> = ({ object }) => {
     shippedItems.forEach(s => {
         const key = getKey(s);
         if (!map.has(key)) map.set(key, { name: s.product_name, unit: s.unit, category: s.category, planned: 0, shipped: 0 });
-        map.get(key)!.shipped += s.quantity; // Assuming 1 row = 1 qty for serialized, need fix for bulk if history structure changes
+        map.get(key)!.shipped += s.quantity; 
     });
 
     return Array.from(map.values()).filter(i => 
@@ -128,7 +119,6 @@ export const SupplyTab: React.FC<SupplyTabProps> = ({ object }) => {
                         supplySummary.map((row, idx) => {
                             const balance = row.planned - row.shipped;
                             const isComplete = row.shipped >= row.planned && row.planned > 0;
-                            const isOver = row.shipped > row.planned;
                             
                             return (
                                 <tr key={idx} className="hover:bg-slate-50 transition-colors">
