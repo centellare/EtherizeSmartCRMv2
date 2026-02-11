@@ -11,7 +11,12 @@ type TrashItem = {
   deleted_at: string;
 };
 
-const Trash: React.FC<{ profile: any }> = ({ profile }) => {
+interface TrashProps {
+  profile: any;
+  refreshTrigger?: number;
+}
+
+const Trash: React.FC<TrashProps> = ({ profile, refreshTrigger = 0 }) => {
   const [deletedItems, setDeletedItems] = useState<TrashItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -66,7 +71,7 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
     setLoading(false);
   };
 
-  useEffect(() => { fetchDeleted(); }, []);
+  useEffect(() => { fetchDeleted(); }, [refreshTrigger]);
 
   const filteredItems = useMemo(() => {
     if (filterType === 'all') return deletedItems;

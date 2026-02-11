@@ -2,7 +2,12 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../../lib/supabase';
 
-const Notifications: React.FC<{ profile: any }> = ({ profile }) => {
+interface NotificationsProps {
+  profile: any;
+  refreshTrigger?: number;
+}
+
+const Notifications: React.FC<NotificationsProps> = ({ profile, refreshTrigger = 0 }) => {
   const [items, setItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -34,7 +39,7 @@ const Notifications: React.FC<{ profile: any }> = ({ profile }) => {
       .subscribe();
       
     return () => { supabase.removeChannel(channel); };
-  }, [profile?.id, fetchNotifications]);
+  }, [profile?.id, fetchNotifications, refreshTrigger]);
 
   const markAllAsRead = async () => {
     if (!profile?.id) return;

@@ -10,7 +10,12 @@ const ROLES = [
   { value: 'specialist', label: 'Специалист' }
 ];
 
-const Team: React.FC<{ profile: any }> = ({ profile }) => {
+interface TeamProps {
+  profile: any;
+  refreshTrigger?: number;
+}
+
+const Team: React.FC<TeamProps> = ({ profile, refreshTrigger = 0 }) => {
   const [members, setMembers] = useState<any[]>([]);
   const [tasks, setTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -59,7 +64,7 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
     setLoading(false);
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [refreshTrigger]);
 
   const filteredMembers = useMemo(() => {
     return members.filter(m => {
