@@ -6,12 +6,7 @@ import CPGenerator from './CPGenerator';
 import CPView from './CPView';
 import ProposalList from './ProposalList';
 
-interface ProposalsProps {
-  profile: any;
-  refreshTrigger?: number;
-}
-
-const Proposals: React.FC<ProposalsProps> = ({ profile, refreshTrigger = 0 }) => {
+const Proposals: React.FC<{ profile: any }> = ({ profile }) => {
   const [mode, setMode] = useState<'list' | 'catalog' | 'create' | 'edit' | 'view'>('list');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 

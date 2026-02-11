@@ -5,6 +5,7 @@ import ProtectedRoute from './ProtectedRoute';
 import { INITIAL_SUGGESTED_SCHEMA } from '../constants';
 import SqlGenerator from './SqlGenerator';
 
+// Lazy Load Modules to improve performance
 const Dashboard = React.lazy(() => import('./modules/Dashboard'));
 const Clients = React.lazy(() => import('./modules/Clients'));
 const Objects = React.lazy(() => import('./modules/Objects'));
@@ -24,7 +25,6 @@ interface MainContentProps {
   activeStageId: string | null;
   onNavigateToObject: (id: string, stageId?: string) => void;
   clearActiveObject: () => void;
-  refreshTrigger?: number; // Новый проп
 }
 
 const ModuleLoader = () => (
@@ -43,9 +43,9 @@ const MainContent: React.FC<MainContentProps> = ({
   activeObjectId, 
   activeStageId,
   onNavigateToObject,
-  clearActiveObject,
-  refreshTrigger = 0
+  clearActiveObject
 }) => {
+  // Функция для рендеринга модуля внутри защиты
   const renderWithProtection = (moduleId: Module, component: React.ReactNode) => (
     <ProtectedRoute 
       role={profile?.role} 
@@ -60,7 +60,7 @@ const MainContent: React.FC<MainContentProps> = ({
 
   switch (activeModule) {
     case 'dashboard': 
-      return renderWithProtection('dashboard', <Dashboard profile={profile} refreshTrigger={refreshTrigger} />);
+      return renderWithProtection('dashboard', <Dashboard profile={profile} />);
     
     case 'clients': 
       return renderWithProtection('clients', (
@@ -68,7 +68,6 @@ const MainContent: React.FC<MainContentProps> = ({
           profile={profile} 
           setActiveModule={setActiveModule} 
           onNavigateToObject={onNavigateToObject} 
-          refreshTrigger={refreshTrigger}
         />
       ));
     
@@ -79,36 +78,36 @@ const MainContent: React.FC<MainContentProps> = ({
           initialObjectId={activeObjectId} 
           initialStageId={activeStageId}
           onClearInitialId={clearActiveObject} 
-          refreshTrigger={refreshTrigger}
         />
       ));
     
     case 'tasks': 
-      return renderWithProtection('tasks', <Tasks profile={profile} onNavigateToObject={onNavigateToObject} refreshTrigger={refreshTrigger} />);
+      return renderWithProtection('tasks', <Tasks profile={profile} onNavigateToObject={onNavigateToObject} />);
     
     case 'finances': 
-      return renderWithProtection('finances', <Finances profile={profile} refreshTrigger={refreshTrigger} />);
+      return renderWithProtection('finances', <Finances profile={profile} />);
     
     case 'team': 
-      return renderWithProtection('team', <Team profile={profile} refreshTrigger={refreshTrigger} />);
+      return renderWithProtection('team', <Team profile={profile} />);
     
     case 'inventory':
-      return renderWithProtection('inventory', <Inventory profile={profile} refreshTrigger={refreshTrigger} />);
+      return renderWithProtection('inventory', <Inventory profile={profile} />);
 
     case 'proposals':
-      return renderWithProtection('proposals', <Proposals profile={profile} refreshTrigger={refreshTrigger} />);
+      return renderWithProtection('proposals', <Proposals profile={profile} />);
 
     case 'notifications': 
-      return renderWithProtection('notifications', <Notifications profile={profile} refreshTrigger={refreshTrigger} />);
+      return renderWithProtection('notifications', <Notifications profile={profile} />);
     
     case 'trash': 
-      return renderWithProtection('trash', <Trash profile={profile} refreshTrigger={refreshTrigger} />);
+      return renderWithProtection('trash', <Trash profile={profile} />);
     
     case 'database': 
       return renderWithProtection('database', (
         <div className="space-y-6">
           <div className="mb-6">
             <h2 className="text-2xl font-medium text-[#1c1b1f]">Настройка базы данных</h2>
+            <p className="text-[#444746] text-sm mt-1">Выполните этот SQL код в панели Supabase для корректной работы системы</p>
           </div>
           <SqlGenerator schemas={INITIAL_SUGGESTED_SCHEMA} />
         </div>
@@ -117,7 +116,7 @@ const MainContent: React.FC<MainContentProps> = ({
     default: 
       return (
         <Suspense fallback={<ModuleLoader />}>
-          <Dashboard profile={profile} refreshTrigger={refreshTrigger} />
+          <Dashboard profile={profile} />
         </Suspense>
       );
   }

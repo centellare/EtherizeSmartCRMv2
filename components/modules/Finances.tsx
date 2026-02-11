@@ -19,12 +19,7 @@ const DOC_TYPES = [
   { value: 'ТТН', label: 'ТТН' }
 ];
 
-interface FinancesProps {
-  profile: any;
-  refreshTrigger?: number;
-}
-
-const Finances: React.FC<FinancesProps> = ({ profile, refreshTrigger = 0 }) => {
+const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [objects, setObjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -168,7 +163,7 @@ const Finances: React.FC<FinancesProps> = ({ profile, refreshTrigger = 0 }) => {
 
   useEffect(() => {
     fetchData();
-  }, [fetchData, typeFilter, startDate, endDate, summaryFilter, unclosedDocsOnly, docSearchQuery, refreshTrigger]);
+  }, [fetchData, typeFilter, startDate, endDate, summaryFilter, unclosedDocsOnly, docSearchQuery]);
 
   useEffect(() => {
     const tChannel = supabase.channel('finances_smart_sync')

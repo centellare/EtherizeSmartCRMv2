@@ -450,12 +450,7 @@ const DirectorView: React.FC<{ tasks: any[], objects: any[], transactions: any[]
 
 // --- MAIN COMPONENT ---
 
-interface DashboardProps {
-  profile: any;
-  refreshTrigger?: number;
-}
-
-const Dashboard: React.FC<DashboardProps> = ({ profile, refreshTrigger = 0 }) => {
+const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<{ tasks: any[], objects: any[], transactions: any[], staff: any[] }>({
     tasks: [], objects: [], transactions: [], staff: []
@@ -486,7 +481,7 @@ const Dashboard: React.FC<DashboardProps> = ({ profile, refreshTrigger = 0 }) =>
     }
   };
 
-  useEffect(() => { fetchData(); }, [profile?.id, refreshTrigger]);
+  useEffect(() => { fetchData(); }, [profile?.id]);
 
   const role = profile?.role || 'specialist';
   const isAdmin = role === 'admin';

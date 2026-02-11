@@ -19,12 +19,7 @@ export interface CartItem {
 
 type Tab = 'catalog' | 'stock' | 'warranty';
 
-interface InventoryProps {
-  profile: any;
-  refreshTrigger?: number;
-}
-
-const Inventory: React.FC<InventoryProps> = ({ profile, refreshTrigger = 0 }) => {
+const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
   const [activeTab, setActiveTab] = useState<Tab>('stock');
   const [loading, setLoading] = useState(false);
   
@@ -64,7 +59,7 @@ const Inventory: React.FC<InventoryProps> = ({ profile, refreshTrigger = 0 }) =>
 
   useEffect(() => {
     fetchData();
-  }, [refreshTrigger]);
+  }, []);
 
   // Cart Handlers
   const addToCart = (item: InventoryItem) => {
