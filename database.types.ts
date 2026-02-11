@@ -1007,10 +1007,10 @@ export type Database = {
         | {
             Args: {
               p_assigned_to: string
-              p_comment: string
-              p_deadline: string
-              p_doc_link: string
-              p_doc_name: string
+              p_comment: string | null
+              p_deadline: string | null
+              p_doc_link: string | null
+              p_doc_name: string | null
               p_object_id: string
               p_start_date: string
               p_title: string
@@ -1021,10 +1021,10 @@ export type Database = {
         | {
             Args: {
               p_assigned_to: string
-              p_comment: string
-              p_deadline: string
-              p_doc_link: string
-              p_doc_name: string
+              p_comment: string | null
+              p_deadline: string | null
+              p_doc_link: string | null
+              p_doc_name: string | null
               p_object_id: string
               p_start_date: string
               p_title: string
@@ -1054,7 +1054,7 @@ export type Database = {
       transition_object_stage:
         | {
             Args: {
-              p_deadline: string
+              p_deadline: string | null
               p_next_stage: string
               p_object_id: string
               p_responsible_id: string
@@ -1064,7 +1064,7 @@ export type Database = {
           }
         | {
             Args: {
-              p_deadline: string
+              p_deadline: string | null
               p_next_stage: string
               p_object_id: string
               p_responsible_id: string

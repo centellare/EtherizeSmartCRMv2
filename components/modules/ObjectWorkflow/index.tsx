@@ -197,8 +197,8 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
         p_object_id: object.id,
         p_next_stage: stageForm.next_stage,
         p_responsible_id: stageForm.responsible_id,
-        // Cast null to any because TS thinks RPC requires string but logic allows null (passed as NULL to postgres)
-        p_deadline: (stageForm.deadline || null) as any,
+        // Cast null to any -> string to satisfy TS strictness, Supabase/Postgres will handle NULL
+        p_deadline: (stageForm.deadline || null) as unknown as string,
         p_user_id: profile.id
       });
       

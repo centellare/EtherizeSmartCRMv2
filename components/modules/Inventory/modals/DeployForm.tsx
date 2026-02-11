@@ -188,7 +188,8 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
                 
                 // FIX: Check for existence and safe access to quantity
                 if (currentStockItem) {
-                    const currentQty = currentStockItem.quantity || 0;
+                    // Safe access with null check
+                    const currentQty = currentStockItem.quantity ?? 0;
                     const newQty = currentQty - item.quantity;
                     if (newQty <= 0.0001) {
                         await supabase.from('inventory_items').update({ quantity: 0, is_deleted: true, deleted_at: now.toISOString() }).eq('id', item.id);

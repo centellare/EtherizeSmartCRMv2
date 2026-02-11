@@ -142,13 +142,14 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     setTaskForm({
       id: task.id,
       title: task.title,
-      // Ensure assigned_to is treated as string, fallback to empty if null (though DB enforces NOT NULL, any type might be loose)
+      // Ensure assigned_to is treated as string, fallback to empty if null
       assigned_to: task.assigned_to || '',
       start_date: task.start_date ? getMinskISODate(task.start_date) : getMinskISODate(),
       deadline: task.deadline ? getMinskISODate(task.deadline) : '',
-      comment: task.comment || '',
-      doc_link: task.doc_link || '',
-      doc_name: task.doc_name || '',
+      // Explicitly cast optional/null fields to string to satisfy strict types
+      comment: (task.comment || '') as string,
+      doc_link: (task.doc_link || '') as string,
+      doc_name: (task.doc_name || '') as string,
       checklist: task.checklist?.map((c: any) => ({ id: c.id, content: c.content, is_completed: c.is_completed })) || []
     });
     setIsTaskModalOpen(true);
