@@ -359,7 +359,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
             {cart.length === 0 ? (
               <p className="text-center text-slate-400 mt-10 italic text-sm">Добавьте товары из каталога</p>
             ) : (
-              Object.entries(groupedCart).map(([category, items]) => {
+              Object.entries(groupedCart).map(([category, items]: [string, CartItem[]]) => {
                 const catTotal = items.reduce((sum, i) => sum + calculateUnitBYN(i) * i.quantity, 0);
                 const catCount = items.reduce((sum, i) => sum + i.quantity, 0);
                 

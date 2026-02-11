@@ -194,7 +194,7 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose }) => {
             </thead>
             <tbody className="divide-y divide-slate-200 border-b border-slate-200">
               {items.length > 0 ? (
-                Object.entries(groupedItems).map(([category, catItems]) => {
+                Object.entries(groupedItems).map(([category, catItems]: [string, any[]]) => {
                   const catQty = catItems.reduce((sum: number, i: any) => sum + i.quantity, 0);
                   const catSum = catItems.reduce((sum: number, i: any) => sum + (i.final_price_byn * i.quantity), 0);
                   const catVat = data.has_vat ? catSum * 0.2 : 0;
