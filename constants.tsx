@@ -4,9 +4,69 @@ import { TableSchema } from './types';
 // Migration SQL to be executed by user
 export const MIGRATION_SQL_V2 = `
 -- SmartHome ERP 2.0 Migration Script
--- Добавляет таблицы для Счетов, Шаблонов и Заказов поставщику.
+-- FIX: Удаление дубликатов функций для исправления ошибки "Could not choose the best candidate function"
 
 BEGIN;
+
+-- Удаляем старые версии функции, чтобы пересоздать одну правильную
+DROP FUNCTION IF EXISTS public.create_task_safe(uuid, text, uuid, date, date, text, text, text, uuid);
+DROP FUNCTION IF EXISTS public.create_task_safe(uuid, text, uuid, date, timestamp, text, text, text, uuid);
+DROP FUNCTION IF EXISTS public.create_task_safe; -- Drop generic to be safe
+
+-- Создаем единую правильную функцию (Deadline -> Date)
+CREATE OR REPLACE FUNCTION public.create_task_safe(
+    p_object_id UUID,
+    p_title TEXT,
+    p_assigned_to UUID,
+    p_start_date DATE,
+    p_deadline DATE,
+    p_comment TEXT DEFAULT NULL,
+    p_doc_link TEXT DEFAULT NULL,
+    p_doc_name TEXT DEFAULT NULL,
+    p_user_id UUID DEFAULT NULL
+) RETURNS UUID AS $$
+DECLARE
+    v_stage_id TEXT;
+    v_new_task_id UUID;
+BEGIN
+    -- 1. Определяем текущий этап объекта
+    SELECT current_stage INTO v_stage_id
+    FROM objects
+    WHERE id = p_object_id;
+
+    -- 2. Создаем задачу
+    INSERT INTO tasks (
+        object_id,
+        stage_id,
+        title,
+        assigned_to,
+        start_date,
+        deadline,
+        comment,
+        doc_link,
+        doc_name,
+        created_by,
+        status
+    ) VALUES (
+        p_object_id,
+        v_stage_id,
+        p_title,
+        p_assigned_to,
+        p_start_date,
+        p_deadline,
+        p_comment,
+        p_doc_link,
+        p_doc_name,
+        p_user_id,
+        'pending'
+    ) RETURNING id INTO v_new_task_id;
+
+    RETURN v_new_task_id;
+END;
+$$ LANGUAGE plpgsql;
+
+-- [Остальная часть скрипта миграции для шаблонов и счетов, если она еще не была применена...]
+-- Если таблицы уже существуют, IF NOT EXISTS пропустит их.
 
 -- 1. Настройки и Шаблоны документов
 CREATE TABLE IF NOT EXISTS public.document_templates (
@@ -125,7 +185,7 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
 
 export const SUPABASE_SETUP_GUIDE = `
 ### Инструкция по обновлению БД
-Был добавлен функционал Счетов и Заказов поставщику.
+Был обновлен скрипт для исправления ошибки "Could not choose the best candidate function".
 Пожалуйста, перейдите в раздел **База данных** в приложении и скопируйте новый SQL-скрипт.
 Выполните его в SQL Editor вашей панели Supabase.
 `;

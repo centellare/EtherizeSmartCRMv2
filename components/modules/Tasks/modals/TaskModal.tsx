@@ -45,12 +45,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
     } else {
       // Reset for create mode
       setFormData({
-        id: '', object_id: '', title: '', assigned_to: '', 
-        start_date: getMinskISODate(), deadline: '', 
-        comment: '', doc_link: '', doc_name: '', checklist: []
+        id: '', 
+        object_id: objects.length === 1 ? objects[0].id : '', // Auto-select if only 1 object
+        title: '', 
+        assigned_to: '', 
+        start_date: getMinskISODate(), 
+        deadline: '', 
+        comment: '', 
+        doc_link: '', 
+        doc_name: '', 
+        checklist: []
       });
     }
-  }, [mode, initialData]);
+  }, [mode, initialData, objects]);
 
   const addChecklistItem = () => {
     setFormData(prev => ({
@@ -82,6 +89,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
     try {
       let taskId = formData.id;
       
+      // Fix for ambiguity: If deadline is set, ensure it's not null.
+      // If the DB has duplicate functions (date vs timestamp), this might still fail if null is sent.
+      // The best fix is DB cleanup, but let's send strictly formatted data.
+      const payloadCommon = {
+          p_object_id: formData.object_id,
+          p_title: formData.title,
+          p_assigned_to: formData.assigned_to,
+          p_start_date: formData.start_date,
+          p_deadline: formData.deadline || null,
+          p_comment: formData.comment,
+          p_doc_link: formData.doc_link || null,
+          p_doc_name: formData.doc_name || null,
+          p_user_id: profile.id
+      };
+
       if (mode === 'edit') {
         const { error } = await supabase.from('tasks').update({
           object_id: formData.object_id,
@@ -99,18 +121,29 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
         if (error) throw error;
       } else {
         const { id, checklist, ...insertData } = formData;
-        const selectedObj = objects.find(o => o.id === formData.object_id);
-        const stageId = selectedObj?.current_stage || null;
+        
+        // Use RPC for safe creation (inherits stage automatically)
+        const { error } = await supabase.rpc('create_task_safe', payloadCommon);
 
-        const { data, error } = await supabase.from('tasks').insert([{
-          ...insertData,
-          stage_id: stageId,
-          created_by: profile.id,
-          status: 'pending'
-        }]).select('id').single();
+        if (error) {
+            // Handle ambiguous function error gracefully
+            if (error.message?.includes('Could not choose the best candidate function')) {
+                throw new Error('Ошибка базы данных (ambiguous function). Пожалуйста, выполните скрипт исправления в разделе "База данных".');
+            }
+            throw error;
+        }
 
-        if (error) throw error;
-        if (data) taskId = data.id;
+        // Retrieve the ID of the task we just created to add checklist items
+        const { data: lastTask } = await supabase
+          .from('tasks')
+          .select('id')
+          .eq('object_id', formData.object_id)
+          .eq('created_by', profile.id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .single();
+        
+        if (lastTask) taskId = lastTask.id;
       }
 
       if (taskId) {

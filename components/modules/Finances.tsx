@@ -176,7 +176,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     // Debtors: Overdue Planned Income [All Time]
     const debtorsTotal = transactions.filter(t => 
         t.type === 'income' && 
-        t.status !== 'approved' &&
+        (t.status === 'pending' || t.status === 'partial') &&
         t.planned_date && 
         t.planned_date < todayStr
     ).reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);

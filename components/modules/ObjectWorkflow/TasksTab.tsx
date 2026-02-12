@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { Button, Modal, Input, Select, ConfirmModal, Badge } from '../../ui';
 import { formatDate, getMinskISODate } from '../../../lib/dateUtils';
+import { TaskModal } from '../Tasks/modals/TaskModal';
 
 const STAGES = [
   { id: 'negotiation', label: 'Переговоры' },
@@ -53,18 +54,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-
-  const [taskForm, setTaskForm] = useState({ 
-    id: '',
-    title: '', 
-    assigned_to: '', 
-    start_date: getMinskISODate(),
-    deadline: '', 
-    comment: '', 
-    doc_link: '', 
-    doc_name: '',
-    checklist: [] as { id?: string; content: string; is_completed?: boolean }[]
-  });
   
   const [closeForm, setCloseForm] = useState({ comment: '', link: '', doc_name: '' });
   const [checklists, setChecklists] = useState<Record<string, any[]>>({});
@@ -99,18 +88,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
   const isViewingHistory = viewedStageId !== object.current_stage;
   const isAdmin = profile.role === 'admin' || profile.role === 'director';
-  const isDirector = profile.role === 'director';
-  const isSpecialist = profile.role === 'specialist';
-  const isManager = profile.role === 'manager';
+  
   const canJumpForward = !!object.rolled_back_from;
-
-  const availableExecutors = useMemo(() => {
-    if (!profile) return [];
-    if (isAdmin || isDirector) return staff;
-    if (isManager) return staff.filter(s => ['specialist', 'manager', 'director'].includes(s.role));
-    if (isSpecialist) return staff.filter(s => s.id === profile.id || s.role === 'manager');
-    return [];
-  }, [staff, profile, isAdmin, isDirector, isManager, isSpecialist]);
 
   useEffect(() => {
     if (forceOpenTaskModal) {
@@ -121,17 +100,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
   const handleOpenCreateModal = () => {
     setIsEditMode(false);
-    setTaskForm({ 
-      id: '',
-      title: '', 
-      assigned_to: '', 
-      start_date: getMinskISODate(), 
-      deadline: '', 
-      comment: '', 
-      doc_link: '', 
-      doc_name: '',
-      checklist: []
-    });
+    setSelectedTask(null);
     setIsTaskModalOpen(true);
   };
 
@@ -139,120 +108,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     e.stopPropagation();
     setSelectedTask(task);
     setIsEditMode(true);
-    setTaskForm({
-      id: task.id,
-      title: task.title,
-      // Ensure assigned_to is treated as string, fallback to empty if null
-      assigned_to: task.assigned_to || '',
-      start_date: task.start_date ? getMinskISODate(task.start_date) : getMinskISODate(),
-      deadline: task.deadline ? getMinskISODate(task.deadline) : '',
-      // Explicitly cast optional/null fields to string to satisfy strict types
-      comment: (task.comment || '') as string,
-      doc_link: (task.doc_link || '') as string,
-      doc_name: (task.doc_name || '') as string,
-      checklist: task.checklist?.map((c: any) => ({ id: c.id, content: c.content, is_completed: c.is_completed })) || []
-    });
     setIsTaskModalOpen(true);
-  };
-
-  const addChecklistItem = () => {
-    setTaskForm(prev => ({
-      ...prev,
-      checklist: [...prev.checklist, { content: '' }]
-    }));
-  };
-
-  const updateChecklistItem = (index: number, content: string) => {
-    const newList = [...taskForm.checklist];
-    newList[index].content = content;
-    setTaskForm({ ...taskForm, checklist: newList });
-  };
-
-  const removeChecklistItem = (index: number) => {
-    setTaskForm(prev => ({
-      ...prev,
-      checklist: prev.checklist.filter((_, i) => i !== index)
-    }));
-  };
-
-  const handleSaveTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (taskForm.deadline && taskForm.deadline < taskForm.start_date) {
-      alert("Ошибка: Дата дедлайна не может быть раньше даты начала.");
-      return;
-    }
-
-    setLoading(true);
-    let taskId = taskForm.id;
-
-    if (isEditMode) {
-      const { error } = await supabase.from('tasks').update({
-        title: taskForm.title,
-        assigned_to: taskForm.assigned_to,
-        start_date: taskForm.start_date,
-        deadline: taskForm.deadline || null,
-        comment: taskForm.comment,
-        doc_link: taskForm.doc_link,
-        doc_name: taskForm.doc_name,
-        last_edited_at: new Date().toISOString(),
-        last_edited_by: profile.id
-      }).eq('id', taskForm.id);
-      
-      if (error) { setLoading(false); return; }
-    } else {
-      const { error } = await supabase.rpc('create_task_safe', {
-        p_object_id: object.id,
-        p_title: taskForm.title,
-        p_assigned_to: taskForm.assigned_to,
-        p_start_date: taskForm.start_date,
-        p_deadline: taskForm.deadline || null,
-        p_comment: taskForm.comment,
-        p_doc_link: taskForm.doc_link || null,
-        p_doc_name: taskForm.doc_name || null,
-        p_user_id: profile.id
-      });
-
-      if (error) { alert(error.message); setLoading(false); return; }
-
-      const { data: lastTask } = await supabase
-        .from('tasks')
-        .select('id')
-        .eq('object_id', object.id)
-        .eq('created_by', profile.id)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-      
-      if (lastTask) taskId = lastTask.id;
-    }
-
-    if (taskId) {
-      if (isEditMode) {
-        const currentIds = taskForm.checklist.filter(c => c.id).map(c => c.id);
-        if (currentIds.length > 0) {
-          await supabase.from('task_checklists').delete().eq('task_id', taskId).not('id', 'in', `(${currentIds.join(',')})`);
-        } else {
-          await supabase.from('task_checklists').delete().eq('task_id', taskId);
-        }
-      }
-
-      const itemsToUpsert = taskForm.checklist
-        .filter(c => c.content.trim() !== '')
-        .map(c => ({
-          ...(c.id ? { id: c.id } : {}),
-          task_id: taskId,
-          content: c.content,
-          is_completed: c.is_completed || false
-        }));
-
-      if (itemsToUpsert.length > 0) {
-        await supabase.from('task_checklists').upsert(itemsToUpsert);
-      }
-    }
-
-    setIsTaskModalOpen(false);
-    await refreshData();
-    setLoading(false);
   };
 
   const toggleChecklistItem = async (itemId: string, currentStatus: boolean) => {
@@ -312,10 +168,8 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   const canEditDelete = (task: any) => {
     const isCreator = task.created_by === profile.id;
     if (task.status === 'completed') return isAdmin;
-    return isAdmin || isDirector || isCreator;
+    return isAdmin || profile.role === 'director' || isCreator;
   };
-
-  const isInvalidDates = !!(taskForm.deadline && taskForm.deadline < taskForm.start_date);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -333,7 +187,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
                {object.current_status === 'review_required' && canManage && (
                  <Button variant="tonal" className="h-10 px-4 text-xs" icon="verified" onClick={() => updateStatus('in_work')}>Принять работу</Button>
                )}
-               {isSpecialist && object.current_status !== 'review_required' && (
+               {profile.role === 'specialist' && object.current_status !== 'review_required' && (
                  <Button variant="tonal" className="h-10 px-4 text-xs" icon="send" onClick={() => updateStatus('review_required')}>Сдать на проверку</Button>
                )}
                {canManage && !['review_required', 'frozen', 'completed'].includes(object.current_status) && (
@@ -430,53 +284,19 @@ export const TasksTab: React.FC<TasksTabProps> = ({
          )}
       </div>
 
-      {/* Task Creation/Editing Modal */}
+      {/* Shared Task Creation/Editing Modal */}
       <Modal isOpen={isTaskModalOpen} onClose={() => setIsTaskModalOpen(false)} title={isEditMode ? "Редактирование задачи" : "Новая задача"}>
-        <form onSubmit={handleSaveTask} className="space-y-4">
-          <Input label="Что сделать?" required value={taskForm.title} onChange={(e:any) => setTaskForm({...taskForm, title: e.target.value})} />
-          <Select 
-            label="Исполнитель" 
-            required 
-            value={taskForm.assigned_to} 
-            onChange={(e:any) => setTaskForm({...taskForm, assigned_to: e.target.value})}
-            options={[{value: '', label: 'Выбрать исполнителя'}, ...availableExecutors.map(s => ({value: s.id, label: s.full_name}))]}
-          />
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="Начало" type="date" required value={taskForm.start_date} onChange={(e:any) => setTaskForm({...taskForm, start_date: e.target.value})} />
-            <Input label="Дедлайн" type="date" value={taskForm.deadline} onChange={(e:any) => setTaskForm({...taskForm, deadline: e.target.value})} className={isInvalidDates ? 'border-red-500' : ''} />
-          </div>
-
-          <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-4">
-             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Документация (опц.)</p>
-             <div className="grid grid-cols-2 gap-4">
-               <Input label="Имя документа" value={taskForm.doc_name} onChange={(e:any) => setTaskForm({ ...taskForm, doc_name: e.target.value })} icon="description" />
-               <Input label="Ссылка" value={taskForm.doc_link} onChange={(e:any) => setTaskForm({ ...taskForm, doc_link: e.target.value })} icon="link" />
-             </div>
-          </div>
-          
-          <div className="space-y-3 bg-slate-50 p-4 rounded-2xl border border-slate-100">
-             <div className="flex justify-between items-center mb-1">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Подзадачи (чек-лист)</p>
-                <button type="button" onClick={addChecklistItem} className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center hover:bg-blue-700 transition-colors">
-                  <span className="material-icons-round text-sm">add</span>
-                </button>
-             </div>
-             <div className="space-y-2">
-                {taskForm.checklist.map((item, idx) => (
-                  <div key={idx} className="flex gap-2 items-center">
-                    <input className="flex-grow bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-sm outline-none focus:border-blue-500" value={item.content} onChange={(e) => updateChecklistItem(idx, e.target.value)} placeholder={`Пункт ${idx + 1}`} />
-                    <button type="button" onClick={() => removeChecklistItem(idx)} className="text-slate-300 hover:text-red-500 transition-colors"><span className="material-icons-round text-sm">remove_circle_outline</span></button>
-                  </div>
-                ))}
-             </div>
-          </div>
-
-          <div className="w-full">
-            <label className="block text-xs font-medium text-[#444746] mb-1.5 ml-1">Описание / ТЗ</label>
-            <textarea className="w-full bg-white border border-slate-200 rounded-xl p-4 text-sm outline-none focus:border-blue-500 shadow-inner" rows={3} value={taskForm.comment} onChange={(e) => setTaskForm({...taskForm, comment: e.target.value})} />
-          </div>
-          <Button type="submit" className="w-full h-12" loading={loading} disabled={isInvalidDates || loading}>{isEditMode ? 'Сохранить изменения' : 'Создать задачу'}</Button>
-        </form>
+        <TaskModal 
+            mode={isEditMode ? 'edit' : 'create'}
+            initialData={selectedTask}
+            profile={profile}
+            staff={staff}
+            objects={[object]} // Pass current object as single item array to auto-select
+            onSuccess={() => {
+                setIsTaskModalOpen(false);
+                refreshData();
+            }}
+        />
       </Modal>
 
       {/* Task Details Modal */}
