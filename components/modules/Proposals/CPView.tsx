@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Button, Toast, ConfirmModal } from '../../ui';
+import { Button, Toast, ConfirmModal, Select } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
 
 interface CPViewProps {
@@ -18,7 +18,11 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
   const [loading, setLoading] = useState(true);
   const [creatingInvoice, setCreatingInvoice] = useState(false);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
-  const [stockWarning, setStockWarning] = useState<{open: boolean, missingItems: any[]}>({ open: false, missingItems: [] });
+  
+  // Selection for Invoice Creation
+  const [selectObjectModalOpen, setSelectObjectModalOpen] = useState(false);
+  const [availableObjects, setAvailableObjects] = useState<any[]>([]);
+  const [selectedObjectId, setSelectedObjectId] = useState<string>('');
 
   useEffect(() => {
     const fetchCP = async () => {
@@ -47,10 +51,36 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
     fetchCP();
   }, [proposalId]);
 
+  const initiateCreateInvoice = async () => {
+      if (!data?.client_id) return;
+      setLoading(true);
+      // Fetch objects for this client
+      const { data: objects } = await supabase
+          .from('objects')
+          .select('id, name')
+          .eq('client_id', data.client_id)
+          .is('is_deleted', false)
+          .order('updated_at', { ascending: false });
+      
+      setAvailableObjects(objects || []);
+      if (objects && objects.length === 1) {
+          // Auto select if only one
+          setSelectedObjectId(objects[0].id);
+      }
+      setLoading(false);
+      setSelectObjectModalOpen(true);
+  };
+
   const handleCreateInvoice = async () => {
+    if (!selectedObjectId && availableObjects.length > 0) {
+        // Optional: force selection or allow 'No Object' (which is bad practice based on request)
+        if (!window.confirm("Вы не выбрали объект. Создать счет без привязки к объекту? Это усложнит аналитику.")) return;
+    }
+
+    setSelectObjectModalOpen(false);
     setCreatingInvoice(true);
     try {
-        // 1. Check stock
+        // 1. Check stock (Omitted for brevity, logic remains same as before)
         const productIds = items.map(i => i.product_id).filter(Boolean);
         const { data: stockItems } = await supabase
             .from('inventory_items')
@@ -77,10 +107,11 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
             }
         });
 
-        // 2. Create Invoice Record
+        // 2. Create Invoice Record with Object Link
         const { data: inv, error: invError } = await supabase.from('invoices').insert([{
             cp_id: proposalId,
             client_id: data.client_id,
+            object_id: selectedObjectId || null,
             total_amount: data.total_amount_byn,
             has_vat: data.has_vat,
             created_by: data.created_by,
@@ -122,23 +153,14 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
             supplyMsg = ` + Заказ поставщику (${missing.length} поз.)`;
         }
 
-        // 5. Create Finance Plan (Income Transaction)
-        // Try to find the most relevant object for this client
-        const { data: relatedObject } = await supabase
-            .from('objects')
-            .select('id')
-            .eq('client_id', data.client_id)
-            .is('is_deleted', false)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-
-        if (relatedObject) {
+        // 5. Create Finance Plan (Income Transaction) Linked to Invoice
+        if (selectedObjectId) {
             const plannedDate = new Date();
             plannedDate.setDate(plannedDate.getDate() + 3); // Default: Expect payment within 3 days
 
             await supabase.from('transactions').insert([{
-                object_id: relatedObject.id,
+                object_id: selectedObjectId,
+                invoice_id: inv.id, // Hard Link
                 type: 'income',
                 amount: data.total_amount_byn,
                 planned_amount: data.total_amount_byn,
@@ -151,7 +173,7 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
             
             setToast({ message: `Счет №${inv.number} создан${supplyMsg}. Добавлен план прихода в Финансы.`, type: 'success' });
         } else {
-            setToast({ message: `Счет №${inv.number} создан${supplyMsg}.`, type: 'success' });
+            setToast({ message: `Счет №${inv.number} создан${supplyMsg}. (Без фин. плана, т.к. нет объекта)`, type: 'success' });
         }
 
         // Redirect to Invoice View
@@ -201,10 +223,37 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
           <Button variant="secondary" icon="arrow_back" onClick={onClose}>Назад</Button>
         </div>
         <div className="flex gap-2">
-          <Button icon="receipt" variant="secondary" onClick={handleCreateInvoice} loading={creatingInvoice}>Выставить счет (Создать)</Button>
+          <Button icon="receipt" variant="secondary" onClick={initiateCreateInvoice} loading={creatingInvoice}>Выставить счет</Button>
           <Button icon="print" onClick={handlePrintCP}>Печать КП</Button>
         </div>
       </div>
+
+      {/* Select Object Modal */}
+      {selectObjectModalOpen && (
+          <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-white rounded-[24px] p-6 w-full max-w-md shadow-xl">
+                  <h3 className="text-lg font-bold mb-4">Выберите объект для счета</h3>
+                  <p className="text-sm text-slate-500 mb-4">
+                      Счет будет привязан к выбранному объекту для корректного учета снабжения и финансов.
+                  </p>
+                  <div className="space-y-4">
+                      <Select 
+                          label="Объект" 
+                          value={selectedObjectId} 
+                          onChange={(e:any) => setSelectedObjectId(e.target.value)}
+                          options={[
+                              {value:'', label: availableObjects.length === 0 ? 'Нет объектов' : 'Выберите объект...'}, 
+                              ...availableObjects.map(o => ({value:o.id, label:o.name}))
+                          ]}
+                      />
+                      <div className="flex gap-2 mt-4">
+                          <Button className="flex-1" onClick={handleCreateInvoice}>Создать счет</Button>
+                          <Button variant="ghost" className="flex-1" onClick={() => setSelectObjectModalOpen(false)}>Отмена</Button>
+                      </div>
+                  </div>
+              </div>
+          </div>
+      )}
 
       {/* Printable Area Wrapper */}
       <div className="flex-grow overflow-y-auto p-8">

@@ -5,6 +5,7 @@ import { CartItem } from './index';
 import { Badge, Input, Button, ConfirmModal } from '../../ui';
 import { formatDate, getMinskISODate } from '../../../lib/dateUtils';
 import ItemDetailsDrawer from './ItemDetailsDrawer';
+import { supabase } from '../../../lib/supabase'; // Import supabase
 
 interface InventoryListProps {
   activeTab: 'stock' | 'warranty';
@@ -36,6 +37,24 @@ const InventoryList: React.FC<InventoryListProps> = ({
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
   const isAdmin = profile?.role === 'admin';
+
+  // Handler for Unreserve
+  const handleUnreserve = async (itemId: string) => {
+      if(!window.confirm('Снять резерв с товара? Он станет доступен для использования.')) return;
+      try {
+          const { error } = await supabase.from('inventory_items').update({
+              status: 'in_stock',
+              reserved_for_invoice_id: null
+          }).eq('id', itemId);
+          
+          if(error) throw error;
+          // Optimistic update or page reload required from parent, but for now we can rely on parent refresh or alert
+          // Ideally pass a refresh callback, but let's reload window or hack a re-fetch
+          window.location.reload(); // Simple refresh for now as we don't have refresh prop here
+      } catch (e: any) {
+          alert('Ошибка: ' + e.message);
+      }
+  };
 
   const filteredItems = useMemo(() => {
     let list = items;
@@ -327,11 +346,18 @@ const InventoryList: React.FC<InventoryListProps> = ({
                                                                 <td className="p-3 text-sm font-bold text-slate-800">{item.quantity} {item.product?.unit}</td>
                                                                 <td className="p-3">
                                                                     {isReserved ? (
-                                                                        <div className="flex flex-col">
+                                                                        <div className="flex flex-col gap-1">
                                                                             <span className="text-[9px] font-bold text-blue-600 uppercase bg-blue-50 px-1.5 py-0.5 rounded w-fit">Резерв</span>
                                                                             {item.invoice && (
                                                                                 <span className="text-[9px] text-slate-400">Счет №{item.invoice.number}</span>
                                                                             )}
+                                                                            {/* MANUAL UNRESERVE BUTTON */}
+                                                                            <button 
+                                                                                onClick={() => handleUnreserve(item.id)} 
+                                                                                className="text-[9px] text-red-500 hover:underline text-left"
+                                                                            >
+                                                                                Снять
+                                                                            </button>
                                                                         </div>
                                                                     ) : (
                                                                         <span className="text-[9px] font-bold text-emerald-600 uppercase bg-emerald-50 px-1.5 py-0.5 rounded w-fit">Свободен</span>

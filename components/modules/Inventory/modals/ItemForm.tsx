@@ -167,11 +167,38 @@ export const ItemForm: React.FC<ItemFormProps> = ({ mode, selectedItem, products
             }
         }
 
-        // If coming from Supply Orders, close the order item
+        // --- PARTIAL SUPPLY ORDER LOGIC ---
         if (mode === 'receive_supply' && selectedItem?.id) {
-            await supabase.from('supply_order_items')
-                .update({ status: 'received' })
-                .eq('id', selectedItem.id);
+            const needed = selectedItem.quantity_needed;
+            
+            if (qty < needed) {
+                // Partial reception: Create a new pending item for the remainder
+                const remainder = needed - qty;
+                
+                // 1. Update current item to received (with received qty)
+                await supabase.from('supply_order_items')
+                    .update({ 
+                        status: 'received', 
+                        quantity_ordered: qty, // Store what was actually received here if schema supported it, but we reuse needed or just mark done
+                        // Better: Update needed to what was received to close it out properly
+                        quantity_needed: qty 
+                    })
+                    .eq('id', selectedItem.id);
+
+                // 2. Create new item for remainder
+                await supabase.from('supply_order_items').insert({
+                    supply_order_id: selectedItem.supply_order_id,
+                    product_id: selectedItem.product_id,
+                    quantity_needed: remainder,
+                    status: 'pending'
+                });
+
+            } else {
+                // Full reception
+                await supabase.from('supply_order_items')
+                    .update({ status: 'received' })
+                    .eq('id', selectedItem.id);
+            }
         }
         
         if (keepOpen && mode === 'add_item') {

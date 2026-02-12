@@ -8,7 +8,7 @@ import { CartItem } from '../index';
 interface DeployFormProps {
   selectedItem: InventoryItem | null;
   cartItems: CartItem[];
-  catalog: Product[]; // Changed from InventoryCatalogItem
+  catalog: Product[]; 
   items: InventoryItem[]; // Stock items
   objects: any[];
   profile: any;
@@ -23,6 +23,10 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
       quantity_to_deploy: '1'
   });
   const [bulkSerials, setBulkSerials] = useState<Record<string, string[]>>({});
+  
+  // NEW: Bulk Text Input State
+  const [bulkTextInput, setBulkTextInput] = useState('');
+  const [bulkModeActive, setBulkModeActive] = useState<string | null>(null); // itemId that is being bulk-edited
 
   const isBulk = !selectedItem && cartItems.length > 0;
 
@@ -30,7 +34,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
     if (isBulk) {
        const initialSerials: Record<string, string[]> = {};
        cartItems.forEach(c => {
-           const catItem = catalog.find(cat => cat.id === c.product_id); // Match by product_id
+           const catItem = catalog.find(cat => cat.id === c.product_id); 
            const qty = Math.floor(c.quantity); 
            if (catItem?.has_serial && qty > 0) {
                const baseArr = Array(qty).fill('');
@@ -58,7 +62,28 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
       });
   };
 
+  const handleBulkTextParse = (itemId: string) => {
+      if (!bulkTextInput.trim()) {
+          setBulkModeActive(null);
+          return;
+      }
+      // Split by newlines, commas, or spaces
+      const serials = bulkTextInput.split(/[\n,]+/).map(s => s.trim()).filter(s => s !== '');
+      const currentArr = bulkSerials[itemId] || [];
+      const maxSlots = currentArr.length;
+      
+      const newArr = [...currentArr];
+      for(let i = 0; i < Math.min(serials.length, maxSlots); i++) {
+          newArr[i] = serials[i];
+      }
+      
+      setBulkSerials(prev => ({ ...prev, [itemId]: newArr }));
+      setBulkTextInput('');
+      setBulkModeActive(null);
+  };
+
   const handlePrint = (includeSerials: boolean) => {
+    // ... (Printing logic remains same)
     const objectName = objects.find(o => o.id === formData.object_id)?.name || '_____________';
     
     const grouped: Record<string, { name: string, quantity: number, unit: string, serials: string[] }> = {};
@@ -161,7 +186,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
 
     try {
         if (isBulk) {
-            // Check missing serials
+            // ... (Same Bulk Logic)
             const itemsMissingSerials = cartItems.filter(item => {
                 const catItem = catalog.find(c => c.id === item.product_id);
                 if (!catItem?.has_serial) return false;
@@ -189,7 +214,6 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
                     const currentQty = currentStockItem.quantity ?? 0;
                     const newQty = currentQty - item.quantity;
                     if (newQty <= 0.0001) {
-                        // CHANGED: Use deleted_at only
                         await supabase.from('inventory_items').update({ quantity: 0, deleted_at: now.toISOString() }).eq('id', item.id);
                     } else {
                         await supabase.from('inventory_items').update({ quantity: newQty }).eq('id', item.id);
@@ -245,7 +269,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
                 }
             }
         } else if (selectedItem) {
-            // ... (Logic for single deploy)
+            // ... (Same Single Logic)
             const qtyToDeploy = parseFloat(formData.quantity_to_deploy);
             if (isNaN(qtyToDeploy) || qtyToDeploy <= 0) throw new Error("Укажите корректное количество");
             if (qtyToDeploy > selectedItem.quantity) throw new Error("Нельзя отгрузить больше, чем есть на складе");
@@ -309,6 +333,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
                     const requiresSerial = catItem?.has_serial;
                     const stockItem = items.find(i => i.id === item.id);
                     const maxAvailable = stockItem?.quantity || item.quantity;
+                    const serialsCount = (bulkSerials[item.id] || []).length;
 
                     return (
                         <div key={item.id} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm transition-all">
@@ -338,19 +363,44 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
                             </div>
                             
                             {requiresSerial ? (
-                                <div className="grid grid-cols-1 gap-2 pl-3 border-l-2 border-blue-200">
-                                    <p className="text-[10px] font-bold text-blue-600 uppercase mb-1">Серийные номера:</p>
-                                    {(bulkSerials[item.id] || []).map((s, idx) => (
-                                        <div key={idx} className="flex items-center gap-2 group">
-                                            <span className="text-[9px] font-bold text-slate-300 w-8">#{idx + 1}</span>
-                                            <Input 
-                                                placeholder="S/N..." 
-                                                value={s} 
-                                                onChange={(e: any) => updateBulkSerial(item.id, idx, e.target.value)}
-                                                className="!h-8 !text-xs flex-grow focus:border-blue-400"
+                                <div>
+                                    {bulkModeActive === item.id ? (
+                                        <div className="animate-in fade-in zoom-in-95 duration-200">
+                                            <textarea 
+                                                autoFocus
+                                                value={bulkTextInput}
+                                                onChange={(e) => setBulkTextInput(e.target.value)}
+                                                className="w-full h-32 p-3 bg-slate-50 border border-blue-300 rounded-xl text-sm font-mono focus:ring-2 focus:ring-blue-200 outline-none"
+                                                placeholder={`Вставьте ${serialsCount} S/N (каждый с новой строки)`}
                                             />
+                                            <div className="flex gap-2 mt-2">
+                                                <Button type="button" onClick={() => handleBulkTextParse(item.id)} className="h-8 text-xs">Применить список</Button>
+                                                <Button type="button" variant="ghost" onClick={() => setBulkModeActive(null)} className="h-8 text-xs">Отмена</Button>
+                                            </div>
                                         </div>
-                                    ))}
+                                    ) : (
+                                        <>
+                                            <div className="grid grid-cols-1 gap-2 pl-3 border-l-2 border-blue-200">
+                                                <div className="flex justify-between items-center mb-1">
+                                                    <p className="text-[10px] font-bold text-blue-600 uppercase">Серийные номера:</p>
+                                                    <button type="button" onClick={() => { setBulkModeActive(item.id); setBulkTextInput((bulkSerials[item.id] || []).join('\n')); }} className="text-[10px] font-bold text-blue-500 hover:underline flex items-center gap-1">
+                                                        <span className="material-icons-round text-sm">playlist_add</span> Массовый ввод
+                                                    </button>
+                                                </div>
+                                                {(bulkSerials[item.id] || []).map((s, idx) => (
+                                                    <div key={idx} className="flex items-center gap-2 group">
+                                                        <span className="text-[9px] font-bold text-slate-300 w-8">#{idx + 1}</span>
+                                                        <Input 
+                                                            placeholder="S/N..." 
+                                                            value={s} 
+                                                            onChange={(e: any) => updateBulkSerial(item.id, idx, e.target.value)}
+                                                            className="!h-8 !text-xs flex-grow focus:border-blue-400"
+                                                        />
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="flex items-center gap-2 text-slate-400 bg-slate-50 p-2 rounded-lg">
@@ -363,6 +413,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
                 })}
             </div>
         ) : (
+            // ... (Single Item UI)
             <div className="bg-slate-50 p-4 rounded-2xl">
                 <div className="flex justify-between items-start">
                     <div>

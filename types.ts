@@ -72,6 +72,7 @@ export interface TransactionPayment {
 export interface Transaction {
   id: string;
   object_id: string | null;
+  invoice_id?: string | null; // NEW: Link to invoice
   type: TransactionType;
   amount: number;
   requested_amount?: number | null;
@@ -208,6 +209,7 @@ export interface Invoice {
   number: number;
   cp_id: string | null;
   client_id: string | null;
+  object_id?: string | null; // NEW: Link to Object
   total_amount: number;
   has_vat: boolean;
   status: 'draft' | 'sent' | 'paid' | 'cancelled';
@@ -217,6 +219,7 @@ export interface Invoice {
   
   // Joins
   client?: { name: string; requisites: string };
+  object?: { name: string }; // NEW
   commercial_proposal?: { number: number };
   items?: InvoiceItem[];
   creator?: { full_name: string };
