@@ -81,18 +81,19 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
             .single();
           
           if (cp) {
-            setTitle(cp.title || '');
-            setLinkedClient(cp.client);
+            const cpData = cp as any;
+            setTitle(cpData.title || '');
+            setLinkedClient(cpData.client);
             
             // Try to load linked object from CP first, fallback to finding via client
-            if (cp.object_id) {
-                setSelectedObjectId(cp.object_id);
+            if (cpData.object_id) {
+                setSelectedObjectId(cpData.object_id);
             } else if (objRes.data) {
-                const relatedObject = objRes.data.find((o: any) => o.client?.id === cp.client_id);
+                const relatedObject = objRes.data.find((o: any) => o.client?.id === cpData.client_id);
                 if (relatedObject) setSelectedObjectId(relatedObject.id);
             }
             
-            setHasVat(cp.has_vat || false);
+            setHasVat(cpData.has_vat || false);
 
             const { data: items } = await supabase.from('cp_items').select('*').eq('cp_id', proposalId);
 
@@ -225,10 +226,10 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
       };
 
       if (cpId) {
-        await supabase.from('commercial_proposals').update(headerPayload).eq('id', cpId);
+        await supabase.from('commercial_proposals').update(headerPayload as any).eq('id', cpId);
         await supabase.from('cp_items').delete().eq('cp_id', cpId);
       } else {
-        const { data, error } = await supabase.from('commercial_proposals').insert([headerPayload]).select('id').single();
+        const { data, error } = await supabase.from('commercial_proposals').insert([headerPayload as any]).select('id').single();
         if (error) throw error;
         cpId = data.id;
       }
