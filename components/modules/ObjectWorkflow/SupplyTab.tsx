@@ -10,7 +10,7 @@ interface SupplyTabProps {
 
 export const SupplyTab: React.FC<SupplyTabProps> = ({ object }) => {
   const [loading, setLoading] = useState(false);
-  const [planItems, setPlanItems] = useState<any[]>([]); // From accepted CPs
+  const [planItems, setPlanItems] = useState<any[]>([]); // From Invoices (Draft, Sent, Paid)
   const [shippedItems, setShippedItems] = useState<any[]>([]); // From Inventory History
   const [search, setSearch] = useState('');
 
@@ -18,27 +18,36 @@ export const SupplyTab: React.FC<SupplyTabProps> = ({ object }) => {
     const fetchData = async () => {
       setLoading(true);
       try {
-        // 1. Fetch Plan (Accepted CPs items)
-        const { data: cpData } = await supabase
-          .from('commercial_proposals')
-          .select('id, items:cp_items(*, product:products(name, unit, category))')
-          .eq('client_id', object.client_id) 
-          .eq('status', 'accepted');
+        // 1. Fetch Plan (ALL Invoice Items for this object)
+        // We link invoices to objects usually via CP -> Client, but also check direct object_id link in transactions logic
+        // Ideally invoices should link to Objects directly, but current schema links to Client.
+        // We will fetch invoices for this client that are likely related.
+        // Or better: We assume standard flow creates Invoices for Client.
+        
+        // FIX: In a real system, Invoice should link to Object. 
+        // For now, we fetch Invoices for the Client of this Object.
+        
+        const { data: invData } = await supabase
+          .from('invoices')
+          .select('id, number, status, items:invoice_items(*, product:products(name, unit, category))')
+          .eq('client_id', object.client_id)
+          .neq('status', 'cancelled'); // Exclude cancelled
 
         const allPlan: any[] = [];
-        cpData?.forEach(cp => {
-            cp.items.forEach((item: any) => {
+        invData?.forEach(inv => {
+            inv.items.forEach((item: any) => {
                 allPlan.push({
+                    invoice_number: inv.number,
                     product_id: item.product_id,
-                    product_name: item.snapshot_name || item.product?.name || 'Unknown',
-                    unit: item.snapshot_unit || item.product?.unit || 'шт',
+                    product_name: item.name || item.product?.name || 'Unknown',
+                    unit: item.unit || item.product?.unit || 'шт',
                     quantity: item.quantity,
-                    category: item.snapshot_global_category || item.product?.category || 'General'
+                    category: item.product?.category || 'General'
                 });
             });
         });
 
-        // 2. Fetch Fact (Inventory History)
+        // 2. Fetch Fact (Inventory History -> Deployed to THIS object)
         const { data: historyData } = await supabase
           .from('inventory_history')
           .select('item_id, created_at, item:inventory_items(product_id, product:products(name, unit, category))')
@@ -46,14 +55,13 @@ export const SupplyTab: React.FC<SupplyTabProps> = ({ object }) => {
           .eq('to_object_id', object.id);
 
         const allShipped: any[] = [];
-        // Cast to any[] to bypass strict typescript checking on deep nested relations that might be missing in types
         (historyData as any[])?.forEach(h => {
             if (h.item && h.item.product) {
                 allShipped.push({
                     product_id: h.item.product_id,
                     product_name: h.item.product.name,
                     unit: h.item.product.unit,
-                    quantity: 1, 
+                    quantity: 1, // History records represent single actions usually, but check logic
                     category: h.item.product.category
                 });
             }
@@ -102,11 +110,15 @@ export const SupplyTab: React.FC<SupplyTabProps> = ({ object }) => {
         </div>
 
         <div className="bg-white rounded-[24px] border border-slate-200 overflow-hidden">
+            <div className="p-4 bg-blue-50 border-b border-blue-100 flex items-center gap-2 text-sm text-blue-800">
+                <span className="material-icons-round text-base">info</span>
+                <span>План рассчитывается на основе выставленных счетов клиенту (кроме отмененных).</span>
+            </div>
             <table className="w-full text-left text-sm">
                 <thead className="bg-slate-50 border-b border-slate-100">
                     <tr>
                         <th className="p-4 font-bold text-slate-500 uppercase text-xs">Наименование</th>
-                        <th className="p-4 font-bold text-slate-500 uppercase text-xs text-center w-24">План (КП)</th>
+                        <th className="p-4 font-bold text-slate-500 uppercase text-xs text-center w-24">План (Счета)</th>
                         <th className="p-4 font-bold text-slate-500 uppercase text-xs text-center w-24">Отгружено</th>
                         <th className="p-4 font-bold text-slate-500 uppercase text-xs text-center w-24">Остаток</th>
                         <th className="p-4 font-bold text-slate-500 uppercase text-xs w-32">Статус</th>
@@ -119,6 +131,7 @@ export const SupplyTab: React.FC<SupplyTabProps> = ({ object }) => {
                         supplySummary.map((row, idx) => {
                             const balance = row.planned - row.shipped;
                             const isComplete = row.shipped >= row.planned && row.planned > 0;
+                            const percent = row.planned > 0 ? (row.shipped / row.planned) * 100 : 0;
                             
                             return (
                                 <tr key={idx} className="hover:bg-slate-50 transition-colors">
@@ -141,8 +154,11 @@ export const SupplyTab: React.FC<SupplyTabProps> = ({ object }) => {
                                         ) : isComplete ? (
                                             <Badge color="emerald">Комплект</Badge>
                                         ) : (
-                                            <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                                                <div className="bg-blue-500 h-full transition-all" style={{ width: `${Math.min(100, (row.shipped / row.planned) * 100)}%` }}></div>
+                                            <div className="flex items-center gap-2">
+                                                <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden flex-grow">
+                                                    <div className="bg-blue-500 h-full transition-all" style={{ width: `${Math.min(100, percent)}%` }}></div>
+                                                </div>
+                                                <span className="text-[9px] font-bold text-slate-400">{Math.round(percent)}%</span>
                                             </div>
                                         )}
                                     </td>

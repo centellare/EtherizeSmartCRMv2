@@ -15,6 +15,7 @@ interface ItemFormProps {
 export const ItemForm: React.FC<ItemFormProps> = ({ mode, selectedItem, products = [], profile, onSuccess }) => {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({ product_id: '', serial_number: '', quantity: '1', purchase_price: '' });
+  const [splitBulk, setSplitBulk] = useState(false); // New: Split into individual items
   
   // Warning State for ConfirmModal
   const [warningOpen, setWarningOpen] = useState(false);
@@ -78,7 +79,13 @@ export const ItemForm: React.FC<ItemFormProps> = ({ mode, selectedItem, products
         return;
     }
 
-    if (requiresSerial && !hasSerialEntered) {
+    // New validation for bulk split
+    if (splitBulk && (qty <= 1 || qty > 100)) { // Safety limit 100
+        alert("Для разбиения партии количество должно быть больше 1 и не более 100.");
+        return;
+    }
+
+    if (requiresSerial && !hasSerialEntered && !splitBulk) {
         setPendingKeepOpen(keepOpen);
         setWarningOpen(true);
         return; 
@@ -106,36 +113,65 @@ export const ItemForm: React.FC<ItemFormProps> = ({ mode, selectedItem, products
         onSuccess();
 
       } else {
-        // Create new stock item (add_item OR receive_supply)
-        const { data, error } = await supabase.from('inventory_items').insert([{
+        // Create new stock item(s)
+        const commonData = {
             product_id: formData.product_id,
-            serial_number: formData.serial_number || null,
-            quantity: qty,
             purchase_price: parseFloat(formData.purchase_price) || 0,
             status: 'in_stock',
             assigned_to_id: profile.id
-        }]).select('id').single();
-        
-        if (error) throw error;
+        };
 
-        if (data) {
-            const comment = mode === 'receive_supply' 
-                ? `Приемка по заказу (дефицит). Кол-во: ${qty}` 
-                : `Приемка на склад. Кол-во: ${qty}`;
+        if (splitBulk && qty > 1) {
+            // Create multiple items with quantity 1
+            const itemsToInsert = Array.from({ length: Math.floor(qty) }).map(() => ({
+                ...commonData,
+                quantity: 1,
+                serial_number: null // Will be entered later
+            }));
+            
+            const { data, error } = await supabase.from('inventory_items').insert(itemsToInsert).select('id');
+            if (error) throw error;
 
-            await supabase.from('inventory_history').insert([{
-                item_id: data.id,
-                action_type: 'receive',
-                created_by: profile.id,
-                comment: comment
-            }]);
-
-            // If coming from Supply Orders, close the order item
-            if (mode === 'receive_supply' && selectedItem?.id) {
-                await supabase.from('supply_order_items')
-                    .update({ status: 'received' })
-                    .eq('id', selectedItem.id);
+            // Log history for bulk
+            if (data) {
+                const historyLog = data.map(item => ({
+                    item_id: item.id,
+                    action_type: 'receive',
+                    created_by: profile.id,
+                    comment: `Массовая приемка (разбиение). Партия ${qty} шт.`
+                }));
+                await supabase.from('inventory_history').insert(historyLog);
             }
+
+        } else {
+            // Standard single item (bulk qty or 1 with SN)
+            const { data, error } = await supabase.from('inventory_items').insert([{
+                ...commonData,
+                quantity: qty,
+                serial_number: formData.serial_number || null
+            }]).select('id').single();
+            
+            if (error) throw error;
+
+            if (data) {
+                const comment = mode === 'receive_supply' 
+                    ? `Приемка по заказу (дефицит). Кол-во: ${qty}` 
+                    : `Приемка на склад. Кол-во: ${qty}`;
+
+                await supabase.from('inventory_history').insert([{
+                    item_id: data.id,
+                    action_type: 'receive',
+                    created_by: profile.id,
+                    comment: comment
+                }]);
+            }
+        }
+
+        // If coming from Supply Orders, close the order item
+        if (mode === 'receive_supply' && selectedItem?.id) {
+            await supabase.from('supply_order_items')
+                .update({ status: 'received' })
+                .eq('id', selectedItem.id);
         }
         
         if (keepOpen && mode === 'add_item') {
@@ -173,14 +209,6 @@ export const ItemForm: React.FC<ItemFormProps> = ({ mode, selectedItem, products
                 </div>
             )}
             
-            <Input 
-                label={selectedProduct?.has_serial ? "Серийный номер (Требуется по регламенту)" : "Серийный номер (S/N)"}
-                value={formData.serial_number} 
-                onChange={(e: any) => handleSerialChange(e.target.value)} 
-                placeholder={selectedProduct?.has_serial ? "Введите S/N" : "Не обязательно"}
-                className={selectedProduct?.has_serial && !formData.serial_number ? "border-amber-400 bg-amber-50/30" : ""}
-            />
-
             <div className="grid grid-cols-2 gap-4">
                 <div className="relative">
                     <Input 
@@ -198,7 +226,26 @@ export const ItemForm: React.FC<ItemFormProps> = ({ mode, selectedItem, products
                 </div>
                 <Input label="Цена закупки (факт)" type="number" step="0.01" required value={formData.purchase_price} onChange={(e: any) => setFormData({...formData, purchase_price: e.target.value})} />
             </div>
+
+            {mode !== 'edit_item' && parseFloat(formData.quantity) > 1 && (
+                <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl cursor-pointer">
+                    <input type="checkbox" checked={splitBulk} onChange={(e) => setSplitBulk(e.target.checked)} className="w-5 h-5 rounded text-blue-600 focus:ring-blue-500" />
+                    <div className="flex flex-col">
+                        <span className="text-sm font-bold text-slate-800">Разбить на отдельные записи</span>
+                        <span className="text-[10px] text-slate-500">Удобно для последующего ввода S/N для каждой единицы</span>
+                    </div>
+                </label>
+            )}
             
+            <Input 
+                label={selectedProduct?.has_serial ? "Серийный номер (Требуется)" : "Серийный номер (S/N)"}
+                value={formData.serial_number} 
+                onChange={(e: any) => handleSerialChange(e.target.value)} 
+                placeholder={selectedProduct?.has_serial ? "Введите S/N" : "Не обязательно"}
+                disabled={splitBulk}
+                className={selectedProduct?.has_serial && !formData.serial_number && !splitBulk ? "border-amber-400 bg-amber-50/30" : ""}
+            />
+
             <div className="pt-2 flex gap-3">
                 {mode === 'add_item' ? (
                     <>

@@ -41,8 +41,8 @@ const InventoryList: React.FC<InventoryListProps> = ({
     let list = items;
     // Basic Tab Filter
     if (activeTab === 'stock') {
-        // Show in_stock AND maybe 'maintenance' if needed, but primarily in_stock
-        list = list.filter(i => i.status === 'in_stock');
+        // Show in_stock AND reserved
+        list = list.filter(i => i.status === 'in_stock' || i.status === 'reserved');
     } else if (activeTab === 'warranty') {
         // Show deployed/warranty items
         list = list.filter(i => i.status === 'deployed');
@@ -78,7 +78,8 @@ const InventoryList: React.FC<InventoryListProps> = ({
     
     const groups: Record<string, { 
       product: any, 
-      totalQty: number, 
+      totalQty: number,
+      reservedQty: number, 
       totalValue: number, 
       items: InventoryItem[] 
     }> = {};
@@ -89,6 +90,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
         groups[pId] = {
           product: item.product,
           totalQty: 0,
+          reservedQty: 0,
           totalValue: 0,
           items: []
         };
@@ -98,6 +100,9 @@ const InventoryList: React.FC<InventoryListProps> = ({
       
       groups[pId].items.push(item);
       groups[pId].totalQty += item.quantity;
+      if (item.status === 'reserved') {
+          groups[pId].reservedQty += item.quantity;
+      }
       groups[pId].totalValue += (item.quantity * unitPrice);
     });
 
@@ -232,7 +237,8 @@ const InventoryList: React.FC<InventoryListProps> = ({
                   <th className="p-4 w-12"></th>
                   <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Номенклатура</th>
                   <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Артикул / Тип</th>
-                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Остаток</th>
+                  <th className="p-4 text-xs font-bold text-slate-400 uppercase text-center">Всего</th>
+                  <th className="p-4 text-xs font-bold text-slate-400 uppercase text-center text-blue-600">В резерве</th>
                   <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Общая стоимость</th>
                   <th className="p-4 text-[10px] font-bold text-slate-400 uppercase text-right">Действия</th>
                 </tr>
@@ -240,7 +246,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
               <tbody className="divide-y divide-slate-100">
                 {stockGroups.length === 0 ? (
                     <tr>
-                        <td colSpan={6} className="p-10 text-center text-slate-400">
+                        <td colSpan={7} className="p-10 text-center text-slate-400">
                             {items.length > 0 ? 'Товары скрыты фильтрами' : 'Склад пуст'}
                         </td>
                     </tr>
@@ -269,8 +275,15 @@ const InventoryList: React.FC<InventoryListProps> = ({
                                     <span className="text-[10px] text-slate-400">{group.product?.type}</span>
                                 </div>
                             </td>
-                            <td className="p-4">
+                            <td className="p-4 text-center">
                                 <Badge color={group.totalQty > 0 ? 'emerald' : 'slate'}>{group.totalQty} {group.product?.unit}</Badge>
+                            </td>
+                            <td className="p-4 text-center">
+                                {group.reservedQty > 0 ? (
+                                    <Badge color="blue">{group.reservedQty} {group.product?.unit}</Badge>
+                                ) : (
+                                    <span className="text-slate-300">-</span>
+                                )}
                             </td>
                             <td className="p-4">
                                 <span className="font-bold text-slate-700">{formatCurrency(group.totalValue)}</span>
@@ -286,7 +299,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
                           {/* Expanded Items (Batches) */}
                           {isExpanded && (
                             <tr className="bg-slate-50/50">
-                                <td colSpan={6} className="p-0">
+                                <td colSpan={7} className="p-0">
                                     <div className="px-4 pb-4">
                                         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-inner">
                                             <table className="w-full text-left">
@@ -294,6 +307,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
                                                     <tr>
                                                         <th className="p-3 pl-6">Дата прихода</th>
                                                         <th className="p-3">Кол-во</th>
+                                                        <th className="p-3">Статус</th>
                                                         <th className="p-3">Цена закупки</th>
                                                         <th className="p-3">Серийный номер</th>
                                                         <th className="p-3 text-right">Действия</th>
@@ -303,6 +317,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
                                                     {group.items.map(item => {
                                                         const unitPrice = item.purchase_price || item.product?.base_price || 0;
                                                         const isInCart = cart.some(c => c.id === item.id);
+                                                        const isReserved = item.status === 'reserved';
                                                         
                                                         return (
                                                             <tr key={item.id} className="hover:bg-blue-50/20 transition-colors">
@@ -310,6 +325,18 @@ const InventoryList: React.FC<InventoryListProps> = ({
                                                                     {formatDate(item.created_at)}
                                                                 </td>
                                                                 <td className="p-3 text-sm font-bold text-slate-800">{item.quantity} {item.product?.unit}</td>
+                                                                <td className="p-3">
+                                                                    {isReserved ? (
+                                                                        <div className="flex flex-col">
+                                                                            <span className="text-[9px] font-bold text-blue-600 uppercase bg-blue-50 px-1.5 py-0.5 rounded w-fit">Резерв</span>
+                                                                            {item.invoice && (
+                                                                                <span className="text-[9px] text-slate-400">Счет №{item.invoice.number}</span>
+                                                                            )}
+                                                                        </div>
+                                                                    ) : (
+                                                                        <span className="text-[9px] font-bold text-emerald-600 uppercase bg-emerald-50 px-1.5 py-0.5 rounded w-fit">Свободен</span>
+                                                                    )}
+                                                                </td>
                                                                 <td className="p-3 text-xs font-mono">{formatCurrency(unitPrice)}</td>
                                                                 <td className="p-3">
                                                                     {item.serial_number ? 
@@ -318,9 +345,11 @@ const InventoryList: React.FC<InventoryListProps> = ({
                                                                 </td>
                                                                 <td className="p-3 text-right">
                                                                     <div className="flex justify-end gap-1">
-                                                                        <button onClick={() => isInCart ? onRemoveFromCart(item.id) : onAddToCart(item)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isInCart ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500 hover:bg-blue-50 hover:text-blue-600'}`} title={isInCart ? "Убрать из отгрузки" : "Добавить к отгрузке"}>
-                                                                            <span className="material-icons-round text-sm">{isInCart ? 'remove_shopping_cart' : 'add_shopping_cart'}</span>
-                                                                        </button>
+                                                                        {!isReserved && (
+                                                                            <button onClick={() => isInCart ? onRemoveFromCart(item.id) : onAddToCart(item)} className={`w-8 h-8 rounded-lg flex items-center justify-center transition-all ${isInCart ? 'bg-blue-100 text-blue-600' : 'bg-slate-100 text-slate-500 hover:bg-blue-50 hover:text-blue-600'}`} title={isInCart ? "Убрать из отгрузки" : "Добавить к отгрузке"}>
+                                                                                <span className="material-icons-round text-sm">{isInCart ? 'remove_shopping_cart' : 'add_shopping_cart'}</span>
+                                                                            </button>
+                                                                        )}
                                                                         {isAdmin && (
                                                                             <>
                                                                                 <button onClick={() => onEdit(item)} className="w-8 h-8 rounded-lg bg-slate-50 text-slate-400 hover:bg-blue-50 hover:text-blue-600 flex items-center justify-center transition-all" title="Редактировать партию">

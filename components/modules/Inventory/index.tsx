@@ -33,7 +33,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
   const [cart, setCart] = useState<CartItem[]>([]);
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [modalMode, setModalMode] = useState<'add_item' | 'deploy_item' | 'replace_item' | 'edit_item' | 'return_item'>('add_item');
+  const [modalMode, setModalMode] = useState<'add_item' | 'deploy_item' | 'replace_item' | 'edit_item' | 'return_item' | 'deploy_invoice'>('add_item');
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
@@ -45,7 +45,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
       const [prodRes, itemsRes, objRes] = await Promise.all([
         supabase.from('products').select('*').eq('is_archived', false).order('name'),
         supabase.from('inventory_items')
-          .select('*, product:products(*), object:objects(id, name)')
+          .select('*, product:products(*), object:objects(id, name), invoice:invoices(number)')
           .is('deleted_at', null)
           .order('created_at', { ascending: false }),
         supabase.from('objects').select('id, name').is('is_deleted', false).order('name')
@@ -53,7 +53,6 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
 
       if (prodRes.data) setProducts(prodRes.data as unknown as Product[]);
       if (itemsRes.data) {
-          // Cast data safely to InventoryItem[], assuming application logic ensures data integrity
           setItems(itemsRes.data as unknown as InventoryItem[]);
       }
       if (objRes.data) setObjects(objRes.data);
@@ -139,6 +138,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
         </div>
         {activeTab === 'stock' && (
           <div className="flex gap-2">
+            <Button variant="secondary" icon="receipt_long" onClick={() => openModal('deploy_invoice')}>Отгрузка по счету</Button>
             <Button icon="download" onClick={() => openModal('add_item')}>Принять на склад</Button>
           </div>
         )}
@@ -176,7 +176,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
       <InventoryModal 
         isOpen={isModalOpen} 
         onClose={() => setIsModalOpen(false)} 
-        mode={modalMode}
+        mode={modalMode as any}
         products={products}
         objects={objects}
         selectedItem={selectedItem}

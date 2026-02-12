@@ -7,11 +7,12 @@ import { ItemForm } from './modals/ItemForm';
 import { DeployForm } from './modals/DeployForm';
 import { ReturnForm } from './modals/ReturnForm';
 import { ReplaceForm } from './modals/ReplaceForm';
+import { DeployInvoiceForm } from './modals/DeployInvoiceForm';
 
 interface InventoryModalProps {
   isOpen: boolean;
   onClose: () => void;
-  mode: 'add_item' | 'deploy_item' | 'replace_item' | 'edit_item' | 'return_item' | 'receive_supply';
+  mode: 'add_item' | 'deploy_item' | 'replace_item' | 'edit_item' | 'return_item' | 'receive_supply' | 'deploy_invoice';
   products?: Product[];
   objects: any[];
   items: InventoryItem[];
@@ -34,6 +35,7 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
           case 'deploy_item': return isBulkDeploy ? `Массовая отгрузка (${cartItems.length} поз.)` : 'Отгрузка на объект';
           case 'replace_item': return 'Гарантийная замена';
           case 'return_item': return 'Возврат на склад';
+          case 'deploy_invoice': return 'Сборка и отгрузка по Счету';
       }
   };
 
@@ -65,6 +67,14 @@ const InventoryModal: React.FC<InventoryModalProps> = ({
                 profile={profile}
                 onSuccess={() => handleSuccess()}
              />
+        )}
+
+        {mode === 'deploy_invoice' && (
+            <DeployInvoiceForm 
+                profile={profile}
+                onSuccess={() => handleSuccess()}
+                onClose={onClose}
+            />
         )}
 
         {mode === 'return_item' && selectedItem && (

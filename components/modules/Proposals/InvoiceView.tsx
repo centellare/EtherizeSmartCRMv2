@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Button } from '../../ui';
+import { Button, Toast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
 
 interface InvoiceViewProps {
@@ -15,23 +15,72 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
   const [settings, setSettings] = useState<any>(null);
   const [template, setTemplate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [statusLoading, setStatusLoading] = useState(false);
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+
+  const fetchData = async () => {
+    setLoading(true);
+    const { data: inv } = await supabase.from('invoices').select('*, client:clients(*), creator:profiles(full_name)').eq('id', invoiceId).single();
+    const { data: invItems } = await supabase.from('invoice_items').select('*').eq('invoice_id', invoiceId);
+    const { data: set } = await supabase.from('company_settings').select('*').limit(1).maybeSingle();
+    const { data: tpl } = await supabase.from('document_templates').select('*').eq('type', 'invoice').limit(1).maybeSingle();
+
+    setInvoice(inv);
+    setItems(invItems || []);
+    setSettings(set || { company_name: 'Моя Компания', requisites: '', bank_details: '' });
+    setTemplate(tpl || { header_text: '', footer_text: '', signatory_1: 'Руководитель', signatory_2: 'Бухгалтер' });
+    setLoading(false);
+  };
 
   useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      const { data: inv } = await supabase.from('invoices').select('*, client:clients(*), creator:profiles(full_name)').eq('id', invoiceId).single();
-      const { data: invItems } = await supabase.from('invoice_items').select('*').eq('invoice_id', invoiceId);
-      const { data: set } = await supabase.from('company_settings').select('*').limit(1).maybeSingle();
-      const { data: tpl } = await supabase.from('document_templates').select('*').eq('type', 'invoice').limit(1).maybeSingle();
-
-      setInvoice(inv);
-      setItems(invItems || []);
-      setSettings(set || { company_name: 'Моя Компания', requisites: '', bank_details: '' });
-      setTemplate(tpl || { header_text: '', footer_text: '', signatory_1: 'Руководитель', signatory_2: 'Бухгалтер' });
-      setLoading(false);
-    };
     fetchData();
   }, [invoiceId]);
+
+  const handleStatusChange = async (newStatus: string) => {
+      setStatusLoading(true);
+      try {
+          // 1. Update Invoice Status
+          await supabase.from('invoices').update({ status: newStatus }).eq('id', invoiceId);
+          
+          // 2. Reservation Logic (If sent/paid and was draft)
+          if ((newStatus === 'sent' || newStatus === 'paid') && invoice.status === 'draft') {
+              // Trigger reservation logic
+              // Loop through invoice items and try to find free 'in_stock' items to reserve
+              for (const item of items) {
+                  if (!item.product_id) continue;
+                  
+                  // Find available items
+                  const { data: available } = await supabase.from('inventory_items')
+                      .select('id')
+                      .eq('product_id', item.product_id)
+                      .eq('status', 'in_stock')
+                      .is('reserved_for_invoice_id', null)
+                      .is('deleted_at', null)
+                      .limit(item.quantity); // Grab only needed amount
+                  
+                  if (available && available.length > 0) {
+                      const ids = available.map(a => a.id);
+                      // Update them to Reserved
+                      await supabase.from('inventory_items')
+                          .update({ 
+                              status: 'reserved', 
+                              reserved_for_invoice_id: invoiceId 
+                          })
+                          .in('id', ids);
+                  }
+              }
+              setToast({ message: 'Счет отправлен. Товар зарезервирован.', type: 'success' });
+          } else {
+              setToast({ message: 'Статус счета обновлен', type: 'success' });
+          }
+
+          fetchData();
+      } catch (e: any) {
+          setToast({ message: 'Ошибка: ' + e.message, type: 'error' });
+      } finally {
+          setStatusLoading(false);
+      }
+  };
 
   const handlePrint = () => {
     const content = document.getElementById('invoice-printable');
@@ -64,14 +113,44 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
 
   return (
     <div className="h-full flex flex-col bg-slate-50">
+        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+        
         <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center shadow-sm sticky top-0 z-50">
-            <Button variant="secondary" icon="arrow_back" onClick={onClose}>Назад</Button>
+            <div className="flex items-center gap-4">
+                <Button variant="secondary" icon="arrow_back" onClick={onClose}>Назад</Button>
+                {invoice.status === 'draft' && (
+                    <Button 
+                        onClick={() => handleStatusChange('sent')} 
+                        loading={statusLoading}
+                        className="bg-blue-600 hover:bg-blue-700 text-white"
+                        icon="send"
+                    >
+                        Отправить и Зарезервировать
+                    </Button>
+                )}
+                {invoice.status === 'sent' && (
+                    <Button 
+                        onClick={() => handleStatusChange('paid')} 
+                        loading={statusLoading}
+                        className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                        icon="check_circle"
+                    >
+                        Отметить оплату
+                    </Button>
+                )}
+            </div>
             <Button icon="print" onClick={handlePrint}>Печать</Button>
         </div>
 
         <div className="flex-grow overflow-y-auto p-8">
-            <div id="invoice-printable" className="bg-white max-w-[210mm] mx-auto p-[15mm] shadow-lg text-black text-sm">
-                
+            <div id="invoice-printable" className="bg-white max-w-[210mm] mx-auto p-[15mm] shadow-lg text-black text-sm relative">
+                {/* Status Stamp */}
+                {invoice.status !== 'draft' && (
+                    <div className={`absolute top-10 right-10 border-4 ${invoice.status === 'paid' ? 'border-emerald-600 text-emerald-600' : 'border-blue-600 text-blue-600'} rounded-xl px-4 py-2 font-bold text-2xl uppercase opacity-80 transform rotate-12 pointer-events-none`}>
+                        {invoice.status === 'sent' ? 'ОТПРАВЛЕН' : invoice.status === 'paid' ? 'ОПЛАЧЕН' : invoice.status}
+                    </div>
+                )}
+
                 {/* Bank Header */}
                 <table className="w-full mb-6 border border-black collapse">
                     <tbody>

@@ -118,7 +118,7 @@ export interface Product {
   markup_percent?: number; 
 }
 
-export type InventoryItemStatus = 'in_stock' | 'deployed' | 'maintenance' | 'scrapped';
+export type InventoryItemStatus = 'in_stock' | 'deployed' | 'maintenance' | 'scrapped' | 'reserved';
 
 export interface InventoryItem {
   id: string;
@@ -131,11 +131,13 @@ export interface InventoryItem {
   assigned_to_id?: string | null;
   warranty_start?: string | null;
   warranty_end?: string | null;
+  reserved_for_invoice_id?: string | null; // NEW: Reservation Link
   created_at: string;
   
   // Joins
   product?: Product;
   object?: { id: string; name: string };
+  invoice?: { number: number };
   
   // Legacy support placeholders (to prevent crash before full migration)
   catalog_id?: string;
@@ -209,6 +211,7 @@ export interface Invoice {
   total_amount: number;
   has_vat: boolean;
   status: 'draft' | 'sent' | 'paid' | 'cancelled';
+  shipping_status?: 'none' | 'partial' | 'shipped'; // NEW: Shipping Tracking
   created_at: string;
   created_by: string;
   
@@ -228,6 +231,9 @@ export interface InvoiceItem {
   unit: string;
   price: number;
   total: number;
+  
+  // Helpers for UI
+  product?: Product;
 }
 
 export interface SupplyOrder {
