@@ -83,7 +83,11 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
           if (cp) {
             setTitle(cp.title || '');
             setLinkedClient(cp.client);
-            if (objRes.data) {
+            
+            // Try to load linked object from CP first, fallback to finding via client
+            if (cp.object_id) {
+                setSelectedObjectId(cp.object_id);
+            } else if (objRes.data) {
                 const relatedObject = objRes.data.find((o: any) => o.client?.id === cp.client_id);
                 if (relatedObject) setSelectedObjectId(relatedObject.id);
             }
@@ -132,7 +136,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
               setLinkedClient(obj.client);
               if (!title) setTitle(`КП для объекта "${obj.name}"`);
           } else if (selectedObjectId !== '') { 
-              setLinkedClient(null);
+              // Don't auto-clear if it was set by editing load, but logic above handles it
           }
       }
   }, [selectedObjectId, objects]);
@@ -212,8 +216,9 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
       const headerPayload = {
         title: title || null,
         client_id: linkedClient.id,
+        object_id: selectedObjectId || null, // SAVING OBJECT ID
         status: 'draft',
-        exchange_rate: 1, // ВСЕГДА 1 ДЛЯ BYN
+        exchange_rate: 1, 
         has_vat: hasVat,
         total_amount_byn: totals.total,
         created_by: profile.id
@@ -251,9 +256,9 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
       onSuccess();
     } catch (e: any) {
       console.error(e);
-      if (e.code === 'PGRST204' || e.message?.includes('manual_markup') || e.message?.includes('snapshot')) {
+      if (e.code === 'PGRST204' || e.message?.includes('manual_markup') || e.message?.includes('snapshot') || e.message?.includes('object_id')) {
         setToast({ 
-            message: 'Ошибка БД: Устаревшая структура. Выполните скрипт в разделе "База данных"!', 
+            message: 'Ошибка БД: Выполните скрипт в разделе "База данных"!', 
             type: 'error' 
         });
       } else {

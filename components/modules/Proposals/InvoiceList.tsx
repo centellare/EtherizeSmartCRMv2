@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Badge, Input, ConfirmModal, Toast } from '../../ui';
+import { Badge, Input, Select, ConfirmModal, Toast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
 
 interface InvoiceListProps {
@@ -46,14 +46,29 @@ const InvoiceList: React.FC<InvoiceListProps> = ({ onView, onViewCP }) => {
       if (!deleteConfirm.id) return;
       setLoading(true);
       try {
-          // Cascade delete is usually set on DB, but explicit deletion is safer for now
+          // 1. Delete associated transactions (Cascade manually)
+          // Find transactions linked to this invoice
+          const { data: trans } = await supabase.from('transactions').select('id').eq('invoice_id', deleteConfirm.id);
+          
+          if (trans && trans.length > 0) {
+              const tIds = trans.map(t => t.id);
+              // Delete payments for these transactions first
+              await supabase.from('transaction_payments').delete().in('transaction_id', tIds);
+              // Delete transactions
+              await supabase.from('transactions').delete().in('id', tIds);
+          }
+
+          // 2. Delete invoice items
           await supabase.from('invoice_items').delete().eq('invoice_id', deleteConfirm.id);
+          
+          // 3. Delete invoice
           const { error } = await supabase.from('invoices').delete().eq('id', deleteConfirm.id);
           if (error) throw error;
           
           setToast({ message: 'Счет удален', type: 'success' });
           fetchData();
       } catch (e: any) {
+          console.error(e);
           setToast({ message: 'Ошибка: ' + e.message, type: 'error' });
       } finally {
           setLoading(false);
@@ -136,7 +151,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({ onView, onViewCP }) => {
         onClose={() => setDeleteConfirm({ open: false, id: null })}
         onConfirm={handleDelete}
         title="Удаление счета"
-        message="Вы уверены? Счет будет удален безвозвратно."
+        message="Вы уверены? Счет будет удален безвозвратно вместе со связанными транзакциями."
         confirmVariant="danger"
         loading={loading}
       />
