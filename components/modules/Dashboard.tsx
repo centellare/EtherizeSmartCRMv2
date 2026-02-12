@@ -7,196 +7,310 @@ import { formatDate, getMinskISODate } from '../../lib/dateUtils';
 const formatCurrency = (val: number) => 
   new Intl.NumberFormat('ru-BY', { style: 'currency', currency: 'BYN', maximumFractionDigits: 0 }).format(val);
 
-// --- VISUALIZATION COMPONENTS ---
+// --- NEW WIDGETS ---
 
-// 1. Simple SVG Line Chart for Finances
-const FinancialTrendChart: React.FC<{ transactions: any[] }> = ({ transactions }) => {
+// 1. Cash Flow Forecast (Weekly)
+const CashFlowForecast: React.FC<{ transactions: any[] }> = ({ transactions }) => {
   const data = useMemo(() => {
-    const last6Months = Array.from({ length: 6 }, (_, i) => {
-      const d = new Date();
-      d.setMonth(d.getMonth() - (5 - i));
+    const today = new Date();
+    // Generate next 4 weeks buckets
+    const weeks = Array.from({ length: 4 }, (_, i) => {
+      const start = new Date(today);
+      start.setDate(today.getDate() + (i * 7));
+      const end = new Date(start);
+      end.setDate(start.getDate() + 6);
       return { 
-        month: d.toLocaleString('ru', { month: 'short' }), 
-        monthIdx: d.getMonth(), 
-        year: d.getFullYear(),
-        income: 0, 
-        expense: 0 
+        label: `${formatDate(start).slice(0, 5)} - ${formatDate(end).slice(0, 5)}`,
+        startStr: getMinskISODate(start),
+        endStr: getMinskISODate(end),
+        income: 0,
+        expense: 0
       };
     });
 
     transactions.forEach(t => {
-      const d = new Date(t.created_at);
-      const item = last6Months.find(m => m.monthIdx === d.getMonth() && m.year === d.getFullYear());
-      if (item) {
-        if (t.type === 'income') item.income += (t.fact_amount || 0);
-        if (t.type === 'expense' && t.status === 'approved') item.expense += t.amount;
+      // Only Pending/Partial transactions with planned_date
+      if ((t.status === 'pending' || t.status === 'partial') && t.planned_date) {
+        const tDate = t.planned_date; // String YYYY-MM-DD
+        const targetWeek = weeks.find(w => tDate >= w.startStr && tDate <= w.endStr);
+        if (targetWeek) {
+          const amount = t.type === 'expense' ? (t.requested_amount || t.amount) : (t.amount - (t.fact_amount || 0));
+          if (t.type === 'income') targetWeek.income += amount;
+          else targetWeek.expense += amount;
+        }
       }
     });
-    return last6Months;
+
+    return weeks;
   }, [transactions]);
 
-  const hasData = data.some(d => d.income > 0 || d.expense > 0);
-
-  if (!hasData) {
-    return (
-      <div className="w-full h-[160px] flex flex-col items-center justify-center bg-slate-50/50 rounded-2xl border border-dashed border-slate-200 mt-4 opacity-50">
-        <span className="material-icons-round text-3xl text-slate-300 mb-2">bar_chart</span>
-        <p className="text-[10px] font-bold text-slate-400 uppercase">Нет данных для графика</p>
-      </div>
-    );
-  }
-
   const maxVal = Math.max(...data.map(d => Math.max(d.income, d.expense)), 1000);
-  const height = 120;
-  const width = 100; // percent
-
-  const getPoints = (key: 'income' | 'expense') => 
-    data.map((d, i) => `${(i / (data.length - 1)) * 100},${height - (d[key] / maxVal) * height}`).join(' ');
 
   return (
-    <div 
-      className="w-full h-[160px] relative mt-4 select-none cursor-pointer group"
-      onClick={() => window.location.hash = 'finances'}
-      title="Перейти в финансы"
-    >
-      <div className="absolute inset-0 flex items-end justify-between px-2 pb-6 opacity-20">
-        {data.map((d, i) => <div key={i} className="h-full w-[1px] bg-slate-400 border-l border-dashed"></div>)}
-      </div>
-      <svg className="w-full h-[140px] overflow-visible" preserveAspectRatio="none" viewBox={`0 0 100 ${height}`}>
-        {/* Income Line */}
-        <polyline points={getPoints('income')} fill="none" stroke="#10b981" strokeWidth="2" vectorEffect="non-scaling-stroke" />
-        <path d={`M0,${height} L${getPoints('income').replace(/ /g, ' L')} L100,${height} Z`} fill="url(#incomeGradient)" opacity="0.2" />
-        
-        {/* Expense Line */}
-        <polyline points={getPoints('expense')} fill="none" stroke="#ef4444" strokeWidth="2" strokeDasharray="4" vectorEffect="non-scaling-stroke" />
-        
-        <defs>
-          <linearGradient id="incomeGradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#10b981" />
-            <stop offset="100%" stopColor="#10b981" stopOpacity="0" />
-          </linearGradient>
-        </defs>
-      </svg>
-      <div className="flex justify-between mt-2 text-[10px] text-slate-400 font-bold uppercase px-1">
-        {data.map((d, i) => <span key={i}>{d.month}</span>)}
-      </div>
-      {/* Legend */}
-      <div className="absolute top-0 right-0 flex gap-4 text-[10px] font-bold bg-white/80 p-1 rounded-lg backdrop-blur-sm group-hover:bg-white transition-colors">
-        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-emerald-500"></div>Доход</div>
-        <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div>Расход</div>
-      </div>
-    </div>
-  );
-};
-
-// 2. CSS Grid Gantt Chart
-const ProjectTimeline: React.FC<{ objects: any[] }> = ({ objects }) => {
-  const timelineData = useMemo(() => {
-    return objects
-      .filter(o => o.current_status === 'in_work' || o.current_status === 'review_required')
-      .map(o => {
-        // Mock start dates for visualization if not present (in real app, use stages history)
-        const start = new Date(o.updated_at); 
-        start.setDate(start.getDate() - 14); // Mock: Started 2 weeks ago
-        const end = new Date(start);
-        end.setDate(end.getDate() + 30); // Mock: Ends in 2 weeks
-
-        const today = new Date();
-        const totalDuration = end.getTime() - start.getTime();
-        const elapsed = today.getTime() - start.getTime();
-        const progress = Math.min(100, Math.max(0, (elapsed / totalDuration) * 100));
-        
-        return { ...o, progress, daysLeft: Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) };
-      })
-      .sort((a,b) => a.daysLeft - b.daysLeft)
-      .slice(0, 5); // Show top 5 urgent
-  }, [objects]);
-
-  if (timelineData.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center py-10 opacity-30 italic text-center">
-        <span className="material-icons-round text-4xl mb-2">work_outline</span>
-        <p className="text-xs font-bold uppercase">Активных проектов нет</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-4 mt-2">
-      {timelineData.map(obj => (
-        <div 
-          key={obj.id} 
-          className="relative group cursor-pointer hover:bg-slate-50 p-2 rounded-xl transition-all active:scale-[0.99]"
-          onClick={() => window.location.hash = `objects/${obj.id}`}
-          title="Открыть карточку объекта"
-        >
-          <div className="flex justify-between text-xs mb-1">
-            <span className="font-bold text-slate-700 truncate max-w-[150px] group-hover:text-blue-600 transition-colors">{obj.name}</span>
-            <span className={`font-bold ${obj.daysLeft < 0 ? 'text-red-500' : obj.daysLeft < 7 ? 'text-amber-500' : 'text-slate-400'}`}>
-              {obj.daysLeft < 0 ? `Просрочено на ${Math.abs(obj.daysLeft)} дн` : `${obj.daysLeft} дн. осталось`}
-            </span>
-          </div>
-          <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden relative">
-            <div 
-              className={`h-full rounded-full transition-all duration-1000 ${
-                obj.daysLeft < 0 ? 'bg-red-500' : 
-                obj.progress > 80 ? 'bg-emerald-500' : 'bg-blue-500'
-              }`} 
-              style={{ width: `${obj.progress}%` }}
-            ></div>
-          </div>
-          <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider">{obj.current_stage}</p>
+    <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm h-full flex flex-col">
+      <div className="flex justify-between items-start mb-6">
+        <div>
+            <h4 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                <span className="material-icons-round text-blue-600">query_stats</span>
+                Прогноз потоков (Месяц)
+            </h4>
+            <p className="text-xs text-slate-500 mt-1">Ожидаемые поступления и выплаты по неделям</p>
         </div>
-      ))}
+        <div className="flex gap-4 text-[10px] font-bold uppercase">
+            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-emerald-400"></div>Приход</div>
+            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-rose-400"></div>Расход</div>
+        </div>
+      </div>
+
+      <div className="flex-grow flex items-end justify-between gap-4 h-[180px] pb-2">
+        {data.map((week, idx) => {
+            const net = week.income - week.expense;
+            return (
+                <div key={idx} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group cursor-pointer relative">
+                    {/* Tooltip */}
+                    <div className="absolute -top-12 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-800 text-white text-[10px] p-2 rounded-lg whitespace-nowrap z-10 pointer-events-none">
+                        Баланс недели: {formatCurrency(net)}
+                    </div>
+
+                    <div className="w-full flex gap-1 items-end h-full justify-center">
+                        {/* Income Bar */}
+                        <div 
+                            className="w-1/2 bg-emerald-400 rounded-t-lg transition-all hover:bg-emerald-500 relative min-h-[4px]"
+                            style={{ height: `${(week.income / maxVal) * 100}%` }}
+                        >
+                            {week.income > 0 && <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-slate-600">{formatCurrency(week.income)}</span>}
+                        </div>
+                        {/* Expense Bar */}
+                        <div 
+                            className="w-1/2 bg-rose-400 rounded-t-lg transition-all hover:bg-rose-500 relative min-h-[4px]"
+                            style={{ height: `${(week.expense / maxVal) * 100}%` }}
+                        >
+                            {week.expense > 0 && <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-slate-600">{formatCurrency(week.expense)}</span>}
+                        </div>
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-400">{week.label}</span>
+                </div>
+            );
+        })}
+      </div>
     </div>
   );
 };
 
-// 3. Workload Bar Chart
-const TeamWorkloadChart: React.FC<{ staff: any[], tasks: any[] }> = ({ staff, tasks }) => {
-  const workload = useMemo(() => {
-    return staff.map(s => {
-      const active = tasks.filter(t => t.assigned_to === s.id && t.status === 'pending').length;
-      return { name: s.full_name.split(' ')[0], count: active, role: s.role };
-    })
-    .filter(s => s.role !== 'admin' && s.role !== 'director') // Only executors
-    .sort((a,b) => b.count - a.count);
-  }, [staff, tasks]);
+// 2. Critical Projects (Top Risks)
+const CriticalProjects: React.FC<{ objects: any[], tasks: any[] }> = ({ objects, tasks }) => {
+    const risks = useMemo(() => {
+        return objects
+            .filter(o => o.current_status !== 'completed' && o.current_status !== 'frozen')
+            .map(o => {
+                const overdueTasks = tasks.filter(t => t.object_id === o.id && t.status === 'pending' && t.deadline && t.deadline < getMinskISODate()).length;
+                const isStuck = o.current_status === 'on_pause' || o.current_status === 'review_required';
+                
+                let score = 0;
+                if (o.current_status === 'review_required') score += 10;
+                if (o.current_status === 'on_pause') score += 5;
+                score += overdueTasks * 2;
 
-  const maxTasks = Math.max(...workload.map(w => w.count), 5);
+                return { ...o, score, overdueTasks };
+            })
+            .filter(o => o.score > 0)
+            .sort((a,b) => b.score - a.score)
+            .slice(0, 5);
+    }, [objects, tasks]);
 
-  if (workload.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-[140px] opacity-30 italic text-center">
-        <span className="material-icons-round text-4xl mb-2">people_outline</span>
-        <p className="text-xs font-bold uppercase">Нет данных по команде</p>
-      </div>
+        <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm h-full">
+            <h4 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+                <span className="material-icons-round text-amber-500">warning</span>
+                Требуют внимания
+            </h4>
+            <div className="space-y-3">
+                {risks.length === 0 ? (
+                    <p className="text-sm text-slate-400 italic">Все проекты идут по плану</p>
+                ) : (
+                    risks.map(o => (
+                        <div key={o.id} onClick={() => window.location.hash = `objects/${o.id}`} className="flex items-center justify-between p-3 rounded-2xl bg-slate-50 border border-slate-100 hover:border-amber-300 cursor-pointer transition-colors group">
+                            <div className="min-w-0 pr-2">
+                                <p className="text-sm font-bold text-slate-800 truncate group-hover:text-blue-600">{o.name}</p>
+                                <p className="text-[10px] text-slate-500 uppercase tracking-wide mt-0.5">{o.current_stage}</p>
+                            </div>
+                            <div className="flex flex-col items-end gap-1">
+                                {o.current_status === 'review_required' && <Badge color="red">ПРОВЕРКА</Badge>}
+                                {o.current_status === 'on_pause' && <Badge color="amber">ПАУЗА</Badge>}
+                                {o.overdueTasks > 0 && (
+                                    <span className="text-[10px] font-bold text-red-500 flex items-center">
+                                        <span className="material-icons-round text-[12px] mr-1">alarm_off</span>
+                                        {o.overdueTasks} задач
+                                    </span>
+                                )}
+                            </div>
+                        </div>
+                    ))
+                )}
+            </div>
+        </div>
     );
-  }
+};
+
+// 3. Sales Funnel Value
+const PipelineValue: React.FC<{ objects: any[], proposals: any[] }> = ({ objects, proposals }) => {
+    // We assume proposals (CPs) are linked to objects via client or object logic. 
+    // Simplified: Just showing active objects count per stage for now, but imagining value.
+    // In a real scenario, you'd join `commercial_proposals` to `objects` to get BYN value.
+    
+    const funnel = useMemo(() => {
+        const stages = [
+            { id: 'negotiation', label: 'Переговоры' },
+            { id: 'design', label: 'Проектирование' },
+            { id: 'mounting', label: 'Монтаж' }
+        ];
+        
+        return stages.map(s => {
+            const count = objects.filter(o => o.current_stage === s.id && o.current_status !== 'frozen').length;
+            // Mock value logic: Assuming average project is 20k BYN for viz purposes, or sum actual CPs if available
+            // Let's create a visual bar
+            return { ...s, count };
+        });
+    }, [objects]);
+
+    return (
+        <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm h-full flex flex-col justify-between">
+             <h4 className="text-lg font-bold text-slate-900 mb-2 flex items-center gap-2">
+                <span className="material-icons-round text-emerald-600">filter_alt</span>
+                Воронка (Активные)
+            </h4>
+            <div className="space-y-4">
+                {funnel.map((step, idx) => (
+                    <div key={step.id} className="relative">
+                        <div className="flex justify-between text-xs font-bold mb-1 z-10 relative">
+                            <span className="text-slate-600 uppercase">{step.label}</span>
+                            <span className="text-slate-900">{step.count} пр.</span>
+                        </div>
+                        <div className="h-8 bg-slate-100 rounded-lg overflow-hidden relative">
+                            <div 
+                                className={`h-full opacity-80 ${idx === 0 ? 'bg-blue-300' : idx === 1 ? 'bg-indigo-400' : 'bg-violet-500'}`} 
+                                style={{ width: `${Math.min(100, step.count * 15)}%`, minWidth: step.count > 0 ? '4px' : '0' }}
+                            ></div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+            <Button variant="ghost" onClick={() => window.location.hash = 'proposals'} className="w-full mt-4 text-xs">Перейти к КП</Button>
+        </div>
+    );
+};
+
+// --- DIRECTOR VIEW (Aggregated) ---
+
+const DirectorView: React.FC<{ tasks: any[], objects: any[], transactions: any[], staff: any[] }> = ({ tasks, objects, transactions, staff }) => {
+  // Financial Summary (Top Cards)
+  const financials = useMemo(() => {
+    const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
+    const expense = transactions.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0);
+    const pendingIncome = transactions.filter(t => t.type === 'income' && t.status !== 'approved').reduce((s, t) => s + t.amount, 0);
+    return { income, expense, profit: income - expense, pendingIncome };
+  }, [transactions]);
 
   return (
-    <div 
-      className="flex items-end gap-3 h-[140px] mt-4 pb-2 px-2 overflow-x-auto scrollbar-hide cursor-pointer"
-      onClick={() => window.location.hash = 'team'}
-      title="Перейти к команде"
-    >
-      {workload.map(w => (
-        <div key={w.name} className="flex flex-col items-center gap-2 group min-w-[40px] flex-1">
-          <span className="text-xs font-bold text-slate-700 group-hover:text-blue-600 transition-colors">{w.count}</span>
-          <div className="w-full bg-slate-100 rounded-t-lg relative overflow-hidden flex-grow flex items-end">
-            <div 
-              className="w-full bg-blue-500 rounded-t-lg transition-all duration-700 group-hover:bg-blue-600"
-              style={{ height: `${(w.count / maxTasks) * 100}%`, minHeight: '4px' }}
-            ></div>
-          </div>
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter truncate w-full text-center">{w.name}</span>
-        </div>
-      ))}
+    <div className="space-y-6">
+      {/* 1. High-Level KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+         <div className="bg-slate-900 text-white p-6 rounded-[28px] relative overflow-hidden group">
+            <div className="relative z-10">
+                <p className="text-[10px] font-bold uppercase tracking-widest opacity-60 mb-1">Чистая прибыль (Факт)</p>
+                <p className="text-3xl font-bold">{formatCurrency(financials.profit)}</p>
+                <div className="mt-4 flex items-center gap-2 text-xs opacity-80">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                    +{formatCurrency(financials.income)}
+                    <span className="w-2 h-2 rounded-full bg-rose-400 ml-2"></span>
+                    -{formatCurrency(financials.expense)}
+                </div>
+            </div>
+            <span className="material-icons-round absolute top-4 right-4 text-6xl opacity-10 group-hover:scale-110 transition-transform">account_balance</span>
+         </div>
+
+         <div className="bg-white border border-slate-200 p-6 rounded-[28px] relative overflow-hidden group hover:border-blue-300 transition-colors">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Ожидаем поступлений</p>
+            <p className="text-3xl font-bold text-blue-600">{formatCurrency(financials.pendingIncome)}</p>
+            <p className="text-xs text-slate-500 mt-2">По выставленным счетам</p>
+            <span className="material-icons-round absolute top-4 right-4 text-6xl text-blue-100 opacity-50 group-hover:text-blue-200 transition-colors">pending</span>
+         </div>
+
+         <div className="bg-white border border-slate-200 p-6 rounded-[28px] relative overflow-hidden group hover:border-amber-300 transition-colors cursor-pointer" onClick={() => window.location.hash = 'objects'}>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Активных проектов</p>
+            <p className="text-3xl font-bold text-slate-800">{objects.filter(o => o.current_status === 'in_work').length}</p>
+            <p className="text-xs text-amber-600 mt-2 font-bold">{objects.filter(o => o.current_status === 'review_required').length} требуют проверки</p>
+            <span className="material-icons-round absolute top-4 right-4 text-6xl text-slate-100 group-hover:text-amber-100 transition-colors">business</span>
+         </div>
+
+         <div className="bg-white border border-slate-200 p-6 rounded-[28px] relative overflow-hidden group hover:border-emerald-300 transition-colors cursor-pointer" onClick={() => window.location.hash = 'team'}>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Сотрудники</p>
+            <p className="text-3xl font-bold text-slate-800">{staff.length}</p>
+            <p className="text-xs text-slate-500 mt-2">Загрузка команды</p>
+            <span className="material-icons-round absolute top-4 right-4 text-6xl text-slate-100 group-hover:text-emerald-100 transition-colors">groups</span>
+         </div>
+      </div>
+
+      {/* 2. Main Dashboard Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-auto lg:h-[400px]">
+         <div className="lg:col-span-2 h-full">
+            <CashFlowForecast transactions={transactions} />
+         </div>
+         <div className="h-full">
+            <CriticalProjects objects={objects} tasks={tasks} />
+         </div>
+      </div>
+
+      {/* 3. Bottom Row */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+         <div>
+            <PipelineValue objects={objects} proposals={[]} />
+         </div>
+         <div className="lg:col-span-2 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
+            <div className="flex justify-between items-center mb-4">
+               <h4 className="text-lg font-bold text-slate-900">Эффективность команды</h4>
+               <Button variant="ghost" onClick={() => window.location.hash = 'team'} className="text-xs h-8">Подробнее</Button>
+            </div>
+            {/* Simple efficiency table */}
+            <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                    <thead>
+                        <tr className="border-b border-slate-100 text-slate-400 text-xs uppercase">
+                            <th className="pb-2 font-bold">Сотрудник</th>
+                            <th className="pb-2 font-bold text-center">Задач</th>
+                            <th className="pb-2 font-bold text-center">Просрочено</th>
+                            <th className="pb-2 font-bold text-right">Нагрузка</th>
+                        </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                        {staff.filter(s => s.role !== 'admin' && s.role !== 'director').slice(0, 5).map(member => {
+                            const memberTasks = tasks.filter(t => t.assigned_to === member.id && t.status === 'pending');
+                            const overdue = memberTasks.filter(t => t.deadline && t.deadline < getMinskISODate()).length;
+                            const loadPercent = Math.min(100, memberTasks.length * 10); // arbitrary metric
+
+                            return (
+                                <tr key={member.id} className="group hover:bg-slate-50">
+                                    <td className="py-3 font-medium text-slate-700">{member.full_name}</td>
+                                    <td className="py-3 text-center">{memberTasks.length}</td>
+                                    <td className={`py-3 text-center font-bold ${overdue > 0 ? 'text-red-500' : 'text-slate-300'}`}>{overdue}</td>
+                                    <td className="py-3 text-right">
+                                        <div className="w-24 h-2 bg-slate-100 rounded-full ml-auto overflow-hidden">
+                                            <div className={`h-full ${overdue > 2 ? 'bg-red-400' : 'bg-blue-400'}`} style={{ width: `${loadPercent}%` }}></div>
+                                        </div>
+                                    </td>
+                                </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
+         </div>
+      </div>
     </div>
   );
 };
 
-// --- ROLE-SPECIFIC VIEWS ---
+// --- REST OF THE FILE REMAINS (SpecialistView, ManagerView, Dashboard Main Component) ---
 
 const SpecialistView: React.FC<{ tasks: any[], objects: any[], userId: string }> = ({ tasks, objects, userId }) => {
   const myTasks = tasks.filter(t => t.assigned_to === userId && t.status === 'pending');
@@ -293,6 +407,113 @@ const SpecialistView: React.FC<{ tasks: any[], objects: any[], userId: string }>
   );
 };
 
+// 3. Workload Bar Chart
+const TeamWorkloadChart: React.FC<{ staff: any[], tasks: any[] }> = ({ staff, tasks }) => {
+  const workload = useMemo(() => {
+    return staff.map(s => {
+      const active = tasks.filter(t => t.assigned_to === s.id && t.status === 'pending').length;
+      return { name: s.full_name.split(' ')[0], count: active, role: s.role };
+    })
+    .filter(s => s.role !== 'admin' && s.role !== 'director') // Only executors
+    .sort((a,b) => b.count - a.count);
+  }, [staff, tasks]);
+
+  const maxTasks = Math.max(...workload.map(w => w.count), 5);
+
+  if (workload.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[140px] opacity-30 italic text-center">
+        <span className="material-icons-round text-4xl mb-2">people_outline</span>
+        <p className="text-xs font-bold uppercase">Нет данных по команде</p>
+      </div>
+    );
+  }
+
+  return (
+    <div 
+      className="flex items-end gap-3 h-[140px] mt-4 pb-2 px-2 overflow-x-auto scrollbar-hide cursor-pointer"
+      onClick={() => window.location.hash = 'team'}
+      title="Перейти к команде"
+    >
+      {workload.map(w => (
+        <div key={w.name} className="flex flex-col items-center gap-2 group min-w-[40px] flex-1">
+          <span className="text-xs font-bold text-slate-700 group-hover:text-blue-600 transition-colors">{w.count}</span>
+          <div className="w-full bg-slate-100 rounded-t-lg relative overflow-hidden flex-grow flex items-end">
+            <div 
+              className="w-full bg-blue-500 rounded-t-lg transition-all duration-700 group-hover:bg-blue-600"
+              style={{ height: `${(w.count / maxTasks) * 100}%`, minHeight: '4px' }}
+            ></div>
+          </div>
+          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter truncate w-full text-center">{w.name}</span>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// 2. CSS Grid Gantt Chart (Reused for Manager)
+const ProjectTimeline: React.FC<{ objects: any[] }> = ({ objects }) => {
+  const timelineData = useMemo(() => {
+    return objects
+      .filter(o => o.current_status === 'in_work' || o.current_status === 'review_required')
+      .map(o => {
+        // Mock start dates for visualization if not present (in real app, use stages history)
+        const start = new Date(o.updated_at); 
+        start.setDate(start.getDate() - 14); // Mock: Started 2 weeks ago
+        const end = new Date(start);
+        end.setDate(end.getDate() + 30); // Mock: Ends in 2 weeks
+
+        const today = new Date();
+        const totalDuration = end.getTime() - start.getTime();
+        const elapsed = today.getTime() - start.getTime();
+        const progress = Math.min(100, Math.max(0, (elapsed / totalDuration) * 100));
+        
+        return { ...o, progress, daysLeft: Math.ceil((end.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) };
+      })
+      .sort((a,b) => a.daysLeft - b.daysLeft)
+      .slice(0, 5); // Show top 5 urgent
+  }, [objects]);
+
+  if (timelineData.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center py-10 opacity-30 italic text-center">
+        <span className="material-icons-round text-4xl mb-2">work_outline</span>
+        <p className="text-xs font-bold uppercase">Активных проектов нет</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 mt-2">
+      {timelineData.map(obj => (
+        <div 
+          key={obj.id} 
+          className="relative group cursor-pointer hover:bg-slate-50 p-2 rounded-xl transition-all active:scale-[0.99]"
+          onClick={() => window.location.hash = `objects/${obj.id}`}
+          title="Открыть карточку объекта"
+        >
+          <div className="flex justify-between text-xs mb-1">
+            <span className="font-bold text-slate-700 truncate max-w-[150px] group-hover:text-blue-600 transition-colors">{obj.name}</span>
+            <span className={`font-bold ${obj.daysLeft < 0 ? 'text-red-500' : obj.daysLeft < 7 ? 'text-amber-500' : 'text-slate-400'}`}>
+              {obj.daysLeft < 0 ? `Просрочено на ${Math.abs(obj.daysLeft)} дн` : `${obj.daysLeft} дн. осталось`}
+            </span>
+          </div>
+          <div className="h-3 w-full bg-slate-100 rounded-full overflow-hidden relative">
+            <div 
+              className={`h-full rounded-full transition-all duration-1000 ${
+                obj.daysLeft < 0 ? 'bg-red-500' : 
+                obj.progress > 80 ? 'bg-emerald-500' : 'bg-blue-500'
+              }`} 
+              style={{ width: `${obj.progress}%` }}
+            ></div>
+          </div>
+          <p className="text-[10px] text-slate-400 mt-1 uppercase tracking-wider">{obj.current_stage}</p>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 const ManagerView: React.FC<{ tasks: any[], objects: any[], userId: string, staff: any[] }> = ({ tasks, objects, userId, staff }) => {
   const activeObjects = objects.filter(o => !['completed', 'frozen'].includes(o.current_status));
   const blockedObjects = activeObjects.filter(o => o.current_status === 'on_pause' || o.current_status === 'review_required');
@@ -352,96 +573,6 @@ const ManagerView: React.FC<{ tasks: any[], objects: any[], userId: string, staf
                <span className="text-xs text-slate-400">Активные задачи</span>
             </div>
             <TeamWorkloadChart staff={staff} tasks={tasks} />
-         </div>
-      </div>
-    </div>
-  );
-};
-
-const DirectorView: React.FC<{ tasks: any[], objects: any[], transactions: any[], staff: any[] }> = ({ tasks, objects, transactions, staff }) => {
-  // Financial Summary
-  const financials = useMemo(() => {
-    const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
-    const expense = transactions.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0);
-    return { income, expense, profit: income - expense };
-  }, [transactions]);
-
-  // Pipeline Data
-  const stagesData = useMemo(() => {
-    const counts: Record<string, number> = {};
-    objects.forEach(o => {
-      if (!counts[o.current_stage]) counts[o.current_stage] = 0;
-      counts[o.current_stage]++;
-    });
-    return counts;
-  }, [objects]);
-
-  const PIPELINE_ORDER = ['negotiation', 'design', 'mounting', 'commissioning', 'support'];
-  const PIPELINE_LABELS: Record<string, string> = { 'negotiation': 'Лиды', 'design': 'Проект', 'mounting': 'Стройка', 'commissioning': 'Запуск', 'support': 'Сервис' };
-
-  return (
-    <div className="space-y-8">
-      {/* Financial Hero Section */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-         <div className="lg:col-span-2 bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm">
-            <div className="flex justify-between items-start">
-               <div>
-                  <h4 className="text-2xl font-bold text-slate-900 mb-1">Финансовый пульс</h4>
-                  <p className="text-sm text-slate-500">Динамика приходов и расходов за 6 месяцев</p>
-               </div>
-               <div className="text-right">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Баланс (Cashflow)</p>
-                  <p className={`text-3xl font-bold ${financials.profit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>{formatCurrency(financials.profit)}</p>
-               </div>
-            </div>
-            <FinancialTrendChart transactions={transactions} />
-         </div>
-
-         {/* Quick KPIs */}
-         <div className="flex flex-col gap-4">
-            <div 
-                className="flex-1 bg-emerald-50 rounded-[32px] p-6 border border-emerald-100 flex flex-col justify-center cursor-pointer hover:bg-emerald-100 transition-colors group"
-                onClick={() => window.location.hash = 'finances'}
-            >
-               <div className="flex items-center gap-3 mb-2">
-                  <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-emerald-600 shadow-sm group-hover:scale-110 transition-transform"><span className="material-icons-round">trending_up</span></div>
-                  <span className="text-xs font-bold text-emerald-800 uppercase tracking-widest">Выручка (Факт)</span>
-               </div>
-               <p className="text-2xl font-bold text-emerald-900">{formatCurrency(financials.income)}</p>
-            </div>
-            <div 
-                className="flex-1 bg-red-50 rounded-[32px] p-6 border border-red-100 flex flex-col justify-center cursor-pointer hover:bg-red-100 transition-colors group"
-                onClick={() => window.location.hash = 'finances'}
-            >
-               <div className="flex items-center gap-3 mb-2">
-                  <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-red-600 shadow-sm group-hover:scale-110 transition-transform"><span className="material-icons-round">trending_down</span></div>
-                  <span className="text-xs font-bold text-red-800 uppercase tracking-widest">Расходы (Факт)</span>
-               </div>
-               <p className="text-2xl font-bold text-red-900">{formatCurrency(financials.expense)}</p>
-            </div>
-         </div>
-      </div>
-
-      {/* Visual Pipeline */}
-      <div className="bg-white p-8 rounded-[32px] border border-slate-200 shadow-sm overflow-x-auto">
-         <h4 className="text-lg font-bold text-slate-900 mb-6">Воронка проектов</h4>
-         <div className="flex items-center justify-between min-w-[600px] relative">
-            {/* Connection Line */}
-            <div className="absolute top-1/2 left-0 w-full h-1 bg-slate-100 -z-10 rounded-full"></div>
-            
-            {PIPELINE_ORDER.map((stage, idx) => {
-               const count = stagesData[stage] || 0;
-               return (
-                  <div key={stage} className="flex flex-col items-center gap-3 bg-white px-2 cursor-pointer group" onClick={() => window.location.hash = 'objects'}>
-                     <div className={`w-16 h-16 rounded-2xl flex items-center justify-center text-xl font-bold border-4 transition-all group-hover:scale-110 shadow-sm ${count > 0 ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-slate-50 border-slate-100 text-slate-300'}`}>
-                        {count}
-                     </div>
-                     <div className="text-center">
-                        <p className="text-xs font-bold text-slate-700 uppercase group-hover:text-blue-600">{PIPELINE_LABELS[stage]}</p>
-                     </div>
-                  </div>
-               );
-            })}
          </div>
       </div>
     </div>
