@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../../lib/supabase';
 import { Badge, Button } from '../../../ui';
 import { formatDate, getMinskISODate } from '../../../../lib/dateUtils';
@@ -18,9 +18,18 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
   task, profile, isAdmin, onEdit, onDelete, onClose, onNavigateToObject 
 }) => {
   // Local state for optimistic checklist updates
-  const [checklist, setChecklist] = useState(task.checklist || []);
+  const [checklist, setChecklist] = useState(task?.checklist || []);
+  const [reopenLoading, setReopenLoading] = useState(false);
+
+  // Sync state if task prop changes (important for Drawer persistence)
+  useEffect(() => {
+    if (task?.checklist) {
+      setChecklist(task.checklist);
+    }
+  }, [task]);
 
   const toggleChecklistItem = async (itemId: string, currentStatus: boolean) => {
+    if (!task) return;
     const isExecutor = task.assigned_to === profile.id;
     if (!isExecutor && !isAdmin) return;
 
@@ -32,12 +41,37 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
     await supabase.from('task_checklists').update({ is_completed: !currentStatus }).eq('id', itemId);
   };
 
-  if (!task) return null;
+  const handleReopen = async () => {
+      setReopenLoading(true);
+      try {
+          await supabase.from('tasks').update({
+              status: 'pending',
+              completed_at: null,
+              completion_comment: null,
+              completion_doc_link: null,
+              completion_doc_name: null
+          }).eq('id', task.id);
+          
+          // Close drawer to refresh list or update UI
+          onClose(); 
+          // Note: Realtime subscription in parent will handle the UI update
+      } catch (e) {
+          console.error(e);
+          alert('Ошибка при возврате задачи');
+      } finally {
+          setReopenLoading(false);
+      }
+  };
+
+  if (!task) return <div className="p-6 text-center text-slate-400">Задача не выбрана</div>;
 
   const canEditDelete = () => {
     if (task.status === 'completed') return isAdmin;
     return isAdmin || task.created_by === profile?.id;
   };
+
+  // Determine if user can perform actions (Executor or Admin/Manager)
+  const canAction = task.assigned_to === profile.id || isAdmin;
 
   return (
     <div className="space-y-6">
@@ -129,14 +163,36 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
             <p className="text-sm text-slate-600 whitespace-pre-wrap italic leading-relaxed">{task.comment}</p>
             </div>
         )}
+        
+        {/* Completion Info if Completed */}
+        {task.status === 'completed' && task.completion_comment && (
+             <div className="bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
+                <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest mb-2">Комментарий исполнителя</p>
+                <p className="text-sm text-emerald-900 italic">{task.completion_comment}</p>
+             </div>
+        )}
 
         <div className="flex flex-wrap gap-2">
-            {canEditDelete() && (
+            {canEditDelete() && task.status !== 'completed' && (
                 <>
                 <Button variant="tonal" onClick={onEdit} icon="edit" className="flex-1 min-w-[120px]">Изменить</Button>
                 <Button variant="danger" onClick={onDelete} icon="delete" className="flex-1 min-w-[120px]">Удалить</Button>
                 </>
             )}
+            
+            {/* Logic for Completed Tasks: Show Reopen Button */}
+            {task.status === 'completed' && canAction && (
+                <Button 
+                    variant="secondary" 
+                    onClick={handleReopen} 
+                    loading={reopenLoading}
+                    icon="replay" 
+                    className="flex-1 min-w-[140px] text-amber-600 border-amber-200 hover:bg-amber-50"
+                >
+                    Вернуть в работу
+                </Button>
+            )}
+
             {task.object_id && (
                 <Button 
                 onClick={() => { 

@@ -81,7 +81,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
       product_id: item.product_id
     };
     setCart(prev => [...prev, newItem]);
-    setToast({ message: 'Добавлено в выборку', type: 'success' });
+    setToast({ message: 'Добавлено в ручную отгрузку', type: 'success' });
   };
 
   const removeFromCart = (id: string) => setCart(prev => prev.filter(c => c.id !== id));
@@ -138,8 +138,9 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
         </div>
         {activeTab === 'stock' && (
           <div className="flex gap-2">
-            <Button variant="secondary" icon="receipt_long" onClick={() => openModal('deploy_invoice')}>Отгрузка по счету</Button>
-            <Button icon="download" onClick={() => openModal('add_item')}>Принять на склад</Button>
+            <Button icon="add" onClick={() => openModal('add_item')} variant="secondary">Принять на склад</Button>
+            {/* Primary Action is now Invoice Deployment */}
+            <Button icon="receipt_long" onClick={() => openModal('deploy_invoice')} className="shadow-lg shadow-blue-200">Отгрузка по счету</Button>
           </div>
         )}
       </div>

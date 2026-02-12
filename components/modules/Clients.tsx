@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../lib/supabase';
-import { Button, Input, Modal, ConfirmModal, Select, Toast } from '../ui';
+import { Button, Input, Modal, ConfirmModal, Select, Toast, Drawer } from '../ui';
 import { Module } from '../../App';
 
 // Sub-components
@@ -96,7 +96,6 @@ const Clients: React.FC<ClientsProps> = ({
 
   const handleCloseModal = () => {
     setModalMode('none');
-    // Очищаем хеш при закрытии, чтобы можно было снова открыть ту же ссылку
     if (initialClientId) {
       window.location.hash = 'clients';
     }
@@ -167,14 +166,15 @@ const Clients: React.FC<ClientsProps> = ({
         />
       </Modal>
 
-      <Modal isOpen={modalMode === 'details'} onClose={handleCloseModal} title="Информация о клиенте">
+      {/* CHANGED: Client Details is now a Drawer */}
+      <Drawer isOpen={modalMode === 'details'} onClose={handleCloseModal} title="Информация о клиенте">
         <ClientDetails 
             client={selectedClient} 
             onClose={handleCloseModal} 
             onNavigateToObject={onNavigateToObject}
             onAddObject={onAddObject}
         />
-      </Modal>
+      </Drawer>
 
       <ConfirmModal 
         isOpen={deleteModal.open}

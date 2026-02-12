@@ -22,7 +22,8 @@ export const ProductForm: React.FC<ProductFormProps> = ({ product, categories, e
     base_price: '',
     retail_price: '',
     description: '',
-    has_serial: false
+    has_serial: false,
+    image_url: ''
   });
 
   useEffect(() => {
@@ -36,12 +37,13 @@ export const ProductForm: React.FC<ProductFormProps> = ({ product, categories, e
         base_price: product.base_price.toString(),
         retail_price: product.retail_price.toString(),
         description: product.description || '',
-        has_serial: product.has_serial
+        has_serial: product.has_serial,
+        image_url: product.image_url || ''
       });
     } else {
         setFormData({
             name: '', sku: '', category: '', type: '', unit: 'шт', 
-            base_price: '', retail_price: '', description: '', has_serial: false
+            base_price: '', retail_price: '', description: '', has_serial: false, image_url: ''
         });
     }
   }, [product]);
@@ -55,7 +57,8 @@ export const ProductForm: React.FC<ProductFormProps> = ({ product, categories, e
       category: formData.category || 'Общее',
       type: formData.type || 'Товар',
       base_price: parseFloat(formData.base_price) || 0,
-      retail_price: parseFloat(formData.retail_price) || 0
+      retail_price: parseFloat(formData.retail_price) || 0,
+      image_url: formData.image_url || null
     };
 
     try {
@@ -73,6 +76,12 @@ export const ProductForm: React.FC<ProductFormProps> = ({ product, categories, e
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+        {formData.image_url && (
+            <div className="flex justify-center mb-4">
+                <img src={formData.image_url} alt="Preview" className="h-32 w-32 object-contain rounded-xl border border-slate-200 bg-white" />
+            </div>
+        )}
+
         <Input label="Название товара" required value={formData.name} onChange={(e:any) => setFormData({...formData, name: e.target.value})} />
         
         <div className="grid grid-cols-2 gap-4">
@@ -109,6 +118,8 @@ export const ProductForm: React.FC<ProductFormProps> = ({ product, categories, e
             <Input label="Артикул (SKU)" value={formData.sku} onChange={(e:any) => setFormData({...formData, sku: e.target.value})} />
             <Select label="Ед. измерения" value={formData.unit} onChange={(e:any) => setFormData({...formData, unit: e.target.value})} options={[{value:'шт', label:'шт'}, {value:'м', label:'м'}, {value:'компл', label:'компл'}, {value:'упак', label:'упак'}]} />
         </div>
+
+        <Input label="Ссылка на изображение (URL)" value={formData.image_url} onChange={(e:any) => setFormData({...formData, image_url: e.target.value})} icon="image" placeholder="https://example.com/image.jpg" />
 
         <div className="w-full">
             <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Описание</label>

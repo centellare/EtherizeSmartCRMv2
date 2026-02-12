@@ -73,6 +73,7 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
          <table className="w-full text-left">
             <thead className="bg-slate-50 border-b sticky top-0 z-10">
                 <tr>
+                    <th className="p-4 w-16">Фото</th>
                     <th className="p-4 text-xs font-bold text-slate-500 uppercase">Наименование / SKU</th>
                     <th className="p-4 text-xs font-bold text-slate-500 uppercase">Категория / Тип</th>
                     <th className="p-4 text-xs font-bold text-slate-500 uppercase text-right">Закупка</th>
@@ -84,7 +85,16 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
                 {filteredProducts.map(p => (
                     <tr key={p.id} className="hover:bg-slate-50 transition-colors group">
                         <td className="p-4">
-                            <p className="font-bold text-slate-900">{p.name}</p>
+                            {p.image_url ? (
+                                <img src={p.image_url} alt="" className="w-10 h-10 rounded-lg object-cover bg-white border border-slate-200" />
+                            ) : (
+                                <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-300">
+                                    <span className="material-icons-round text-sm">image</span>
+                                </div>
+                            )}
+                        </td>
+                        <td className="p-4">
+                            <p className="font-bold text-slate-900 text-sm">{p.name}</p>
                             <div className="flex gap-2 mt-1">
                                 {p.sku && <span className="text-[10px] font-mono bg-slate-100 px-1 rounded text-slate-500">{p.sku}</span>}
                                 {p.has_serial && <span className="text-[10px] bg-amber-50 text-amber-700 px-1.5 rounded font-bold">S/N</span>}

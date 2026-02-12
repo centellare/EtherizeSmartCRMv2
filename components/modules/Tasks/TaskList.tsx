@@ -1,5 +1,6 @@
 
-import React from 'react';
+import React, { useState } from 'react';
+import { supabase } from '../../../lib/supabase';
 import { formatDate, getMinskISODate } from '../../../lib/dateUtils';
 
 interface TaskListProps {
@@ -10,12 +11,13 @@ interface TaskListProps {
   onPageChange: (page: number) => void;
   onTaskClick: (task: any) => void;
   onNavigateToObject: (objectId: string, stageId?: string) => void;
+  onRequestComplete?: (task: any) => void; // New prop
 }
 
 const PAGE_SIZE = 50;
 
 export const TaskList: React.FC<TaskListProps> = ({ 
-  tasks, activeTab, archivePage, archiveTotal, onPageChange, onTaskClick, onNavigateToObject 
+  tasks, activeTab, archivePage, archiveTotal, onPageChange, onTaskClick, onNavigateToObject, onRequestComplete 
 }) => {
   
   if (tasks.length === 0) {
@@ -42,24 +44,47 @@ export const TaskList: React.FC<TaskListProps> = ({
             <div 
               key={task.id} 
               onClick={() => onTaskClick(task)} 
-              className={`bg-white p-4 sm:p-5 rounded-[28px] border transition-all cursor-pointer group flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${isCompleted ? 'border-slate-100 opacity-75' : 'border-slate-200 hover:border-blue-400 hover:shadow-md'}`}
+              className={`bg-white p-4 sm:p-5 rounded-[28px] border transition-all cursor-pointer group flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                  isCompleted ? 'border-slate-100 opacity-60 bg-slate-50' : 'border-slate-200 hover:border-blue-400 hover:shadow-md'
+              }`}
             >
               <div className="flex items-start sm:items-center gap-4 sm:gap-5 min-w-0 flex-grow">
-                <div className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 ${isCompleted ? 'bg-emerald-50 text-emerald-500' : isOverdue ? 'bg-red-50 text-red-500' : 'bg-blue-50 text-blue-500'}`}>
+                {/* Inline Action Checkbox */}
+                <div 
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        // If active and handler exists, trigger modal. 
+                        // If completed, do nothing (restoration is done via details)
+                        if (!isCompleted && onRequestComplete) {
+                            onRequestComplete(task);
+                        }
+                    }}
+                    className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                        isCompleted 
+                        ? 'bg-emerald-50 text-emerald-500 cursor-default' 
+                        : isOverdue 
+                            ? 'bg-red-50 text-red-500 hover:bg-red-100' 
+                            : 'bg-blue-50 text-blue-500 hover:bg-blue-600 hover:text-white'
+                    }`}
+                >
                   <span className="material-icons-round text-xl">
-                    {isCompleted ? 'check_circle' : isOverdue ? 'priority_high' : 'more_horiz'}
+                    {isCompleted ? 'check' : isOverdue ? 'priority_high' : 'check_circle_outline'}
                   </span>
                 </div>
+
                 <div className="min-w-0 flex-grow">
-                  <h4 className={`font-bold transition-colors truncate text-sm sm:text-base ${isCompleted ? 'text-slate-400' : 'text-slate-900 group-hover:text-blue-600'}`}>
+                  <h4 className={`font-medium transition-colors truncate text-sm sm:text-base ${isCompleted ? 'text-slate-400 line-through' : 'text-slate-900 group-hover:text-blue-600'}`}>
                     {task.title}
                     {task.doc_link && <span className="material-icons-round text-sm ml-2 text-slate-300 align-middle">attach_file</span>}
                   </h4>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
-                    <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[9px] font-bold uppercase rounded-lg tracking-tight whitespace-nowrap">{task.objects?.name || 'Объект'}</span>
-                    <span className="text-[10px] font-bold text-slate-400 uppercase whitespace-nowrap">Исп: {task.executor?.full_name}</span>
+                    <span className="text-xs text-slate-500 font-medium">{task.objects?.name || 'Объект'}</span>
+                    <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                    <span className="text-xs text-slate-400">{task.executor?.full_name}</span>
                     {isCompleted && task.completed_at && (
-                      <span className="text-[9px] font-bold text-emerald-500 uppercase bg-emerald-50 px-2 py-0.5 rounded whitespace-nowrap">Завершено {formatDate(task.completed_at)}</span>
+                      <span className="text-[10px] font-bold text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded whitespace-nowrap ml-2">
+                          {formatDate(task.completed_at)}
+                      </span>
                     )}
                   </div>
                 </div>

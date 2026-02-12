@@ -19,7 +19,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   
   // Date Helpers for Defaults
-  const today = getMinskISODate();
   const getMonthBounds = () => {
     const now = new Date();
     const firstDay = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -29,10 +28,9 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const defaults = getMonthBounds();
 
   // Filters
-  const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [startDate, setStartDate] = useState(defaults.start);
   const [endDate, setEndDate] = useState(defaults.end);
-  const [summaryFilter, setSummaryFilter] = useState<string | null>(null);
+  const [activeWidget, setActiveWidget] = useState<string | null>(null); // 'debtors', 'income_fact', 'income_plan', 'expense_fact', 'expense_plan'
   const [unclosedDocsOnly, setUnclosedDocsOnly] = useState(false);
   const [docSearchQuery, setDocSearchQuery] = useState('');
 
@@ -110,6 +108,65 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
 
+  // --- CALCULATIONS ---
+
+  // 1. GLOBAL METRICS (Lifetime, Snapshot)
+  const globalMetrics = useMemo(() => {
+      const todayStr = getMinskISODate();
+      const allIncome = transactions.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
+      const allExpense = transactions.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0);
+      const balance = allIncome - allExpense;
+
+      // Debtors: Planned Income (Pending/Partial) where planned_date < today
+      const debtorsList = transactions.filter(t => 
+          t.type === 'income' && 
+          (t.status === 'pending' || t.status === 'partial') && 
+          t.planned_date && 
+          t.planned_date < todayStr
+      );
+      const debtorsSum = debtorsList.reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
+
+      return {
+          balance,
+          debtorsSum,
+          debtorsCount: debtorsList.length
+      };
+  }, [transactions]);
+
+  // 2. PERIOD FLOW METRICS (Depends on Dates)
+  const periodMetrics = useMemo(() => {
+      const filteredByDate = transactions.filter(t => {
+          const dateStr = getMinskISODate(t.created_at);
+          const matchesStart = !startDate || dateStr >= startDate;
+          const matchesEnd = !endDate || dateStr <= endDate;
+          return matchesStart && matchesEnd;
+      });
+
+      // Income Fact
+      const incomeFactList = filteredByDate.filter(t => t.type === 'income');
+      const incomeFactSum = incomeFactList.reduce((s, t) => s + (t.fact_amount || 0), 0);
+
+      // Income Plan
+      const incomePlanList = filteredByDate.filter(t => t.type === 'income' && t.status !== 'approved');
+      const incomePlanSum = incomePlanList.reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
+
+      // Expense Fact
+      const expenseFactList = filteredByDate.filter(t => t.type === 'expense' && t.status === 'approved');
+      const expenseFactSum = expenseFactList.reduce((s, t) => s + t.amount, 0);
+
+      // Expense Plan
+      const expensePlanList = filteredByDate.filter(t => t.type === 'expense' && t.status !== 'approved');
+      const expensePlanSum = expensePlanList.reduce((s, t) => s + (t.requested_amount || t.amount), 0);
+
+      return {
+          incomeFactSum, incomeFactCount: incomeFactList.length,
+          incomePlanSum, incomePlanCount: incomePlanList.length,
+          expenseFactSum, expenseFactCount: expenseFactList.length,
+          expensePlanSum, expensePlanCount: expensePlanList.length
+      };
+  }, [transactions, startDate, endDate]);
+
+  // 3. FINAL LIST FILTERING
   const filteredTransactions = useMemo(() => {
     const todayStr = getMinskISODate();
 
@@ -127,70 +184,30 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       const hasUnclosedDoc = t.payments?.some((p: any) => p.requires_doc && !p.doc_number);
       if (unclosedDocsOnly && !hasUnclosedDoc) return false;
 
-      // 3. Category/Status Filters & DATE LOGIC
-      // Debtors: ALWAYS SHOW ALL (Ignore Date)
-      if (summaryFilter === 'debtors') {
+      // 3. WIDGET & DATE LOGIC
+      
+      // A. Debtor Widget Logic (Override dates)
+      if (activeWidget === 'debtors') {
           return t.type === 'income' && 
                  (t.status === 'pending' || t.status === 'partial') &&
                  t.planned_date && 
                  t.planned_date < todayStr;
       }
 
-      // Date Filter (Applied to everything else)
+      // B. Date Filter (Base)
       const tDateStr = getMinskISODate(t.created_at);
-      const matchesStart = !startDate || tDateStr >= startDate;
-      const matchesEnd = !endDate || tDateStr <= endDate;
-      if (!matchesStart || !matchesEnd) return false;
+      const matchesDate = (!startDate || tDateStr >= startDate) && (!endDate || tDateStr <= endDate);
+      if (!matchesDate) return false;
 
-      if (summaryFilter === 'income') return t.type === 'income';
-      if (summaryFilter === 'planned') return t.type === 'income' && t.status !== 'approved';
-      if (summaryFilter === 'expenses') return t.type === 'expense';
-      
-      return typeFilter === 'all' || t.type === typeFilter;
+      // C. Specific Widget Filters
+      if (activeWidget === 'income_fact') return t.type === 'income';
+      if (activeWidget === 'income_plan') return t.type === 'income' && t.status !== 'approved';
+      if (activeWidget === 'expense_fact') return t.type === 'expense' && t.status === 'approved';
+      if (activeWidget === 'expense_plan') return t.type === 'expense' && t.status !== 'approved';
+
+      return true;
     });
-  }, [transactions, typeFilter, startDate, endDate, summaryFilter, unclosedDocsOnly, docSearchQuery]);
-
-  const summary = useMemo(() => {
-    const todayStr = getMinskISODate();
-    
-    // Data filtered by date range (Flow metrics)
-    const rangeData = transactions.filter(t => {
-      const tDateStr = getMinskISODate(t.created_at);
-      return (!startDate || tDateStr >= startDate) && (!endDate || tDateStr <= endDate);
-    });
-    
-    // 1. Flow Metrics (Range Dependent)
-    const incomeFact = rangeData.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
-    const expApprov = rangeData.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0);
-    const expPending = rangeData.filter(t => t.type === 'expense' && t.status === 'pending');
-    
-    // Total Planned (Pending + Partial) in current range
-    const plannedRemain = rangeData.filter(t => t.type === 'income' && t.status !== 'approved').reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
-    
-    // 2. State Metrics (All Time)
-    // Balance: Total Income (Fact) - Total Expenses (Approved) [All Time]
-    const allIncome = transactions.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
-    const allExpense = transactions.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0);
-    const balance = allIncome - allExpense;
-
-    // Debtors: Overdue Planned Income [All Time]
-    const debtorsTotal = transactions.filter(t => 
-        t.type === 'income' && 
-        (t.status === 'pending' || t.status === 'partial') &&
-        t.planned_date && 
-        t.planned_date < todayStr
-    ).reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
-
-    return {
-      balance: balance, // All Time
-      incomeTotal: incomeFact, // Range
-      planned: plannedRemain, // Range
-      debtors: debtorsTotal, // All Time
-      expensesApproved: expApprov, // Range
-      expensesPendingSum: expPending.reduce((s, t) => s + t.amount, 0),
-      expensesPendingCount: expPending.length
-    };
-  }, [transactions, startDate, endDate]);
+  }, [transactions, startDate, endDate, activeWidget, unclosedDocsOnly, docSearchQuery]);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('ru-BY', { style: 'currency', currency: 'BYN', maximumFractionDigits: 2 }).format(val);
 
@@ -220,7 +237,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
             await supabase.from('transactions').update({ fact_amount: newFact, status: newStatus }).eq('id', payment.transaction_id);
         }
         setToast({ message: 'Платеж удален', type: 'success' });
-        setModalMode('none'); // Close payment modal
+        setModalMode('none');
         fetchData(true);
     }
     setLoading(false);
@@ -250,11 +267,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       setLoading(false);
   };
 
-  const handleResetDates = () => {
-      setStartDate('');
-      setEndDate('');
-  };
-
+  const handleResetDates = () => { setStartDate(''); setEndDate(''); };
   const handleSetMonth = () => {
       const d = getMonthBounds();
       setStartDate(d.start);
@@ -269,52 +282,52 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
         <div>
           <h2 className="text-3xl font-medium text-[#1c1b1f] flex items-center gap-3">Финансы</h2>
-          <div className="flex flex-wrap gap-2 mt-3">
-             <button onClick={() => { setTypeFilter('all'); setSummaryFilter(null); }} className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase border ${typeFilter === 'all' && !summaryFilter ? 'bg-[#005ac1] text-white' : 'bg-white text-slate-500'}`}>Все</button>
-             <button onClick={() => { setTypeFilter('income'); setSummaryFilter(null); }} className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase border ${typeFilter === 'income' ? 'bg-emerald-600 text-white' : 'bg-white text-slate-500'}`}>Приходы</button>
-             <button onClick={() => { setTypeFilter('expense'); setSummaryFilter(null); }} className={`px-4 py-1.5 rounded-full text-[10px] font-bold uppercase border ${typeFilter === 'expense' ? 'bg-red-600 text-white' : 'bg-white text-slate-500'}`}>Расходы</button>
+          <div className="flex flex-wrap gap-2 mt-3 items-center">
+             <div className="flex items-center gap-2">
+                <Input placeholder="Акт № / Дата..." value={docSearchQuery} onChange={(e:any) => setDocSearchQuery(e.target.value)} icon="search" className="h-10 !py-2 !text-xs w-[160px]" />
+                <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors h-10">
+                  <input type="checkbox" checked={unclosedDocsOnly} onChange={(e) => setUnclosedDocsOnly(e.target.checked)} className="w-4 h-4 rounded text-red-600 focus:ring-blue-500" />
+                  <span className={`text-[10px] font-bold uppercase ${unclosedDocsOnly ? 'text-red-600' : 'text-slate-400'}`}>Без документов</span>
+                </label>
+             </div>
+             
              <div className="h-8 w-[1px] bg-slate-200 mx-2 hidden md:block"></div>
-             <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-1.5 rounded-full border border-slate-200 hover:bg-slate-50 transition-colors">
-               <input type="checkbox" checked={unclosedDocsOnly} onChange={(e) => setUnclosedDocsOnly(e.target.checked)} className="w-4 h-4 rounded text-red-600 focus:ring-blue-500" />
-               <span className="text-[10px] font-bold text-red-600 uppercase">Без документов</span>
-             </label>
+
+             <div className="flex items-center bg-white border border-slate-200 rounded-2xl px-1 h-10">
+                  <Input type="date" value={startDate} onChange={(e:any) => setStartDate(e.target.value)} className="h-full !py-1 !text-xs w-[110px] !border-0" title="Начало периода" />
+                  <span className="text-slate-300 font-bold text-[10px]">-</span>
+                  <Input type="date" value={endDate} onChange={(e:any) => setEndDate(e.target.value)} className="h-full !py-1 !text-xs w-[110px] !border-0" title="Конец периода" />
+             </div>
+             <div className="flex gap-1">
+                  <button onClick={handleResetDates} className="px-3 h-10 rounded-xl bg-slate-100 text-slate-500 text-[10px] font-bold uppercase hover:bg-slate-200 transition-colors">Все время</button>
+                  <button onClick={handleSetMonth} className="px-3 h-10 rounded-xl bg-blue-50 text-blue-600 text-[10px] font-bold uppercase hover:bg-blue-100 transition-colors">Этот месяц</button>
+             </div>
           </div>
         </div>
-        <div className="flex flex-col sm:flex-row items-center gap-2 w-full lg:w-auto">
-           <div className="flex items-center gap-2 flex-grow sm:flex-grow-0">
-              <Input placeholder="Акт № / Дата..." value={docSearchQuery} onChange={(e:any) => setDocSearchQuery(e.target.value)} icon="search" className="h-12 !py-2 !text-xs w-full sm:w-[140px]" />
-              <div className="flex items-center bg-white border border-slate-200 rounded-2xl px-1">
-                  <Input type="date" value={startDate} onChange={(e:any) => setStartDate(e.target.value)} className="h-12 !py-2 !text-xs w-[110px] !border-0" title="Начало периода" />
-                  <span className="text-slate-300 font-bold text-[10px]">-</span>
-                  <Input type="date" value={endDate} onChange={(e:any) => setEndDate(e.target.value)} className="h-12 !py-2 !text-xs w-[110px] !border-0" title="Конец периода" />
-              </div>
-              
-              {/* Quick Date Actions */}
-              <div className="flex flex-col gap-1">
-                  <button onClick={handleResetDates} className="w-6 h-5 rounded bg-slate-100 text-slate-500 flex items-center justify-center hover:bg-slate-200" title="За всё время">
-                      <span className="material-icons-round text-[10px]">all_inclusive</span>
-                  </button>
-                  <button onClick={handleSetMonth} className="w-6 h-5 rounded bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100" title="Этот месяц">
-                      <span className="material-icons-round text-[10px]">calendar_today</span>
-                  </button>
-              </div>
-           </div>
-           <div className="flex gap-2 w-full sm:w-auto">
-              <Button variant="tonal" onClick={() => setModalMode('create_expense')} icon="request_quote" className="flex-1 sm:flex-initial">Расход</Button>
-              {!isSpecialist && <Button onClick={() => setModalMode('create_income')} icon="add_chart" className="flex-1 sm:flex-initial">Приход</Button>}
-           </div>
+        <div className="flex gap-2 w-full lg:w-auto">
+           <Button variant="tonal" onClick={() => setModalMode('create_expense')} icon="request_quote" className="flex-1 lg:flex-initial">Расход</Button>
+           {!isSpecialist && <Button onClick={() => setModalMode('create_income')} icon="add_chart" className="flex-1 lg:flex-initial">Приход</Button>}
         </div>
       </div>
 
       <StatsOverview 
-        summary={summary} 
-        activeFilter={summaryFilter} 
-        onFilterChange={setSummaryFilter} 
+        globalMetrics={globalMetrics}
+        periodMetrics={periodMetrics}
+        activeWidget={activeWidget}
+        setActiveWidget={setActiveWidget}
         isSpecialist={isSpecialist} 
         formatCurrency={formatCurrency} 
       />
 
       <div className="mt-8">
+        <h5 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4 ml-1 flex items-center gap-2">
+             Журнал операций
+             {activeWidget && (
+                 <span className="text-xs bg-slate-800 text-white px-2 py-0.5 rounded-lg lowercase animate-in fade-in">
+                     фильтр: {activeWidget === 'debtors' ? 'дебиторка' : activeWidget.replace('_', ' ')}
+                 </span>
+             )}
+        </h5>
         <TransactionTable 
             transactions={filteredTransactions}
             expandedRows={expandedRows}

@@ -48,9 +48,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
           }).eq('id', itemId);
           
           if(error) throw error;
-          // Optimistic update or page reload required from parent, but for now we can rely on parent refresh or alert
-          // Ideally pass a refresh callback, but let's reload window or hack a re-fetch
-          window.location.reload(); // Simple refresh for now as we don't have refresh prop here
+          window.location.reload(); 
       } catch (e: any) {
           alert('Ошибка: ' + e.message);
       }
@@ -221,8 +219,8 @@ const InventoryList: React.FC<InventoryListProps> = ({
                 </summary>
                 <div className="p-0 border-t border-slate-100">
                   <table className="w-full text-left">
-                    <thead className="bg-slate-50/30 text-[10px] text-slate-400 uppercase font-bold">
-                      <tr><th className="pl-6 py-2">Товар</th><th className="py-2 text-center">Кол-во</th><th className="pr-6 py-2 text-right">Действия</th></tr>
+                    <thead className="bg-slate-50/30">
+                      <tr><th className="pl-6 py-2 text-xs font-medium text-slate-500">Товар</th><th className="py-2 text-center text-xs font-medium text-slate-500">Кол-во</th><th className="pr-6 py-2 text-right text-xs font-medium text-slate-500">Действия</th></tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {group.items.map((item) => (
@@ -254,18 +252,19 @@ const InventoryList: React.FC<InventoryListProps> = ({
               <thead className="bg-slate-50 border-b border-slate-100">
                 <tr>
                   <th className="p-4 w-12"></th>
-                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Номенклатура</th>
-                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Артикул / Тип</th>
-                  <th className="p-4 text-xs font-bold text-slate-400 uppercase text-center">Всего</th>
-                  <th className="p-4 text-xs font-bold text-slate-400 uppercase text-center text-blue-600">В резерве</th>
-                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase">Общая стоимость</th>
-                  <th className="p-4 text-[10px] font-bold text-slate-400 uppercase text-right">Действия</th>
+                  <th className="p-4 w-16">Фото</th>
+                  <th className="p-4 text-xs font-medium text-slate-500">Номенклатура</th>
+                  <th className="p-4 text-xs font-medium text-slate-500">Артикул / Тип</th>
+                  <th className="p-4 text-xs font-medium text-slate-500 text-center">Всего</th>
+                  <th className="p-4 text-xs font-bold text-blue-600 text-center">В резерве</th>
+                  <th className="p-4 text-xs font-medium text-slate-500">Общая стоимость</th>
+                  <th className="p-4 text-xs font-medium text-slate-500 text-right">Действия</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {stockGroups.length === 0 ? (
                     <tr>
-                        <td colSpan={7} className="p-10 text-center text-slate-400">
+                        <td colSpan={8} className="p-10 text-center text-slate-400">
                             {items.length > 0 ? 'Товары скрыты фильтрами' : 'Склад пуст'}
                         </td>
                     </tr>
@@ -283,6 +282,15 @@ const InventoryList: React.FC<InventoryListProps> = ({
                                <button className="w-6 h-6 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center hover:bg-blue-100 hover:text-blue-600 transition-colors">
                                   <span className={`material-icons-round text-sm transition-transform ${isExpanded ? 'rotate-180' : ''}`}>expand_more</span>
                                </button>
+                            </td>
+                            <td className="p-4">
+                                {group.product?.image_url ? (
+                                    <img src={group.product.image_url} alt="" className="w-10 h-10 rounded-lg object-cover bg-white border border-slate-200" />
+                                ) : (
+                                    <div className="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center text-slate-300">
+                                        <span className="material-icons-round text-sm">image</span>
+                                    </div>
+                                )}
                             </td>
                             <td className="p-4">
                                 <p className="font-bold text-slate-900 text-sm">{group.product?.name || <span className="text-red-400">Удаленный товар</span>}</p>
@@ -318,7 +326,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
                           {/* Expanded Items (Batches) */}
                           {isExpanded && (
                             <tr className="bg-slate-50/50">
-                                <td colSpan={7} className="p-0">
+                                <td colSpan={8} className="p-0">
                                     <div className="px-4 pb-4">
                                         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-inner">
                                             <table className="w-full text-left">

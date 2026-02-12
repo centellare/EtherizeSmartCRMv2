@@ -20,7 +20,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialD
     object_id: '', 
     amount: '', 
     planned_date: getMinskISODate(),
-    type: 'expense' as 'income' | 'expense', // Default mostly used for create
+    type: 'expense' as 'income' | 'expense',
     category: '',
     description: '',
     doc_link: '',
@@ -40,14 +40,16 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialD
         doc_name: initialData.doc_name || ''
       });
     } else if (mode === 'create') {
-        // Reset or set defaults based on props passed from parent if needed
-        // For now, parent resets key to remount or we manage state there. 
-        // Assuming this component mounts fresh on open.
+        // Инициализация (например, если пришли из кнопки "План прихода")
         if (initialData?.type) {
             setFormData(prev => ({ ...prev, type: initialData.type }));
         }
+        // Auto-select object if passed (e.g. from ObjectWorkflow)
+        if (objects.length === 1) {
+            setFormData(prev => ({ ...prev, object_id: objects[0].id }));
+        }
     }
-  }, [mode, initialData]);
+  }, [mode, initialData, objects]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,7 +61,6 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialD
         return;
     }
 
-    // Force type for specialist
     const type = isSpecialist ? 'expense' : formData.type;
     
     try {
@@ -67,9 +68,11 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialD
             object_id: formData.object_id,
             type: type,
             amount: amount,
+            // Для прихода plan = amount. Для расхода request = amount.
             planned_amount: type === 'income' ? amount : null,
             requested_amount: type === 'expense' ? amount : null,
-            planned_date: type === 'income' ? formData.planned_date : null,
+            // Теперь planned_date сохраняем для обоих типов!
+            planned_date: formData.planned_date, 
             category: formData.category,
             description: formData.description,
             doc_link: formData.doc_link || null,
@@ -98,7 +101,6 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialD
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
         {!isSpecialist && (mode === 'create' || !initialData) && (
-             // Show object selector only if creating or editing (always required)
              <Select 
                 label="Объект" 
                 required 
@@ -108,7 +110,6 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialD
                 icon="business" 
              />
         )}
-        {/* If editing, we generally keep the object fixed or allow change. Let's allow change. */}
         {(isSpecialist || mode === 'edit') && (
              <Select 
                 label="Объект" 
@@ -122,11 +123,16 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialD
 
         <div className="grid grid-cols-2 gap-4">
             <Input label="Сумма" type="number" step="0.01" required value={formData.amount} onChange={(e:any) => setFormData({ ...formData, amount: e.target.value })} icon="payments" />
-            {formData.type === 'income' && (
-                <Input label="Дата плана" type="date" required value={formData.planned_date} onChange={(e:any) => setFormData({ ...formData, planned_date: e.target.value })} icon="event" />
-            )}
+            <Input 
+                label={formData.type === 'income' ? "Дата поступления (план)" : "Дата расхода (план)"} 
+                type="date" 
+                required 
+                value={formData.planned_date} 
+                onChange={(e:any) => setFormData({ ...formData, planned_date: e.target.value })} 
+                icon="event" 
+            />
         </div>
-        <Input label="Категория" required value={formData.category} onChange={(e:any) => setFormData({ ...formData, category: e.target.value })} icon="category" />
+        <Input label="Категория" required value={formData.category} onChange={(e:any) => setFormData({ ...formData, category: e.target.value })} icon="category" placeholder="Напр: Логистика, Монтаж..." />
         
         <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100 space-y-4">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Документация (опц.)</p>

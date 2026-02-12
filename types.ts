@@ -114,6 +114,7 @@ export interface Product {
   has_serial: boolean;
   warranty_days: number | null;
   stock_min_level?: number;
+  image_url?: string | null; // NEW: Product Image
   is_archived: boolean;
   created_at: string;
   markup_percent?: number; 

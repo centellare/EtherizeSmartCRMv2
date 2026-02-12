@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { supabase, measureQuery } from '../../lib/supabase';
-import { Modal, ConfirmModal, Toast, Button } from '../ui';
+import { Modal, ConfirmModal, Toast, Button, Drawer } from '../ui';
 import { Task } from '../../types';
 import { getMinskISODate } from '../../lib/dateUtils';
 
@@ -113,7 +113,6 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
 
   useEffect(() => { fetchData(); }, [fetchData, activeTab, filterMode, activeRange]);
 
-  // ... (Deep Linking & Archive Fetch logic remains the same)
   // Deep Linking: Open specific task
   useEffect(() => {
     const handleInitialTask = async () => {
@@ -220,7 +219,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
     return () => { supabase.removeChannel(channel); };
   }, [fetchData]);
 
-  // --- FILTER LOGIC --- (remains same)
+  // --- FILTER LOGIC ---
   const baseVisibleTasks = useMemo(() => tasks, [tasks]);
 
   const overdueCount = useMemo(() => {
@@ -275,7 +274,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
     }).filter(m => m.tasks.length > 0 || m.role === 'specialist' || m.role === 'manager');
   }, [staff, tasks]);
 
-  // --- ACTIONS --- (remains same)
+  // --- ACTIONS ---
   const handleDeleteConfirm = async () => {
     if (!deleteConfirm.id) return;
     setLoading(true);
@@ -347,6 +346,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
             onPageChange={fetchArchive}
             onTaskClick={(t) => { setSelectedTask(t); setModalMode('details'); }}
             onNavigateToObject={onNavigateToObject}
+            onRequestComplete={(t) => { setSelectedTask(t); setModalMode('completion'); }}
         />
       )}
 
@@ -367,25 +367,31 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
         />
       </Modal>
 
-      <Modal isOpen={modalMode === 'details'} onClose={handleCloseModal} title="Детали задачи">
-        <TaskDetails 
-            task={selectedTask}
-            profile={profile}
-            isAdmin={isAdmin}
-            onEdit={() => setModalMode('edit')}
-            onDelete={() => setDeleteConfirm({ open: true, id: selectedTask.id })}
-            onClose={handleCloseModal}
-            onNavigateToObject={(objId, stageId) => {
-                onNavigateToObject(objId, stageId);
-                setModalMode('none');
-            }}
-        />
-        {(selectedTask?.assigned_to === profile.id || isAdmin) && selectedTask?.status !== 'completed' && (
-             <div className="px-6 pb-6 pt-2">
-                 <Button variant="tonal" className="w-full" onClick={() => setModalMode('completion')}>Завершить задачу</Button>
-             </div>
+      {/* CHANGED: Task Details is now a Drawer */}
+      <Drawer isOpen={modalMode === 'details'} onClose={handleCloseModal} title="Карточка задачи">
+        {selectedTask && (
+            <div className="pb-20"> {/* Add padding for bottom buttons */}
+                <TaskDetails 
+                    task={selectedTask}
+                    profile={profile}
+                    isAdmin={isAdmin}
+                    onEdit={() => setModalMode('edit')}
+                    onDelete={() => setDeleteConfirm({ open: true, id: selectedTask.id })}
+                    onClose={handleCloseModal}
+                    onNavigateToObject={(objId, stageId) => {
+                        onNavigateToObject(objId, stageId);
+                        setModalMode('none');
+                    }}
+                />
+                
+                {(selectedTask?.assigned_to === profile.id || isAdmin) && selectedTask?.status !== 'completed' && (
+                    <div className="mt-8 pt-4 border-t border-slate-100">
+                        <Button variant="primary" className="w-full h-12" onClick={() => setModalMode('completion')}>Завершить задачу</Button>
+                    </div>
+                )}
+            </div>
         )}
-      </Modal>
+      </Drawer>
 
       <Modal isOpen={modalMode === 'completion'} onClose={handleCloseModal} title="Отчет о выполнении">
         <TaskCompletionModal 

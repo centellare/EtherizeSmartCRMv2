@@ -49,12 +49,12 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
           <thead className="bg-slate-50 border-b">
             <tr>
               <th className="p-4 w-10"></th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Тип / Дата</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Объект / Описание</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase w-10 text-center">Файл</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Сумма</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Факт</th>
-              <th className="p-5 text-[10px] font-bold text-slate-400 uppercase">Статус</th>
+              <th className="p-5 text-xs font-medium text-slate-500">Тип / Дата</th>
+              <th className="p-5 text-xs font-medium text-slate-500">Объект / Описание</th>
+              <th className="p-5 text-xs font-medium text-slate-500 w-10 text-center">Файл</th>
+              <th className="p-5 text-xs font-medium text-slate-500">Сумма</th>
+              <th className="p-5 text-xs font-medium text-slate-500">Факт</th>
+              <th className="p-5 text-xs font-medium text-slate-500">Статус</th>
               <th className="p-5 text-right"></th>
             </tr>
           </thead>
@@ -108,10 +108,12 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                         </Badge>
                       </td>
                       <td className="p-5 text-right">
-                        <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex justify-end gap-1">
                           {t.type === 'income' && t.status !== 'approved' && !isSpecialist && (
                             <>
-                              <button onClick={(e) => { e.stopPropagation(); onAddPayment(t); }} className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all" title="Внести оплату"><span className="material-icons-round text-sm">add_card</span></button>
+                              <button onClick={(e) => { e.stopPropagation(); onAddPayment(t); }} className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-600 hover:bg-emerald-600 hover:text-white flex items-center justify-center transition-all gap-1 font-bold text-xs shadow-sm border border-emerald-100" title="Внести оплату">
+                                <span className="material-icons-round text-sm">add_card</span> Оплатить
+                              </button>
                               {t.status === 'partial' && (
                                 <button onClick={(e) => { e.stopPropagation(); onFinalize(t); }} className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white flex items-center justify-center transition-all" title="Завершить"><span className="material-icons-round text-sm">done_all</span></button>
                               )}
