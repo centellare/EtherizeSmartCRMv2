@@ -11,10 +11,18 @@ interface State {
 }
 
 export class ErrorBoundary extends Component<Props, State> {
+  // Explicitly declare props to fix TS error "Property 'props' does not exist on type 'ErrorBoundary'"
+  public props: Props;
+
   public state: State = {
     hasError: false,
     error: null,
   };
+
+  constructor(props: Props) {
+    super(props);
+    this.props = props;
+  }
 
   public static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error };
