@@ -8,13 +8,10 @@ export const MIGRATION_SQL_V2 = `
 BEGIN;
 
 -- 1. СБРОС И ОБНОВЛЕНИЕ ПРАВ ДОСТУПА (RLS) ДЛЯ ЗАДАЧ
--- Удаляем старые, возможно конфликтующие политики
 DROP POLICY IF EXISTS "Tasks update policy" ON public.tasks;
 DROP POLICY IF EXISTS "Users can update their own tasks" ON public.tasks;
 DROP POLICY IF EXISTS "Enable update for users based on email" ON public.tasks;
 
--- Создаем единую политику обновления:
--- Разрешено: Админам, Директорам, Создателю задачи, Исполнителю задачи
 CREATE POLICY "Tasks update policy" ON public.tasks
 FOR UPDATE
 USING (
@@ -44,6 +41,43 @@ ADD COLUMN IF NOT EXISTS logo_url TEXT;
 
 ALTER TABLE public.invoices 
 ADD COLUMN IF NOT EXISTS object_id UUID REFERENCES public.objects(id);
+
+-- 3. [NEW] Функция для быстрой аналитики (на будущее)
+CREATE OR REPLACE FUNCTION get_finance_analytics(year_input int)
+RETURNS json
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  start_balance decimal;
+  monthly_data json;
+BEGIN
+  -- 1. Calculate Balance at start of year
+  SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN COALESCE(fact_amount, 0) ELSE -amount END), 0)
+  INTO start_balance
+  FROM transactions
+  WHERE extract(year from created_at) < year_input
+  AND deleted_at IS NULL
+  AND (status = 'approved' OR type = 'income');
+
+  -- 2. Calculate Monthly Stats
+  SELECT json_agg(t) INTO monthly_data FROM (
+    SELECT
+      extract(month from created_at) as month,
+      SUM(CASE WHEN type = 'income' THEN COALESCE(fact_amount, 0) ELSE 0 END) as income,
+      SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expense
+    FROM transactions
+    WHERE extract(year from created_at) = year_input
+    AND deleted_at IS NULL
+    AND (status = 'approved' OR type = 'income')
+    GROUP BY 1
+  ) t;
+
+  RETURN json_build_object(
+    'start_balance', start_balance,
+    'months', COALESCE(monthly_data, '[]'::json)
+  );
+END;
+$$;
 
 COMMIT;
 

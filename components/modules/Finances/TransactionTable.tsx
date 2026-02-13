@@ -45,15 +45,17 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
   return (
     <div className="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm">
       <div className="overflow-x-auto min-h-[400px]">
-        <table className="w-full text-left min-w-[900px]">
+        <table className="w-full text-left min-w-[1100px]">
           <thead className="bg-slate-50 border-b">
             <tr>
               <th className="p-4 w-10"></th>
-              <th className="p-5 text-xs font-medium text-slate-500">Тип / Дата</th>
+              <th className="p-5 text-xs font-medium text-slate-500">Тип / Создано</th>
+              <th className="p-5 text-xs font-medium text-slate-500">План. дата</th>
               <th className="p-5 text-xs font-medium text-slate-500">Объект / Описание</th>
               <th className="p-5 text-xs font-medium text-slate-500 w-10 text-center">Файл</th>
               <th className="p-5 text-xs font-medium text-slate-500">Сумма</th>
               <th className="p-5 text-xs font-medium text-slate-500">Факт</th>
+              <th className="p-5 text-xs font-medium text-slate-500">Остаток</th>
               <th className="p-5 text-xs font-medium text-slate-500">Статус</th>
               <th className="p-5 text-right"></th>
             </tr>
@@ -61,7 +63,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
           <tbody className="divide-y divide-slate-100">
             {transactions.length === 0 ? (
               <tr>
-                <td colSpan={8} className="p-20 text-center">
+                <td colSpan={10} className="p-20 text-center">
                   <div className="flex flex-col items-center opacity-30">
                     <span className="material-icons-round text-6xl mb-4">payments</span>
                     <p className="text-lg font-medium italic">Финансовые операции не найдены</p>
@@ -71,6 +73,11 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
             ) : (
               transactions.map(t => {
                 const docStatus = getTransactionDocStatus(t);
+                const totalAmount = t.type === 'expense' ? (t.requested_amount || t.amount) : t.amount;
+                const factAmount = t.type === 'income' ? (t.fact_amount || 0) : (t.status === 'approved' ? t.amount : (t.fact_amount || 0));
+                // Расчет остатка: Сумма - Факт. Не меньше 0.
+                const remaining = Math.max(0, totalAmount - factAmount);
+
                 return (
                   <React.Fragment key={t.id}>
                     <tr className="hover:bg-slate-50 transition-colors group">
@@ -83,6 +90,9 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                         <Badge color={t.type === 'income' ? 'emerald' : 'red'}>{t.type === 'income' ? 'ПРИХОД' : 'РАСХОД'}</Badge>
                         <p className="text-[10px] text-slate-400 font-bold mt-1">{formatDate(t.created_at)}</p>
                       </td>
+                      <td className="p-5">
+                        <span className="text-sm font-medium text-slate-700">{t.planned_date ? formatDate(t.planned_date) : '—'}</span>
+                      </td>
                       <td className="p-5 cursor-pointer" onClick={() => onRowClick(t)}>
                         <p className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{t.objects?.name || '—'}</p>
                         <p className="text-xs text-slate-500 line-clamp-1">{t.description || t.category}</p>
@@ -90,16 +100,21 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                       <td className="p-5 text-center">
                         {t.doc_link && <a href={t.doc_link} target="_blank" onClick={(e) => e.stopPropagation()} className="text-blue-500 hover:text-blue-700"><span className="material-icons-round">attach_file</span></a>}
                       </td>
-                      <td className="p-5 font-bold">{formatCurrency(t.type === 'expense' ? (t.requested_amount || t.amount) : t.amount)}</td>
+                      <td className="p-5 font-bold">{formatCurrency(totalAmount)}</td>
                       <td className="p-5">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold">{formatCurrency(t.type === 'income' ? (t.fact_amount || 0) : (t.status === 'approved' ? t.amount : 0))}</span>
+                          <span className="text-sm font-bold text-slate-700">{formatCurrency(factAmount)}</span>
                           {t.type === 'income' && (
                             <button onClick={(e) => { e.stopPropagation(); toggleExpand(t.id); }} className={`w-7 h-7 rounded-lg flex items-center justify-center transition-colors ${expandedRows.has(t.id) ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}`}>
                               <span className="material-icons-round text-sm">{expandedRows.has(t.id) ? 'expand_less' : 'history'}</span>
                             </button>
                           )}
                         </div>
+                      </td>
+                      <td className="p-5">
+                        <span className={`text-sm font-bold ${remaining > 0 ? (t.type === 'income' ? 'text-red-500' : 'text-slate-500') : 'text-emerald-500'}`}>
+                            {remaining > 0 ? formatCurrency(remaining) : <span className="material-icons-round text-base">check</span>}
+                        </span>
                       </td>
                       <td className="p-5">
                         <Badge color={t.status === 'approved' ? 'emerald' : t.status === 'partial' ? 'blue' : t.status === 'rejected' ? 'red' : 'amber'}>
@@ -130,7 +145,7 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                     </tr>
                     {expandedRows.has(t.id) && t.payments && t.payments.length > 0 && (
                       <tr className="bg-slate-50/50 animate-in slide-in-from-top-1 duration-200">
-                        <td colSpan={8} className="p-0">
+                        <td colSpan={10} className="p-0">
                           <div className="px-10 py-4 border-l-4 border-blue-500 ml-5 my-2 bg-white rounded-xl shadow-inner">
                             <p className="text-[10px] font-bold text-slate-400 uppercase mb-3 tracking-widest">История платежей</p>
                             <table className="w-full text-xs">

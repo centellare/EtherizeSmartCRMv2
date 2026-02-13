@@ -11,8 +11,10 @@ import { TransactionTable } from './Finances/TransactionTable';
 import { TransactionForm } from './Finances/modals/TransactionForm';
 import { PaymentForm } from './Finances/modals/PaymentForm';
 import { TransactionDetails } from './Finances/modals/TransactionDetails';
+import { Analytics } from './Finances/Analytics';
 
 const Finances: React.FC<{ profile: any }> = ({ profile }) => {
+  const [activeTab, setActiveTab] = useState<'journal' | 'analytics'>('journal');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [objects, setObjects] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -282,7 +284,36 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
         <div>
           <h2 className="text-3xl font-medium text-[#1c1b1f] flex items-center gap-3">Финансы</h2>
-          <div className="flex flex-wrap gap-2 mt-3 items-center">
+          {!isSpecialist && (
+            <div className="flex gap-2 mt-4 bg-slate-100 p-1 rounded-2xl w-fit">
+              <button 
+                onClick={() => setActiveTab('journal')} 
+                className={`px-5 py-2 rounded-xl text-xs font-bold uppercase transition-all ${activeTab === 'journal' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Журнал
+              </button>
+              <button 
+                onClick={() => setActiveTab('analytics')} 
+                className={`px-5 py-2 rounded-xl text-xs font-bold uppercase transition-all flex items-center gap-2 ${activeTab === 'analytics' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                Аналитика
+                <span className="material-icons-round text-sm">bar_chart</span>
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2 w-full lg:w-auto">
+           <Button variant="tonal" onClick={() => setModalMode('create_expense')} icon="request_quote" className="flex-1 lg:flex-initial">Расход</Button>
+           {!isSpecialist && <Button onClick={() => setModalMode('create_income')} icon="add_chart" className="flex-1 lg:flex-initial">Приход</Button>}
+        </div>
+      </div>
+
+      {activeTab === 'analytics' ? (
+        <Analytics transactions={transactions} formatCurrency={formatCurrency} />
+      ) : (
+        <>
+          {/* Controls visible only in Journal mode */}
+          <div className="flex flex-wrap gap-2 mb-6 items-center">
              <div className="flex items-center gap-2">
                 <Input placeholder="Акт № / Дата..." value={docSearchQuery} onChange={(e:any) => setDocSearchQuery(e.target.value)} icon="search" className="h-10 !py-2 !text-xs w-[160px]" />
                 <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors h-10">
@@ -303,46 +334,42 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
                   <button onClick={handleSetMonth} className="px-3 h-10 rounded-xl bg-blue-50 text-blue-600 text-[10px] font-bold uppercase hover:bg-blue-100 transition-colors">Этот месяц</button>
              </div>
           </div>
-        </div>
-        <div className="flex gap-2 w-full lg:w-auto">
-           <Button variant="tonal" onClick={() => setModalMode('create_expense')} icon="request_quote" className="flex-1 lg:flex-initial">Расход</Button>
-           {!isSpecialist && <Button onClick={() => setModalMode('create_income')} icon="add_chart" className="flex-1 lg:flex-initial">Приход</Button>}
-        </div>
-      </div>
 
-      <StatsOverview 
-        globalMetrics={globalMetrics}
-        periodMetrics={periodMetrics}
-        activeWidget={activeWidget}
-        setActiveWidget={setActiveWidget}
-        isSpecialist={isSpecialist} 
-        formatCurrency={formatCurrency} 
-      />
+          <StatsOverview 
+            globalMetrics={globalMetrics}
+            periodMetrics={periodMetrics}
+            activeWidget={activeWidget}
+            setActiveWidget={setActiveWidget}
+            isSpecialist={isSpecialist} 
+            formatCurrency={formatCurrency} 
+          />
 
-      <div className="mt-8">
-        <h5 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4 ml-1 flex items-center gap-2">
-             Журнал операций
-             {activeWidget && (
-                 <span className="text-xs bg-slate-800 text-white px-2 py-0.5 rounded-lg lowercase animate-in fade-in">
-                     фильтр: {activeWidget === 'debtors' ? 'дебиторка' : activeWidget.replace('_', ' ')}
-                 </span>
-             )}
-        </h5>
-        <TransactionTable 
-            transactions={filteredTransactions}
-            expandedRows={expandedRows}
-            toggleExpand={(id) => setExpandedRows(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; })}
-            formatCurrency={formatCurrency}
-            isSpecialist={isSpecialist}
-            canApprove={canApprove}
-            onRowClick={(t) => { setSelectedTransaction(t); setModalMode('details'); }}
-            onPaymentClick={(p, t) => { setSelectedPayment(p); setSelectedTransaction(t); setModalMode('edit_payment'); }}
-            onAddPayment={(t) => { setSelectedTransaction(t); setModalMode('add_payment'); }}
-            onApprove={(t) => { setSelectedTransaction(t); setApprovalAmount((t.requested_amount || t.amount).toString()); setModalMode('approve'); }}
-            onReject={(t) => setConfirmConfig({ open: true, type: 'reject_expense', data: t })}
-            onFinalize={(t) => setConfirmConfig({ open: true, type: 'finalize_income', data: t })}
-        />
-      </div>
+          <div className="mt-8">
+            <h5 className="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4 ml-1 flex items-center gap-2">
+                 Журнал операций
+                 {activeWidget && (
+                     <span className="text-xs bg-slate-800 text-white px-2 py-0.5 rounded-lg lowercase animate-in fade-in">
+                         фильтр: {activeWidget === 'debtors' ? 'дебиторка' : activeWidget.replace('_', ' ')}
+                     </span>
+                 )}
+            </h5>
+            <TransactionTable 
+                transactions={filteredTransactions}
+                expandedRows={expandedRows}
+                toggleExpand={(id) => setExpandedRows(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; })}
+                formatCurrency={formatCurrency}
+                isSpecialist={isSpecialist}
+                canApprove={canApprove}
+                onRowClick={(t) => { setSelectedTransaction(t); setModalMode('details'); }}
+                onPaymentClick={(p, t) => { setSelectedPayment(p); setSelectedTransaction(t); setModalMode('edit_payment'); }}
+                onAddPayment={(t) => { setSelectedTransaction(t); setModalMode('add_payment'); }}
+                onApprove={(t) => { setSelectedTransaction(t); setApprovalAmount((t.requested_amount || t.amount).toString()); setModalMode('approve'); }}
+                onReject={(t) => setConfirmConfig({ open: true, type: 'reject_expense', data: t })}
+                onFinalize={(t) => setConfirmConfig({ open: true, type: 'finalize_income', data: t })}
+            />
+          </div>
+        </>
+      )}
 
       {/* --- MODALS --- */}
 

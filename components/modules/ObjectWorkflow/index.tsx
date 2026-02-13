@@ -82,7 +82,7 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
       setTasks(tasksData || []);
 
       if (canSeeFinances) {
-        let query = supabase.from('transactions').select(`*, creator:profiles!transactions_created_by_fkey(full_name), payments:transaction_payments(*, creator:profiles!transaction_payments_created_by_fkey(full_name))`).eq('object_id', object.id).is('deleted_at', null);
+        let query = supabase.from('transactions').select(`*, objects(id, name), creator:profiles!transactions_created_by_fkey(full_name), payments:transaction_payments(*, creator:profiles!transaction_payments_created_by_fkey(full_name))`).eq('object_id', object.id).is('deleted_at', null);
         if (isSpecialist) {
           query = query.eq('created_by', profile.id).eq('type', 'expense');
         }
