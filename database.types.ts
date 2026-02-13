@@ -15,6 +15,58 @@ export type Database = {
   }
   public: {
     Tables: {
+      client_connections: {
+        Row: {
+          client_a: string | null
+          client_b: string | null
+          comment: string | null
+          created_at: string | null
+          created_by: string | null
+          id: string
+          type: string
+        }
+        Insert: {
+          client_a?: string | null
+          client_b?: string | null
+          comment?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          type: string
+        }
+        Update: {
+          client_a?: string | null
+          client_b?: string | null
+          comment?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          id?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_connections_client_a_fkey"
+            columns: ["client_a"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_connections_client_b_fkey"
+            columns: ["client_b"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_connections_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           comment: string | null
@@ -26,9 +78,11 @@ export type Database = {
           deleted_by: string | null
           email: string | null
           id: string
+          lead_source: string | null
           manager_id: string | null
           name: string
           phone: string | null
+          referred_by: string | null
           requisites: string | null
           type: Database["public"]["Enums"]["client_type"]
           updated_at: string | null
@@ -44,9 +98,11 @@ export type Database = {
           deleted_by?: string | null
           email?: string | null
           id?: string
+          lead_source?: string | null
           manager_id?: string | null
           name: string
           phone?: string | null
+          referred_by?: string | null
           requisites?: string | null
           type: Database["public"]["Enums"]["client_type"]
           updated_at?: string | null
@@ -62,9 +118,11 @@ export type Database = {
           deleted_by?: string | null
           email?: string | null
           id?: string
+          lead_source?: string | null
           manager_id?: string | null
           name?: string
           phone?: string | null
+          referred_by?: string | null
           requisites?: string | null
           type?: Database["public"]["Enums"]["client_type"]
           updated_at?: string | null
@@ -86,6 +144,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "fk_clients_referrer"
+            columns: ["referred_by"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "fk_clients_updater"
             columns: ["updated_by"]
             isOneToOne: false
@@ -101,6 +166,7 @@ export type Database = {
           created_at: string | null
           default_vat_percent: number
           id: string
+          logo_url: string | null
           requisites: string | null
         }
         Insert: {
@@ -109,6 +175,7 @@ export type Database = {
           created_at?: string | null
           default_vat_percent?: number
           id?: string
+          logo_url?: string | null
           requisites?: string | null
         }
         Update: {
@@ -117,6 +184,7 @@ export type Database = {
           created_at?: string | null
           default_vat_percent?: number
           id?: string
+          logo_url?: string | null
           requisites?: string | null
         }
         Relationships: []
@@ -133,6 +201,7 @@ export type Database = {
           header_data: Json | null
           id: string
           number: number
+          object_id: string | null
           status: string | null
           title: string | null
           total_amount_byn: number | null
@@ -148,6 +217,7 @@ export type Database = {
           header_data?: Json | null
           id?: string
           number?: number
+          object_id?: string | null
           status?: string | null
           title?: string | null
           total_amount_byn?: number | null
@@ -163,6 +233,7 @@ export type Database = {
           header_data?: Json | null
           id?: string
           number?: number
+          object_id?: string | null
           status?: string | null
           title?: string | null
           total_amount_byn?: number | null
@@ -180,6 +251,13 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commercial_proposals_object_id_fkey"
+            columns: ["object_id"]
+            isOneToOne: false
+            referencedRelation: "objects"
             referencedColumns: ["id"]
           },
         ]
@@ -326,6 +404,8 @@ export type Database = {
           has_vat: boolean | null
           id: string
           number: number
+          object_id: string | null
+          shipping_status: string | null
           status: string | null
           total_amount: number | null
           updated_at: string | null
@@ -338,6 +418,8 @@ export type Database = {
           has_vat?: boolean | null
           id?: string
           number?: number
+          object_id?: string | null
+          shipping_status?: string | null
           status?: string | null
           total_amount?: number | null
           updated_at?: string | null
@@ -350,6 +432,8 @@ export type Database = {
           has_vat?: boolean | null
           id?: string
           number?: number
+          object_id?: string | null
+          shipping_status?: string | null
           status?: string | null
           total_amount?: number | null
           updated_at?: string | null
@@ -374,6 +458,13 @@ export type Database = {
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_object_id_fkey"
+            columns: ["object_id"]
+            isOneToOne: false
+            referencedRelation: "objects"
             referencedColumns: ["id"]
           },
         ]
@@ -527,6 +618,7 @@ export type Database = {
           product_id: string | null
           purchase_price: number | null
           quantity: number | null
+          reserved_for_invoice_id: string | null
           serial_number: string | null
           status: string
           total_price: number | null
@@ -545,6 +637,7 @@ export type Database = {
           product_id?: string | null
           purchase_price?: number | null
           quantity?: number | null
+          reserved_for_invoice_id?: string | null
           serial_number?: string | null
           status?: string
           total_price?: number | null
@@ -563,6 +656,7 @@ export type Database = {
           product_id?: string | null
           purchase_price?: number | null
           quantity?: number | null
+          reserved_for_invoice_id?: string | null
           serial_number?: string | null
           status?: string
           total_price?: number | null
@@ -597,6 +691,13 @@ export type Database = {
             columns: ["product_id"]
             isOneToOne: false
             referencedRelation: "products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inventory_items_reserved_for_invoice_id_fkey"
+            columns: ["reserved_for_invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
             referencedColumns: ["id"]
           },
         ]
@@ -850,6 +951,7 @@ export type Database = {
           description: string | null
           has_serial: boolean
           id: string
+          image_url: string | null
           is_archived: boolean
           markup_percent: number | null
           name: string
@@ -868,6 +970,7 @@ export type Database = {
           description?: string | null
           has_serial?: boolean
           id?: string
+          image_url?: string | null
           is_archived?: boolean
           markup_percent?: number | null
           name: string
@@ -886,6 +989,7 @@ export type Database = {
           description?: string | null
           has_serial?: boolean
           id?: string
+          image_url?: string | null
           is_archived?: boolean
           markup_percent?: number | null
           name?: string
@@ -1371,6 +1475,10 @@ export type Database = {
       finalize_project: {
         Args: { p_object_id: string; p_user_id: string }
         Returns: undefined
+      }
+      get_finance_analytics: {
+        Args: { year_input: number }
+        Returns: Json
       }
       get_my_role: {
         Args: never
