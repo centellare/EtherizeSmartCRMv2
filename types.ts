@@ -187,6 +187,7 @@ export interface CPItem {
   snapshot_name?: string | null;
   snapshot_description?: string | null;
   snapshot_unit?: string | null;
+  parent_id?: string | null; // NEW: Hierarchy
   product?: Product;
   // Legacy
   catalog_id?: string;
@@ -239,6 +240,7 @@ export interface InvoiceItem {
   id: string;
   invoice_id: string;
   product_id: string | null;
+  parent_id?: string | null; // NEW: Hierarchy
   name: string;
   quantity: number;
   unit: string;

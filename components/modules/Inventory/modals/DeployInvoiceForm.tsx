@@ -18,7 +18,7 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
   
   // Data for Step 2
   const [invoiceItems, setInvoiceItems] = useState<any[]>([]);
-  const [shippingMap, setShippingMap] = useState<Record<string, number>>({}); // productId -> qtyToShip
+  const [shippingMap, setShippingMap] = useState<Record<string, number>>({});
   const [stockInfo, setStockInfo] = useState<Record<string, { reserved: number, free: number, total: number }>>({});
   const [targetObject, setTargetObject] = useState<any>(null);
 
@@ -28,13 +28,12 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
 
   const fetchInvoices = async () => {
     setLoading(true);
-    // Fetch active invoices (sent or paid) that are not fully shipped
     const { data } = await supabase
       .from('invoices')
       .select('id, number, status, created_at, client:clients(name)')
       .in('status', ['sent', 'paid'])
       // @ts-ignore
-      .neq('shipping_status', 'shipped') // Filter out fully shipped
+      .neq('shipping_status', 'shipped')
       .order('created_at', { ascending: false });
     
     setInvoices(data || []);
@@ -46,41 +45,24 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
     setLoading(true);
     
     try {
-        // 1. Get Invoice Details & Linked Object (via client)
-        const { data: inv } = await supabase
-            .from('invoices')
-            .select('*, client:clients(id, name)')
-            .eq('id', selectedInvoiceId)
-            .single();
-        
+        const { data: inv } = await supabase.from('invoices').select('*, client:clients(id, name)').eq('id', selectedInvoiceId).single();
         if (!inv) throw new Error('Счет не найден');
 
-        // Find Object associated with this client (latest active)
-        const { data: obj } = await supabase
-            .from('objects')
-            .select('id, name')
-            .eq('client_id', inv.client_id || '')
-            .is('is_deleted', false)
-            .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
-        
+        const { data: obj } = await supabase.from('objects').select('id, name').eq('client_id', inv.client_id || '').is('is_deleted', false).order('updated_at', { ascending: false }).limit(1).maybeSingle();
         setTargetObject(obj);
 
-        // 2. Get Invoice Items
-        const { data: items } = await supabase
-            .from('invoice_items')
-            .select('*, product:products(has_serial)')
-            .eq('invoice_id', selectedInvoiceId);
+        const { data: items } = await supabase.from('invoice_items').select('*, product:products(id, name, has_serial)').eq('invoice_id', selectedInvoiceId);
         
-        setInvoiceItems(items || []);
+        // Filter out Bundle Headers (items without product_id)
+        // Only real products can be shipped
+        const shippableItems = (items || []).filter((i: any) => !!i.product_id);
+        
+        setInvoiceItems(shippableItems);
 
-        // 3. Calculate Stock Availability (Reserved vs Free)
-        if (items && items.length > 0) {
-            const productIds = items.map((i: any) => i.product_id).filter(Boolean);
+        if (shippableItems.length > 0) {
+            const productIds = shippableItems.map((i: any) => i.product_id).filter(Boolean);
             
-            const { data: stockData } = await supabase
-                .from('inventory_items')
+            const { data: stockData } = await supabase.from('inventory_items')
                 .select('product_id, status, reserved_for_invoice_id, quantity')
                 .in('product_id', productIds)
                 .in('status', ['in_stock', 'reserved'])
@@ -91,75 +73,57 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
             stockData?.forEach((row: any) => {
                 const pid = row.product_id;
                 if (!map[pid]) map[pid] = { reserved: 0, free: 0, total: 0 };
-                
                 const qty = row.quantity || 0;
-
-                // Count as reserved ONLY if reserved for THIS invoice
                 if (row.status === 'reserved' && row.reserved_for_invoice_id === selectedInvoiceId) {
                     map[pid].reserved += qty;
                 } else if (row.status === 'in_stock') {
                     map[pid].free += qty;
                 }
-                // Total available for this shipment
                 map[pid].total = map[pid].reserved + map[pid].free;
             });
             setStockInfo(map);
 
-            // Auto-fill shipping quantities based on reservation or need
             const initialShip: Record<string, number> = {};
-            items.forEach((i: any) => {
-                if (i.product_id) {
-                    const info = map[i.product_id] || { reserved: 0, free: 0 };
-                    // Default: Ship what is reserved, or up to quantity needed if free stock allows
-                    const canShip = info.reserved + info.free;
-                    initialShip[i.product_id] = Math.min(i.quantity, canShip);
-                }
+            shippableItems.forEach((i: any) => {
+                const info = map[i.product_id] || { reserved: 0, free: 0 };
+                const canShip = info.reserved + info.free;
+                initialShip[i.product_id] = Math.min(i.quantity, canShip);
             });
             setShippingMap(initialShip);
         }
-
         setStep(2);
     } catch (e) {
         console.error(e);
-        alert('Ошибка загрузки данных счета');
+        alert('Ошибка загрузки');
     } finally {
         setLoading(false);
     }
   };
 
   const handleShip = async () => {
-      if (!targetObject) {
-          alert('Не найден объект для отгрузки. Создайте объект для этого клиента.');
-          return;
-      }
+      if (!targetObject) { alert('Объект не найден'); return; }
       setLoading(true);
       try {
           for (const item of invoiceItems) {
-              if (!item.product_id) continue;
-              
               const qtyToShip = shippingMap[item.product_id] || 0;
               if (qtyToShip <= 0) continue;
 
               let remainingToShip = qtyToShip;
 
-              // 1. Prioritize Reserved Items
-              const { data: reservedItems } = await supabase
-                  .from('inventory_items')
+              // 1. Reserved
+              const { data: reservedItems } = await supabase.from('inventory_items')
                   .select('id, quantity, serial_number')
                   .eq('product_id', item.product_id)
                   .eq('status', 'reserved')
                   .eq('reserved_for_invoice_id', selectedInvoiceId)
                   .is('deleted_at', null);
               
-              // Process reserved first
               if (reservedItems) {
                   for (const rItem of reservedItems) {
                       if (remainingToShip <= 0) break;
-                      const rQty = rItem.quantity || 0;
-                      const take = Math.min(rQty, remainingToShip);
+                      const take = Math.min(rItem.quantity, remainingToShip);
                       
-                      // Move to deployed
-                      if (take === rQty) {
+                      if (take === rItem.quantity) {
                           await supabase.from('inventory_items').update({
                               status: 'deployed',
                               current_object_id: targetObject.id,
@@ -167,8 +131,7 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
                               assigned_to_id: profile.id
                           }).eq('id', rItem.id);
                       } else {
-                          // Split
-                          await supabase.from('inventory_items').update({ quantity: rQty - take }).eq('id', rItem.id);
+                          await supabase.from('inventory_items').update({ quantity: rItem.quantity - take }).eq('id', rItem.id);
                           await supabase.from('inventory_items').insert({
                               product_id: item.product_id,
                               quantity: take,
@@ -177,24 +140,20 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
                               assigned_to_id: profile.id
                           });
                       }
-                      
-                      // Log history
                       await supabase.from('inventory_history').insert({
-                          item_id: rItem.id, // technically incorrect ID if split, but tracking flow is complex
+                          item_id: rItem.id, 
                           action_type: 'deploy',
                           to_object_id: targetObject.id,
                           created_by: profile.id,
-                          comment: `Отгрузка по счету (Резерв). Сч №${invoices.find(i=>i.id===selectedInvoiceId)?.number}`
+                          comment: `Отгрузка по счету (Резерв).`
                       });
-
                       remainingToShip -= take;
                   }
               }
 
-              // 2. Take from Free Stock if still needed
+              // 2. Free
               if (remainingToShip > 0) {
-                  const { data: freeItems } = await supabase
-                    .from('inventory_items')
+                  const { data: freeItems } = await supabase.from('inventory_items')
                     .select('id, quantity')
                     .eq('product_id', item.product_id)
                     .eq('status', 'in_stock')
@@ -203,17 +162,16 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
                   if (freeItems) {
                       for (const fItem of freeItems) {
                           if (remainingToShip <= 0) break;
-                          const fQty = fItem.quantity || 0;
-                          const take = Math.min(fQty, remainingToShip);
+                          const take = Math.min(fItem.quantity, remainingToShip);
                           
-                          if (take === fQty) {
+                          if (take === fItem.quantity) {
                               await supabase.from('inventory_items').update({
                                   status: 'deployed',
                                   current_object_id: targetObject.id,
                                   assigned_to_id: profile.id
                               }).eq('id', fItem.id);
                           } else {
-                              await supabase.from('inventory_items').update({ quantity: fQty - take }).eq('id', fItem.id);
+                              await supabase.from('inventory_items').update({ quantity: fItem.quantity - take }).eq('id', fItem.id);
                               await supabase.from('inventory_items').insert({
                                   product_id: item.product_id,
                                   quantity: take,
@@ -222,33 +180,24 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
                                   assigned_to_id: profile.id
                               });
                           }
-
                           await supabase.from('inventory_history').insert({
                             item_id: fItem.id,
                             action_type: 'deploy',
                             to_object_id: targetObject.id,
                             created_by: profile.id,
-                            comment: `Отгрузка по счету (Свободный). Сч №${invoices.find(i=>i.id===selectedInvoiceId)?.number}`
+                            comment: `Отгрузка по счету (Свободный).`
                         });
-
                           remainingToShip -= take;
                       }
                   }
               }
           }
-
-          // Update Invoice Shipping Status (Simple Logic)
-          // We mark as 'partial' if we shipped something. 'shipped' if everything.
-          // For MVP, if we shipped anything, let's mark partial. If we shipped exactly total needed...
-          // Calculating exact totals is hard without tracking line-item fulfillment in DB.
-          // Let's set to 'partial' by default, user can close it manually or improve logic later.
           // @ts-ignore
           await supabase.from('invoices').update({ shipping_status: 'partial' }).eq('id', selectedInvoiceId);
-
           onSuccess();
       } catch (e: any) {
           console.error(e);
-          alert('Ошибка отгрузки: ' + e.message);
+          alert('Ошибка: ' + e.message);
       } finally {
           setLoading(false);
       }
@@ -257,19 +206,13 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
   if (step === 1) {
       return (
           <div className="space-y-4">
-              <p className="text-sm text-slate-500">Выберите счет, по которому нужно собрать заказ. Будут использованы товары из резерва и свободного остатка.</p>
               <Select 
                   label="Счет на оплату" 
                   value={selectedInvoiceId}
                   onChange={(e: any) => setSelectedInvoiceId(e.target.value)}
-                  options={[
-                      { value: '', label: 'Выберите счет...' },
-                      ...invoices.map(i => ({ value: i.id, label: `№${i.number} от ${formatDate(i.created_at)} (${i.client?.name})` }))
-                  ]}
+                  options={[{ value: '', label: 'Выберите счет...' }, ...invoices.map(i => ({ value: i.id, label: `№${i.number} от ${formatDate(i.created_at)} (${i.client?.name})` }))]}
               />
-              <Button onClick={handleInvoiceSelect} disabled={!selectedInvoiceId} loading={loading} className="w-full h-12">
-                  Далее
-              </Button>
+              <Button onClick={handleInvoiceSelect} disabled={!selectedInvoiceId} loading={loading} className="w-full h-12">Далее</Button>
           </div>
       );
   }
@@ -290,8 +233,7 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
                       <tr>
                           <th className="p-3">Товар</th>
                           <th className="p-3 text-center">Нужно</th>
-                          <th className="p-3 text-center">Резерв</th>
-                          <th className="p-3 text-center">Свободно</th>
+                          <th className="p-3 text-center">Склад</th>
                           <th className="p-3 w-24">К отгрузке</th>
                       </tr>
                   </thead>
@@ -305,13 +247,11 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
                           return (
                               <tr key={item.id} className={isDeficit ? "bg-red-50/50" : ""}>
                                   <td className="p-3">
-                                      <p className={`font-medium ${isDeficit ? 'text-red-600' : ''}`}>{item.name}</p>
-                                      {item.product?.has_serial && <span className="text-[9px] bg-amber-100 text-amber-700 px-1 rounded">Нужен S/N</span>}
-                                      {isDeficit && <span className="block text-[9px] font-bold text-red-500 mt-0.5">ДЕФИЦИТ</span>}
+                                      <p className="font-medium">{item.name}</p>
+                                      {item.product?.has_serial && <span className="text-[9px] bg-amber-100 text-amber-700 px-1 rounded">S/N</span>}
                                   </td>
                                   <td className="p-3 text-center font-bold">{item.quantity}</td>
-                                  <td className="p-3 text-center text-blue-600 font-bold">{info.reserved}</td>
-                                  <td className="p-3 text-center text-slate-500">{info.free}</td>
+                                  <td className="p-3 text-center text-blue-600 font-bold">{info.reserved + info.free}</td>
                                   <td className="p-3">
                                       <input 
                                           type="number" 
@@ -328,14 +268,7 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
               </table>
           </div>
 
-          <div className="pt-2">
-              <Button onClick={handleShip} loading={loading} disabled={!targetObject} className="w-full h-12" icon="local_shipping">
-                  Выполнить отгрузку
-              </Button>
-              <p className="text-[10px] text-center text-slate-400 mt-2">
-                  * Если товары требуют S/N, они будут выбраны автоматически из доступных, либо вам придется уточнить их позже в карточке объекта.
-              </p>
-          </div>
+          <Button onClick={handleShip} loading={loading} disabled={!targetObject} className="w-full h-12" icon="local_shipping">Выполнить отгрузку</Button>
       </div>
   );
 };

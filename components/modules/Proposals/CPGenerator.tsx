@@ -13,7 +13,9 @@ interface CPGeneratorProps {
 }
 
 interface CartItem {
-  product_id: string; 
+  unique_id: string; // Temporary UI ID
+  product_id: string | null; // Null for Virtual Bundle Headers
+  parent_unique_id: string | null; // Hierarchy in UI
   name: string;
   description?: string;
   quantity: number;
@@ -21,7 +23,9 @@ interface CartItem {
   retail_price: number; 
   category: string;
   unit: string;
-  manual_markup_percent: number; 
+  manual_markup_percent: number;
+  is_bundle_header?: boolean;
+  is_manual_price?: boolean; // New: flag to lock auto-calculation
 }
 
 const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialObjectId, onSuccess, onCancel }) => {
@@ -39,10 +43,12 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [activeBundleId, setActiveBundleId] = useState<string | null>(null); // To know where to add items
   
   // Filters & UI
   const [search, setSearch] = useState('');
-  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
+  // Changed from 'collapsed' to 'expanded' so default (empty set) is collapsed
+  const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const init = async () => {
@@ -80,9 +86,18 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
 
             const { data: items } = await supabase.from('cp_items').select('*').eq('cp_id', proposalId);
             if (items) {
-              setCart(items.map((i: any) => {
+              const dbIdToUiId: Record<string, string> = {};
+              
+              const mappedItems: CartItem[] = items.map((i: any) => {
+                  const uiId = Math.random().toString(36).substr(2, 9);
+                  dbIdToUiId[i.id] = uiId;
                   const liveProd = (prodRes.data as unknown as Product[])?.find(p => p.id === i.product_id);
+                  const isBundleHeader = !i.product_id;
+                  
                   return {
+                    unique_id: uiId,
+                    db_id: i.id, 
+                    parent_db_id: i.parent_id,
                     product_id: i.product_id,
                     name: i.snapshot_name || liveProd?.name || 'Unknown',
                     description: i.snapshot_description || '',
@@ -91,9 +106,20 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
                     quantity: i.quantity,
                     base_price: liveProd ? liveProd.base_price : 0,
                     retail_price: i.price_at_moment || 0,
-                    manual_markup_percent: i.manual_markup || 0
+                    manual_markup_percent: i.manual_markup || 0,
+                    is_bundle_header: isBundleHeader,
+                    is_manual_price: isBundleHeader, 
+                    parent_unique_id: null 
                   };
-              }));
+              });
+
+              mappedItems.forEach(item => {
+                  if ((item as any).parent_db_id) {
+                      item.parent_unique_id = dbIdToUiId[(item as any).parent_db_id] || null;
+                  }
+              });
+
+              setCart(mappedItems);
             }
           }
         }
@@ -115,29 +141,73 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
       }
   }, [selectedObjectId, objects]);
 
+  // -- CALCULATIONS --
+  
+  // Round to 2 decimals utility
+  const roundMoney = (amount: number) => Math.round(amount * 100) / 100;
+
   const calculateItemPrice = (item: CartItem) => {
-      if (item.base_price > 0) return item.base_price * (1 + (item.manual_markup_percent / 100));
-      return item.retail_price; 
+      let price = 0;
+      if (item.is_bundle_header) {
+          price = item.retail_price;
+      } else if (item.base_price > 0) {
+          price = item.base_price * (1 + (item.manual_markup_percent / 100));
+      } else {
+          price = item.retail_price; 
+      }
+      return roundMoney(price);
   };
 
-  const calculateItemTotal = (item: CartItem) => calculateItemPrice(item) * item.quantity;
+  const calculateItemTotal = (item: CartItem) => {
+      // Round unit price first, then multiply
+      const unitPrice = calculateItemPrice(item);
+      return roundMoney(unitPrice * item.quantity);
+  };
 
   const totals = useMemo(() => {
     let subtotal = 0; let costTotal = 0;
-    cart.forEach(i => { subtotal += calculateItemTotal(i); costTotal += i.base_price * i.quantity; });
-    const vat = hasVat ? subtotal * 0.2 : 0;
-    const profit = subtotal - costTotal;
+    
+    cart.forEach(i => { 
+        if (!i.parent_unique_id) {
+            const itemTotal = calculateItemTotal(i);
+            const itemCost = roundMoney(i.base_price * i.quantity); // Cost always accumulates
+            subtotal += itemTotal;
+            costTotal += itemCost;
+        } else {
+            // It's a child. We add its cost to global cost, but its revenue is inside parent.
+            costTotal += roundMoney(i.base_price * i.quantity);
+        }
+    });
+
+    // Rounding sums
+    subtotal = roundMoney(subtotal);
+    costTotal = roundMoney(costTotal);
+
+    const vat = hasVat ? roundMoney(subtotal * 0.2) : 0;
+    const profit = roundMoney(subtotal - costTotal);
     const markupPercent = costTotal > 0 ? (profit / costTotal) * 100 : 0;
     return { subtotal, vat, total: subtotal + vat, profit, markupPercent };
   }, [cart, hasVat]);
 
+  // Helper to recalculate a specific bundle's price based on its children
+  const getBundleAutoPrice = (bundleId: string, currentCart: CartItem[]) => {
+      const children = currentCart.filter(c => c.parent_unique_id === bundleId);
+      const sum = children.reduce((acc, child) => {
+          // Calculate child price (base + markup) * quantity
+          let childUnitPrice = child.retail_price;
+          if (child.base_price > 0) {
+              childUnitPrice = child.base_price * (1 + (child.manual_markup_percent / 100));
+          }
+          // Round unit price BEFORE multiplying by quantity for bundle sum consistency
+          const roundedUnitPrice = roundMoney(childUnitPrice);
+          return acc + roundMoney(roundedUnitPrice * child.quantity);
+      }, 0);
+      return roundMoney(sum);
+  };
+
   const addToCart = (product: Product) => {
-    setCart(prev => {
-      const exists = prev.find(c => c.product_id === product.id);
-      if (exists) return prev.map(c => c.product_id === product.id ? { ...c, quantity: c.quantity + 1 } : c);
-      let initialMarkup = 0;
-      if (product.base_price > 0) initialMarkup = ((product.retail_price - product.base_price) / product.base_price) * 100;
-      return [...prev, {
+    const newItem: CartItem = {
+        unique_id: Math.random().toString(36).substr(2, 9),
         product_id: product.id,
         name: product.name,
         description: product.description || '',
@@ -146,13 +216,110 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
         base_price: product.base_price,
         retail_price: product.retail_price,
         category: product.category,
-        manual_markup_percent: parseFloat(initialMarkup.toFixed(2))
-      }];
+        manual_markup_percent: product.base_price > 0 
+            ? parseFloat((((product.retail_price - product.base_price) / product.base_price) * 100).toFixed(2)) 
+            : 0,
+        parent_unique_id: activeBundleId
+    };
+
+    setCart(prev => {
+        const newCart = [...prev, newItem];
+        
+        // Auto-update bundle price if adding to a bundle that is NOT manual
+        if (activeBundleId) {
+            const bundleIndex = newCart.findIndex(i => i.unique_id === activeBundleId);
+            if (bundleIndex !== -1 && !newCart[bundleIndex].is_manual_price) {
+                const newPrice = getBundleAutoPrice(activeBundleId, newCart);
+                newCart[bundleIndex] = { ...newCart[bundleIndex], retail_price: newPrice };
+            }
+        }
+        return newCart;
     });
   };
 
-  const updateCartItem = (id: string, field: keyof CartItem, value: any) => setCart(prev => prev.map(c => c.product_id === id ? { ...c, [field]: value } : c));
-  const removeFromCart = (id: string) => setCart(prev => prev.filter(c => c.product_id !== id));
+  const addBundleHeader = () => {
+      const newItem: CartItem = {
+          unique_id: Math.random().toString(36).substr(2, 9),
+          product_id: null,
+          name: 'Новый комплект / Решение',
+          description: '',
+          unit: 'компл',
+          quantity: 1,
+          base_price: 0,
+          retail_price: 0,
+          category: 'Комплекты',
+          manual_markup_percent: 0,
+          is_bundle_header: true,
+          parent_unique_id: null,
+          is_manual_price: false // Default to auto
+      };
+      setCart(prev => [newItem, ...prev]);
+      setActiveBundleId(newItem.unique_id);
+  };
+
+  const updateCartItem = (unique_id: string, field: keyof CartItem, value: any) => {
+      setCart(prev => {
+          let newCart = prev.map(c => c.unique_id === unique_id ? { ...c, [field]: value } : c);
+          
+          // Logic 1: If updating a bundle header's price manually
+          if (field === 'retail_price') {
+              const item = newCart.find(c => c.unique_id === unique_id);
+              if (item?.is_bundle_header) {
+                  item.is_manual_price = true;
+              }
+          }
+
+          // Logic 2: If updating a child item, and parent is NOT manual -> recalculate parent
+          const updatedItem = newCart.find(c => c.unique_id === unique_id);
+          if (updatedItem && updatedItem.parent_unique_id && (field === 'quantity' || field === 'manual_markup_percent' || field === 'retail_price')) {
+              const parentId = updatedItem.parent_unique_id;
+              const parentIndex = newCart.findIndex(i => i.unique_id === parentId);
+              
+              if (parentIndex !== -1 && !newCart[parentIndex].is_manual_price) {
+                  const newParentPrice = getBundleAutoPrice(parentId, newCart);
+                  newCart[parentIndex] = { ...newCart[parentIndex], retail_price: newParentPrice };
+              }
+          }
+
+          return newCart;
+      });
+  };
+
+  const handleRecalculateBundle = (bundleId: string) => {
+      setCart(prev => {
+          const newCart = [...prev];
+          const bundleIndex = newCart.findIndex(i => i.unique_id === bundleId);
+          if (bundleIndex !== -1) {
+              const autoPrice = getBundleAutoPrice(bundleId, newCart);
+              newCart[bundleIndex] = { 
+                  ...newCart[bundleIndex], 
+                  retail_price: autoPrice, 
+                  is_manual_price: false // Reset manual flag
+              };
+          }
+          return newCart;
+      });
+      setToast({ message: 'Цена комплекта пересчитана', type: 'success' });
+  };
+
+  const removeFromCart = (unique_id: string) => {
+      setCart(prev => {
+          const itemToRemove = prev.find(c => c.unique_id === unique_id);
+          const newCart = prev.filter(c => c.unique_id !== unique_id && c.parent_unique_id !== unique_id);
+          
+          // If we removed a child, update parent if auto
+          if (itemToRemove && itemToRemove.parent_unique_id) {
+              const parentId = itemToRemove.parent_unique_id;
+              const parentIndex = newCart.findIndex(i => i.unique_id === parentId);
+              if (parentIndex !== -1 && !newCart[parentIndex].is_manual_price) {
+                  const newPrice = getBundleAutoPrice(parentId, newCart);
+                  newCart[parentIndex] = { ...newCart[parentIndex], retail_price: newPrice };
+              }
+          }
+          return newCart;
+      });
+      if (activeBundleId === unique_id) setActiveBundleId(null);
+  };
 
   const handleSave = async () => {
     if (!linkedClient) { setToast({ message: 'Выберите объект с клиентом', type: 'error' }); return; }
@@ -173,7 +340,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
 
       if (cpId) {
         await supabase.from('commercial_proposals').update(headerPayload as any).eq('id', cpId);
-        await supabase.from('cp_items').delete().eq('cp_id', cpId);
+        await supabase.from('cp_items').delete().eq('cp_id', cpId); 
       } else {
         const { data, error } = await supabase.from('commercial_proposals').insert([headerPayload as any]).select('id').single();
         if (error) throw error;
@@ -181,19 +348,53 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
       }
 
       if (cpId) {
-        const itemsPayload = cart.map(item => ({
-          cp_id: cpId,
-          product_id: item.product_id,
-          quantity: item.quantity,
-          final_price_byn: calculateItemTotal(item) / item.quantity,
-          price_at_moment: calculateItemPrice(item),
-          manual_markup: item.manual_markup_percent,
-          snapshot_name: item.name,
-          snapshot_description: item.description,
-          snapshot_unit: item.unit,
-          snapshot_global_category: item.category
-        }));
-        await supabase.from('cp_items').insert(itemsPayload);
+        const roots = cart.filter(c => !c.parent_unique_id);
+        const children = cart.filter(c => c.parent_unique_id);
+        const idMap: Record<string, string> = {};
+
+        if (roots.length > 0) {
+            const rootPayloads = roots.map(item => ({
+                cp_id: cpId,
+                product_id: item.product_id,
+                quantity: item.quantity,
+                final_price_byn: calculateItemTotal(item) / item.quantity,
+                price_at_moment: calculateItemPrice(item),
+                manual_markup: item.manual_markup_percent,
+                snapshot_name: item.name,
+                snapshot_description: item.description,
+                snapshot_unit: item.unit,
+                snapshot_global_category: item.category,
+                parent_id: null
+            }));
+            
+            const { data: insertedRoots, error: rootError } = await supabase.from('cp_items').insert(rootPayloads).select('id');
+            if (rootError) throw rootError;
+            
+            if (insertedRoots) {
+                insertedRoots.forEach((row, idx) => {
+                    idMap[roots[idx].unique_id] = row.id;
+                });
+            }
+        }
+
+        if (children.length > 0) {
+            const childPayloads = children.map(item => ({
+                cp_id: cpId,
+                product_id: item.product_id,
+                quantity: item.quantity,
+                final_price_byn: calculateItemTotal(item) / item.quantity,
+                price_at_moment: calculateItemPrice(item),
+                manual_markup: item.manual_markup_percent,
+                snapshot_name: item.name,
+                snapshot_description: item.description,
+                snapshot_unit: item.unit,
+                snapshot_global_category: item.category,
+                parent_id: item.parent_unique_id ? idMap[item.parent_unique_id] : null
+            }));
+            
+            const { error: childError } = await supabase.from('cp_items').insert(childPayloads);
+            if (childError) throw childError;
+        }
       }
       setToast({ message: 'КП успешно сохранено', type: 'success' });
       onSuccess();
@@ -215,18 +416,23 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
   }, [products, search]);
 
   const toggleCategory = (cat: string) => {
-      setCollapsedCategories(prev => {
+      setExpandedCategories(prev => {
           const next = new Set(prev);
           if (next.has(cat)) next.delete(cat); else next.add(cat);
           return next;
       });
   };
 
-  const groupedCart = useMemo(() => {
-    const groups: Record<string, CartItem[]> = {};
-    cart.forEach(item => { if (!groups[item.category]) groups[item.category] = []; groups[item.category].push(item); });
-    return groups;
-  }, [cart]);
+  const renderCartItems = () => {
+      const roots = cart.filter(c => !c.parent_unique_id);
+      const output: CartItem[] = [];
+      roots.forEach(r => {
+          output.push(r);
+          const children = cart.filter(c => c.parent_unique_id === r.unique_id);
+          output.push(...children);
+      });
+      return output;
+  };
 
   return (
     <div className="flex flex-col h-full min-h-[500px] gap-4">
@@ -259,37 +465,46 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
 
       <div className="flex-grow grid grid-cols-1 lg:grid-cols-10 gap-4 overflow-hidden h-full min-h-0">
         {/* Left: Catalog */}
-        <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden h-full min-h-0">
-          <div className="p-4 border-b border-slate-100 flex gap-2 shrink-0">
+        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden h-full min-h-0">
+          <div className="p-4 border-b border-slate-100 flex flex-col gap-2 shrink-0 bg-slate-50">
             <Input placeholder="Поиск товара..." value={search} onChange={(e:any) => setSearch(e.target.value)} className="flex-grow" icon="search" />
+            {activeBundleId && (
+                <div className="flex items-center justify-between bg-blue-100 text-blue-800 px-3 py-2 rounded-lg text-xs">
+                    <span className="font-bold flex items-center gap-2"><span className="material-icons-round text-sm">folder_open</span> Режим наполнения комплекта</span>
+                    <button onClick={() => setActiveBundleId(null)} className="font-bold hover:underline">Завершить</button>
+                </div>
+            )}
           </div>
           <div className="flex-grow overflow-y-auto scrollbar-hide">
             {groupedCatalog.length === 0 ? (
                 <div className="p-10 text-center text-slate-400">Товары не найдены</div>
             ) : (
                 groupedCatalog.map(([cat, items]) => {
-                    const isCollapsed = collapsedCategories.has(cat);
+                    // Logic inverted: if expandedCategories HAS category -> show it. Default (empty) -> Hide.
+                    // BUT: if search is active -> show everything matching
+                    const isExpanded = expandedCategories.has(cat) || search.length > 0;
+                    
                     return (
                         <div key={cat} className="border-b border-slate-100 last:border-0">
                             <div 
                                 onClick={() => toggleCategory(cat)}
-                                className="bg-slate-50/80 px-4 py-2 cursor-pointer flex items-center justify-between hover:bg-slate-100 sticky top-0 z-10 backdrop-blur-sm"
+                                className="bg-white hover:bg-slate-50 px-4 py-2 cursor-pointer flex items-center justify-between transition-colors sticky top-0 z-10 backdrop-blur-sm"
                             >
                                 <div className="flex items-center gap-2">
-                                    <span className={`material-icons-round text-slate-400 transition-transform ${isCollapsed ? '-rotate-90' : ''}`}>expand_more</span>
+                                    <span className={`material-icons-round text-slate-400 transition-transform ${isExpanded ? '-rotate-90' : ''}`}>expand_more</span>
                                     <span className="font-bold text-slate-700 text-xs uppercase tracking-wide">{cat}</span>
                                 </div>
                                 <Badge color="slate">{items.length}</Badge>
                             </div>
                             
-                            {!isCollapsed && (
+                            {isExpanded && (
                                 <div className="divide-y divide-slate-50">
                                     {items.map(p => {
                                         const stockQty = stockMap[p.id] || 0;
                                         return (
                                             <div key={p.id} onClick={() => addToCart(p)} className="p-3 hover:bg-blue-50/30 cursor-pointer transition-colors flex justify-between items-center group">
                                                 <div className="flex items-center gap-3 overflow-hidden">
-                                                    <ProductImage src={p.image_url} alt={p.name} className="w-10 h-10 rounded-md shrink-0 border border-slate-100" preview />
+                                                    <ProductImage src={p.image_url} alt={p.name} className="w-9 h-9 rounded-md shrink-0 border border-slate-100" preview />
                                                     <div className="flex flex-col gap-0.5 min-w-0">
                                                         <p className="text-sm font-bold text-slate-900 truncate">{p.name}</p>
                                                         {p.sku && <span className="text-[10px] text-slate-500 font-mono">{p.sku}</span>}
@@ -301,6 +516,9 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
                                                         <span className={`text-[9px] mt-1 font-bold ${stockQty > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>Склад: {stockQty}</span>
                                                     </div>
                                                 </div>
+                                                {activeBundleId && (
+                                                    <div className="absolute inset-y-0 right-0 bg-blue-100/50 w-1 opacity-0 group-hover:opacity-100"></div>
+                                                )}
                                             </div>
                                         );
                                     })}
@@ -314,67 +532,132 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
         </div>
 
         {/* Right: Cart */}
-        <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden h-full min-h-0 shadow-sm">
-          <div className="p-4 border-b border-slate-100 bg-slate-50 shrink-0">
+        <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden h-full min-h-0 shadow-sm relative">
+          <div className="p-4 border-b border-slate-100 bg-slate-50 shrink-0 flex justify-between items-center">
             <h3 className="font-bold text-slate-900 flex items-center gap-2">
               <span className="material-icons-round text-slate-400">shopping_cart</span>
-              Состав КП
+              Смета ({cart.length})
             </h3>
+            <Button variant="tonal" className="h-8 text-xs" icon="create_new_folder" onClick={addBundleHeader}>Добавить комплект</Button>
           </div>
           
-          <div className="flex-grow overflow-y-auto p-4 space-y-4 scrollbar-hide bg-white">
+          <div className="flex-grow overflow-y-auto p-2 space-y-1 scrollbar-hide bg-white pb-20">
             {cart.length === 0 ? (
-              <p className="text-center text-slate-400 mt-10 italic text-sm">Выберите товары из списка слева</p>
+              <div className="flex flex-col items-center justify-center h-full opacity-30">
+                  <span className="material-icons-round text-6xl mb-2">playlist_add</span>
+                  <p className="text-center text-sm">Добавьте товары или создайте комплект</p>
+              </div>
             ) : (
-              Object.entries(groupedCart).map(([category, items]: [string, CartItem[]]) => (
-                  <div key={category} className="space-y-2">
-                    <div className="bg-slate-100 px-3 py-1.5 rounded-lg sticky top-0 z-10 opacity-95 backdrop-blur-sm">
-                      <span className="text-[10px] font-bold text-slate-600 uppercase tracking-tight">{category}</span>
-                    </div>
-                    {items.map(item => {
-                        const unitPrice = calculateItemPrice(item);
-                        return (
-                          <div key={item.product_id} className="pl-1 group border-b border-slate-50 pb-2 last:border-0">
-                            <div className="flex justify-between items-start mb-1">
-                                <p className="text-xs font-medium text-slate-800 leading-tight w-[90%]">{item.name}</p>
-                                <button onClick={() => removeFromCart(item.product_id)} className="text-slate-300 hover:text-red-500 transition-colors">
-                                  <span className="material-icons-round text-sm">close</span>
+                renderCartItems().map(item => {
+                    const isBundle = item.is_bundle_header;
+                    const isChild = !!item.parent_unique_id;
+                    const isActiveBundle = activeBundleId === item.unique_id;
+
+                    return (
+                        <div 
+                            key={item.unique_id} 
+                            className={`
+                                relative p-2 rounded-xl border transition-all group
+                                ${isBundle ? 'bg-indigo-50 border-indigo-100 mb-2 mt-2' : 'bg-white border-slate-100'}
+                                ${isChild ? 'ml-6 border-l-4 border-l-indigo-200' : ''}
+                                ${isActiveBundle ? 'ring-2 ring-indigo-400' : ''}
+                            `}
+                            onClick={() => isBundle && setActiveBundleId(isActiveBundle ? null : item.unique_id)}
+                        >
+                            <div className="flex justify-between items-start gap-2">
+                                <div className="flex items-start gap-2 flex-grow">
+                                    {isBundle && (
+                                        <span className={`material-icons-round text-lg mt-0.5 ${isActiveBundle ? 'text-indigo-600' : 'text-indigo-300'}`}>
+                                            {isActiveBundle ? 'folder_open' : 'folder'}
+                                        </span>
+                                    )}
+                                    <div className="w-full">
+                                        {isBundle ? (
+                                            <input 
+                                                className="w-full bg-transparent font-bold text-indigo-900 outline-none placeholder:text-indigo-300"
+                                                value={item.name}
+                                                onChange={(e) => updateCartItem(item.unique_id, 'name', e.target.value)}
+                                                placeholder="Название комплекта"
+                                            />
+                                        ) : (
+                                            <p className="text-xs font-medium text-slate-800 leading-tight">{item.name}</p>
+                                        )}
+                                        {!isBundle && <p className="text-[9px] text-slate-400 mt-0.5">{item.unit}</p>}
+                                    </div>
+                                </div>
+                                <button onClick={(e) => { e.stopPropagation(); removeFromCart(item.unique_id); }} className="text-slate-300 hover:text-red-500 transition-colors">
+                                    <span className="material-icons-round text-sm">close</span>
                                 </button>
                             </div>
                             
-                            <div className="flex items-center gap-2 mt-1.5">
-                                <div className="flex flex-col w-12">
-                                    <label className="text-[8px] text-slate-400 font-bold uppercase">Кол-во</label>
-                                    <input type="number" min="1" value={item.quantity} onChange={(e) => updateCartItem(item.product_id, 'quantity', parseInt(e.target.value) || 1)} className="w-full h-7 bg-slate-50 border border-slate-200 rounded text-center font-bold text-xs focus:border-blue-500 outline-none" />
+                            <div className="flex items-center gap-2 mt-2 pl-7">
+                                <div className="flex items-center bg-white border border-slate-200 rounded-lg h-8 shadow-sm overflow-hidden">
+                                    <input 
+                                        type="number" min="1" 
+                                        value={item.quantity} 
+                                        onChange={(e) => updateCartItem(item.unique_id, 'quantity', parseInt(e.target.value) || 1)} 
+                                        className="w-12 h-full text-center text-xs font-bold bg-white text-slate-900 outline-none border-r border-slate-100"
+                                    />
+                                    <span className="text-[10px] text-slate-500 font-medium px-2 bg-slate-50 h-full flex items-center">{item.unit}</span>
                                 </div>
-                                <div className="flex flex-col w-14">
-                                    <label className="text-[8px] text-slate-400 font-bold uppercase">Наценка %</label>
-                                    <input type="number" step="0.1" value={item.manual_markup_percent} onChange={(e) => updateCartItem(item.product_id, 'manual_markup_percent', parseFloat(e.target.value) || 0)} className={`w-full h-7 border rounded text-center font-bold text-xs focus:border-blue-500 outline-none ${item.manual_markup_percent < 0 ? 'text-red-500 bg-red-50 border-red-100' : 'text-emerald-600 bg-emerald-50 border-emerald-100'}`} />
-                                </div>
-                                <div className="flex flex-col flex-grow items-end">
-                                    <label className="text-[8px] text-slate-400 font-bold uppercase">Сумма (BYN)</label>
-                                    <div className="h-7 flex items-center"><span className="font-bold text-sm text-slate-700">{(unitPrice * item.quantity).toFixed(2)}</span></div>
+
+                                {/* Price / Markup Input */}
+                                {item.is_bundle_header ? (
+                                    <div className="flex items-center gap-1">
+                                        <div className={`flex items-center border border-slate-200 rounded-lg h-8 px-2 shadow-sm gap-2 transition-colors ${item.is_manual_price ? 'bg-amber-50 border-amber-200' : 'bg-white'}`}>
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Цена:</span>
+                                            <input 
+                                                type="number" 
+                                                value={item.retail_price}
+                                                onChange={(e) => updateCartItem(item.unique_id, 'retail_price', parseFloat(e.target.value) || 0)}
+                                                className={`w-24 text-right text-sm font-bold bg-transparent outline-none placeholder:text-slate-300 ${item.is_manual_price ? 'text-amber-800' : 'text-slate-900'}`}
+                                                placeholder="0.00"
+                                            />
+                                            <span className="text-[10px] font-bold text-slate-400">BYN</span>
+                                        </div>
+                                        {item.is_manual_price && (
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); handleRecalculateBundle(item.unique_id); }}
+                                                className="h-8 w-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center hover:bg-blue-100 transition-colors shadow-sm"
+                                                title="Пересчитать автоматически"
+                                            >
+                                                <span className="material-icons-round text-sm">calculate</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg h-8 px-1 shadow-sm">
+                                        <input 
+                                            type="number" step="0.1"
+                                            value={item.manual_markup_percent}
+                                            onChange={(e) => updateCartItem(item.unique_id, 'manual_markup_percent', parseFloat(e.target.value) || 0)}
+                                            className={`w-12 text-center text-xs font-bold bg-white outline-none ${item.manual_markup_percent < 0 ? 'text-red-500' : 'text-emerald-600'}`}
+                                        />
+                                        <span className="text-[10px] text-slate-400 pr-1">%</span>
+                                    </div>
+                                )}
+
+                                <div className="ml-auto flex flex-col items-end">
+                                    <span className="font-bold text-sm text-slate-800">{calculateItemTotal(item).toFixed(2)} BYN</span>
+                                    {!item.is_bundle_header && (
+                                        <span className="text-[9px] text-slate-400">Сумма</span>
+                                    )}
                                 </div>
                             </div>
-                          </div>
-                        );
-                    })}
-                  </div>
-                ))
+                        </div>
+                    );
+                })
             )}
           </div>
 
-          <div className="p-5 bg-slate-50 border-t border-slate-200 shrink-0 z-10">
-            <div className="space-y-1 mb-3">
-              <div className="flex justify-between text-xs"><span className="text-slate-500">Сумма без НДС:</span><span className="font-bold text-slate-700">{totals.subtotal.toFixed(2)} BYN</span></div>
-              {hasVat && <div className="flex justify-between text-xs"><span className="text-slate-500">НДС 20%:</span><span className="font-bold text-slate-700">{totals.vat.toFixed(2)} BYN</span></div>}
-            </div>
-            <div className="flex justify-between items-center pt-3 border-t border-slate-200">
-              <span className="font-bold text-slate-900 text-sm">ИТОГО:</span>
+          <div className="absolute bottom-0 left-0 w-full bg-slate-50 border-t border-slate-200 p-4 shadow-lg">
+            <div className="flex justify-between items-center mb-1">
+              <span className="text-xs text-slate-500 font-bold uppercase">Итого</span>
               <span className="font-bold text-xl text-blue-600">{totals.total.toFixed(2)} BYN</span>
             </div>
-            <div className="mt-2 text-right">
-                 <span className={`text-[10px] font-bold ${totals.profit > 0 ? 'text-emerald-600' : 'text-red-500'}`}>Прибыль: {totals.profit.toFixed(2)} BYN ({totals.markupPercent.toFixed(1)}%)</span>
+            <div className="flex justify-between text-[10px] text-slate-400">
+                <span>Без НДС: {totals.subtotal.toFixed(2)}</span>
+                <span>Прибыль: {totals.profit.toFixed(2)} ({totals.markupPercent.toFixed(0)}%)</span>
             </div>
           </div>
         </div>

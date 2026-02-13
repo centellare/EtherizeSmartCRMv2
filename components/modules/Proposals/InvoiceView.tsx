@@ -17,8 +17,10 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
   const [loading, setLoading] = useState(true);
   const [statusLoading, setStatusLoading] = useState(false);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  
+  // Print Options
+  const [showBundleDetails, setShowBundleDetails] = useState(false); // Default hide details for clients
 
-  // Default hardcoded settings if DB is empty, ensuring Ratio Domus is default
   const defaultSettings = {
       company_name: 'ООО "РАЦИО ДОМУС"',
       requisites: 'Адрес: БЕЛАРУСЬ, Г. МИНСК, УЛ. Ф.СКОРИНЫ, ДОМ 14, ОФ. 117, 220076\nУНП: 193736741',
@@ -29,8 +31,8 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
   const fetchData = async () => {
     setLoading(true);
     const { data: inv } = await supabase.from('invoices').select('*, client:clients(*), object:objects(name, address), creator:profiles(full_name)').eq('id', invoiceId).single();
-    // Added join to products to get base_price and TYPE for expense estimation
-    const { data: invItems } = await supabase.from('invoice_items').select('*, product:products(has_serial, base_price, type)').eq('invoice_id', invoiceId);
+    // Added parent_id fetch
+    const { data: invItems } = await supabase.from('invoice_items').select('*, product:products(has_serial, base_price, type)').eq('invoice_id', invoiceId).order('id');
     const { data: set } = await supabase.from('company_settings').select('*').limit(1).maybeSingle();
 
     setInvoice(inv);
@@ -50,23 +52,21 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
     setLoading(false);
   };
 
-  useEffect(() => {
-    fetchData();
-  }, [invoiceId]);
+  useEffect(() => { fetchData(); }, [invoiceId]);
 
   const handleStatusChange = async (newStatus: string) => {
       setStatusLoading(true);
       try {
           await supabase.from('invoices').update({ status: newStatus }).eq('id', invoiceId);
           
-          // Logic: If status changes from Draft -> Sent/Paid, trigger reservation AND deficit creation
           if ((newStatus === 'sent' || newStatus === 'paid') && invoice.status === 'draft') {
               let supplyOrderId: string | null = null;
               let reservedCountTotal = 0;
               let deficitCountTotal = 0;
-              let estimatedDeficitCost = 0; // Total cost of needed items
+              let estimatedDeficitCost = 0;
 
               for (const item of items) {
+                  // Skip Virtual Bundle Headers (no product_id)
                   if (!item.product_id) continue;
                   
                   // 1. Try to reserve available stock
@@ -75,7 +75,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                       .eq('product_id', item.product_id)
                       .eq('status', 'in_stock')
                       .is('reserved_for_invoice_id', null)
-                      .limit(item.quantity);
+                      .limit(Math.ceil(item.quantity)); // ceil in case of float
                   
                   const canReserve = available ? available.length : 0;
                   
@@ -89,21 +89,14 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                   const deficit = item.quantity - canReserve;
                   
                   if (deficit > 0) {
-                      // Calculate cost of deficit
                       const itemCost = item.product?.base_price || 0;
                       const itemType = item.product?.type || 'product';
-                      
-                      // VAT LOGIC: If it's a product or material, we buy with VAT (1.2). Services usually no VAT.
-                      // Base price in DB is ex-VAT. Transaction needs to be inc-VAT (Cash Flow).
                       const vatMultiplier = (itemType === 'service') ? 1.0 : 1.2;
                       
                       estimatedDeficitCost += (deficit * itemCost * vatMultiplier);
 
-                      // Create Supply Order Header if not exists for this transaction
                       if (!supplyOrderId) {
-                          // Check if one already exists for this invoice to avoid duplicates on re-clicks
                           const { data: existingOrder } = await supabase.from('supply_orders').select('id').eq('invoice_id', invoiceId).maybeSingle();
-                          
                           if (existingOrder) {
                               supplyOrderId = existingOrder.id;
                           } else {
@@ -112,63 +105,54 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                                   status: 'pending',
                                   created_by: invoice.created_by 
                               }]).select('id').single();
-                              
                               if (orderError) throw orderError;
                               supplyOrderId = newOrder.id;
                           }
                       }
 
-                      // Add Item to Supply Order
                       if (supplyOrderId) {
                           const { data: existingItem } = await supabase.from('supply_order_items')
-                            .select('id')
+                            .select('id, quantity_needed')
                             .eq('supply_order_id', supplyOrderId)
                             .eq('product_id', item.product_id)
                             .maybeSingle();
 
-                          if (!existingItem) {
+                          if (existingItem) {
+                              await supabase.from('supply_order_items').update({ quantity_needed: existingItem.quantity_needed + deficit }).eq('id', existingItem.id);
+                          } else {
                               await supabase.from('supply_order_items').insert({
                                   supply_order_id: supplyOrderId,
                                   product_id: item.product_id,
                                   quantity_needed: deficit,
                                   status: 'pending'
                               });
-                              deficitCountTotal += deficit;
                           }
+                          deficitCountTotal += deficit;
                       }
                   }
               }
               
-              // 3. Create Pending Expense for Deficit (Finance Integration)
-              // SAFETY CHECK: Ensure we don't create duplicate expense for this invoice
               if (deficitCountTotal > 0 && estimatedDeficitCost > 0) {
-                  const { data: existingExpense } = await supabase.from('transactions')
-                    .select('id')
-                    .eq('invoice_id', invoiceId)
-                    .eq('type', 'expense')
-                    .maybeSingle();
-
+                  const { data: existingExpense } = await supabase.from('transactions').select('id').eq('invoice_id', invoiceId).eq('type', 'expense').maybeSingle();
                   if (!existingExpense) {
-                      const expensePayload = {
+                      await supabase.from('transactions').insert([{
                           object_id: invoice.object_id,
-                          invoice_id: invoiceId, // Link to this invoice
+                          invoice_id: invoiceId,
                           type: 'expense',
-                          amount: estimatedDeficitCost, // Current estimated cost with VAT
+                          amount: estimatedDeficitCost,
                           requested_amount: estimatedDeficitCost,
-                          planned_date: new Date().toISOString(), // Immediate plan
+                          planned_date: new Date().toISOString(),
                           category: 'Закупка оборудования',
                           description: `Авто-закупка по счету №${invoice.number} (${deficitCountTotal} поз.)`,
                           status: 'pending',
                           created_by: invoice.created_by
-                      };
-                      await supabase.from('transactions').insert([expensePayload]);
+                      }]);
                   }
               }
 
               let msg = 'Счет отправлен.';
               if (reservedCountTotal > 0) msg += ` Зарезервировано: ${reservedCountTotal} поз.`;
               if (deficitCountTotal > 0) msg += ` В заказ снабжения: ${deficitCountTotal} поз.`;
-              
               setToast({ message: msg, type: 'success' });
           } else {
               setToast({ message: 'Статус счета обновлен', type: 'success' });
@@ -194,12 +178,12 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                     <script src="https://cdn.tailwindcss.com"></script>
                     <style>
                         @media print {
-                            @page { margin: 0; size: A4; } /* Hides browser headers */
+                            @page { margin: 0; size: A4; }
                             body { margin: 0; -webkit-print-color-adjust: exact; }
                             #invoice-printable {
                                 margin: 0;
                                 width: 100%;
-                                padding: 15mm 20mm !important; /* Simulate document margin */
+                                padding: 15mm 20mm !important;
                                 box-shadow: none !important;
                             }
                         }
@@ -219,7 +203,15 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
   if (!invoice) return <div className="p-10 text-center">Счет не найден</div>;
 
   const vatRate = invoice.has_vat ? 20 : 0;
-  const tableItems = items.map(item => {
+  
+  // Filter items for display based on showBundleDetails
+  const displayItems = items.filter(item => {
+      if (showBundleDetails) return true; // Show everything
+      // If hiding details: Show roots (parent_id null). Hide children (parent_id not null).
+      return !item.parent_id;
+  });
+
+  const tableItems = displayItems.map(item => {
       const priceWithVat = item.price || 0; 
       const totalWithVat = item.total || 0;
       const priceNoVat = invoice.has_vat ? priceWithVat / 1.2 : priceWithVat;
@@ -229,7 +221,10 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
   });
 
   const totalSum = invoice.total_amount || 0;
-  const totalVatSum = tableItems.reduce((acc, i) => acc + i.totalVatSum, 0);
+  const totalVatSum = tableItems.reduce((acc, i) => acc + i.totalVatSum, 0); // Note: this might be slightly off if hiding details but total matches
+  // Actually totalVatSum should be calculated from total invoice amount if we hide rows, but typically bundle header contains total price.
+  const calculatedTotalVat = invoice.has_vat ? totalSum - (totalSum / 1.2) : 0;
+
   const deliveryAddress = invoice.object?.address || 'Адрес не указан';
   const payerInfo = invoice.client?.requisites || invoice.client?.address || 'Реквизиты не заполнены';
 
@@ -247,7 +242,13 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                     <Button onClick={() => handleStatusChange('paid')} loading={statusLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white" icon="check_circle">Отметить оплату</Button>
                 )}
             </div>
-            <Button icon="print" onClick={handlePrint}>Печать</Button>
+            <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 cursor-pointer text-sm">
+                    <input type="checkbox" checked={showBundleDetails} onChange={e => setShowBundleDetails(e.target.checked)} className="rounded text-blue-600" />
+                    Раскрыть комплекты
+                </label>
+                <Button icon="print" onClick={handlePrint}>Печать</Button>
+            </div>
         </div>
 
         <div className="flex-grow overflow-y-auto p-4 md:p-8 flex justify-center">
@@ -255,7 +256,6 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                 
                 {/* HEADER */}
                 <div className="flex justify-between items-start mb-8">
-                    {/* LOGO */}
                     <div className="w-[40%]">
                         {settings.logo_url ? (
                             <img src={settings.logo_url} alt="Logo" className="max-h-[80px] max-w-full object-contain" />
@@ -266,7 +266,6 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                             </div>
                         )}
                     </div>
-                    {/* REQUISITES - RIGHT ALIGNED */}
                     <div className="w-[55%] text-right text-[10px] leading-relaxed">
                         <h2 className="font-bold text-sm uppercase mb-2">{settings.company_name}</h2>
                         <p className="whitespace-pre-wrap">{settings.requisites}</p>
@@ -276,31 +275,16 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
 
                 <div className="border-b-2 border-black mb-6"></div>
 
-                {/* TITLE */}
                 <div className="text-center mb-8">
                     <h1 className="text-xl font-bold uppercase">СЧЕТ-ПРОТОКОЛ</h1>
                     <p className="text-sm font-bold">согласования свободных отпускных цен</p>
                     <p className="text-sm font-bold mt-1">№ {invoice.number} от {formatDate(invoice.created_at)}</p>
                 </div>
 
-                {/* CUSTOMER INFO */}
                 <div className="mb-6 text-[12px]">
                     <div className="grid grid-cols-[120px_1fr] gap-2">
                         <div className="font-bold">Покупатель:</div>
                         <div className="font-bold">{invoice.client?.name}</div>
-                        
-                        {invoice.client?.contact_person && (
-                            <>
-                                <div className="font-bold">Контактное лицо:</div>
-                                <div>{invoice.client.contact_person}</div>
-                            </>
-                        )}
-                        {invoice.client?.phone && (
-                            <>
-                                <div className="font-bold">Телефон:</div>
-                                <div>{invoice.client.phone}</div>
-                            </>
-                        )}
                         {invoice.object && (
                             <>
                                 <div className="font-bold">Объект:</div>
@@ -310,29 +294,33 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                     </div>
                 </div>
 
-                {/* TABLE */}
                 <table className="w-full border-collapse border border-black text-[10px] mb-2">
                     <thead>
                         <tr className="text-center font-bold">
-                            <th className="border border-black p-1">№ п/п</th>
+                            <th className="border border-black p-1">№</th>
                             <th className="border border-black p-1 w-[35%]">Предмет счета</th>
-                            <th className="border border-black p-1">Ед. изм.</th>
+                            <th className="border border-black p-1">Ед.</th>
                             <th className="border border-black p-1">Кол-во</th>
-                            <th className="border border-black p-1">Цена единицы<br/>руб.</th>
-                            <th className="border border-black p-1">Сумма, руб. без<br/>НДС</th>
+                            <th className="border border-black p-1">Цена (без НДС)</th>
+                            <th className="border border-black p-1">Сумма (без НДС)</th>
                             <th className="border border-black p-1">НДС,%</th>
-                            <th className="border border-black p-1">Сумма НДС,<br/>руб.</th>
-                            <th className="border border-black p-1">Сумма с НДС,<br/>руб.</th>
+                            <th className="border border-black p-1">Сумма НДС</th>
+                            <th className="border border-black p-1">Сумма с НДС</th>
                         </tr>
                     </thead>
                     <tbody>
                         {tableItems.map((item, idx) => (
                             <tr key={idx} className="align-top">
                                 <td className="border border-black p-1 text-center">{idx + 1}</td>
-                                <td className="border border-black p-1">{item.name}</td>
+                                <td className="border border-black p-1">
+                                    {item.name}
+                                    {!item.product_id && !showBundleDetails && (
+                                        <span className="block text-[8px] italic mt-0.5">(Комплект оборудования)</span>
+                                    )}
+                                </td>
                                 <td className="border border-black p-1 text-center">{item.unit}</td>
                                 <td className="border border-black p-1 text-center">{item.quantity}</td>
-                                <td className="border border-black p-1 text-right">{item.priceWithVat.toFixed(2)}</td>
+                                <td className="border border-black p-1 text-right">{item.priceNoVat.toFixed(2)}</td>
                                 <td className="border border-black p-1 text-right">{item.totalNoVat.toFixed(2)}</td>
                                 <td className="border border-black p-1 text-center">{vatRate}</td>
                                 <td className="border border-black p-1 text-right">{item.totalVatSum.toFixed(2)}</td>
@@ -342,7 +330,6 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                     </tbody>
                 </table>
 
-                {/* TOTALS */}
                 <div className="flex justify-end mb-4">
                     <div className="text-[11px] font-bold text-right">
                         <div className="border border-black p-1 px-2 inline-block min-w-[100px]">{totalSum.toFixed(2)}</div>
@@ -351,17 +338,15 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
 
                 <div className="text-[11px] mb-6">
                     <p className="font-bold">Итог на сумму, белорусских рублей: {totalSum.toFixed(2)} <span className="font-normal">{sumInWords(totalSum)}</span></p>
-                    <p className="font-bold mt-1">в том числе сумма НДС, белорусских рублей: {totalVatSum.toFixed(2)} <span className="font-normal">{sumInWords(totalVatSum)}</span></p>
+                    <p className="font-bold mt-1">в том числе сумма НДС: {calculatedTotalVat.toFixed(2)} <span className="font-normal">{sumInWords(calculatedTotalVat)}</span></p>
                 </div>
 
-                {/* TERMS */}
+                {/* TERMS (Static for now) */}
                 <div className="border border-black p-2 text-[9px] mb-6">
                     <ol className="list-decimal list-inside space-y-1">
-                        <li>Поставщик обязуется поставить Покупателю, а Покупатель обязуется принять и оплатить товар, указанный в <b>Счет-Протоколе</b>.</li>
-                        <li>Цель приобретения товара: Собственное потребление.</li>
-                        <li>Оплата товара Покупателем осуществляется в белорусских рублях путем перечисления денежных средств на расчетный счет Поставщика в течение 3 (Трёх) рабочих дней с даты выставления счета в размере 100,00% стоимости товара на сумму {totalSum.toFixed(2)} руб.</li>
-                        <li>Срок поставки товара: в течение 20 (двадцать) рабочих дней с момента получения Поставщиком предварительной оплаты товара в полном объеме. Отгрузка производится со склада поставщика по адресу г. Минск. При получении оборудования при себе иметь: доверенность, счет с подписью и печатью.</li>
-                        <li>При отсутствии претензий по качеству Товара его приемка Покупателем оформляется путем подписания товарно-транспортной (товарной) накладной.</li>
+                        <li>Поставщик обязуется поставить Покупателю, а Покупатель обязуется принять и оплатить товар.</li>
+                        <li>Оплата 100% в течение 3 рабочих дней.</li>
+                        <li>Срок поставки до 20 рабочих дней.</li>
                     </ol>
                 </div>
 
@@ -369,33 +354,19 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                 <div className="flex justify-between items-start text-[11px] mt-8">
                     <div className="w-[48%]">
                         <div className="font-bold mb-8 border-b-2 border-black pb-1">Поставщик:</div>
-                        <div className="font-bold">{settings.company_name}</div>
-                        <div className="mt-1 whitespace-pre-wrap">{settings.requisites}</div>
-                        <div className="mt-1">Р/С {settings.bank_details.split('Карт-счет: ')[1] || settings.bank_details}</div>
-                        <div className="mt-12 flex items-end">
+                        <div className="mt-8 flex items-end">
                             <span>Поставщик</span>
                             <div className="flex-grow border-b border-black mx-2"></div>
                         </div>
                     </div>
-                    
                     <div className="w-[48%]">
-                        <div className="font-bold mb-8 border-b-2 border-black pb-1">Покупатель (Плательщик):</div>
-                        <div className="font-bold mb-1">Адрес объекта: {deliveryAddress}</div>
-                        <div className="text-[10px] text-gray-600 mb-2">Юр. адрес / Реквизиты: {payerInfo}</div>
-                        
+                        <div className="font-bold mb-8 border-b-2 border-black pb-1">Покупатель:</div>
                         <div className="mt-8 flex items-end">
-                            <span>Покупатель (Плательщик)</span>
+                            <span>Покупатель</span>
                             <div className="flex-grow border-b border-black mx-2"></div>
                         </div>
                     </div>
                 </div>
-
-                {/* FOOTER DATES */}
-                <div className="flex justify-between text-[10px] mt-16">
-                    <div>Поставщик ____________________ {formatDate(invoice.created_at)}</div>
-                    <div>Покупатель (Плательщик) ____________________ {formatDate(invoice.created_at)}</div>
-                </div>
-
             </div>
         </div>
     </div>

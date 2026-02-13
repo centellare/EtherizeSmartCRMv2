@@ -3,26 +3,21 @@ import { TableSchema } from './types';
 
 // Migration SQL to be executed by user
 export const MIGRATION_SQL_V3 = `
--- SmartHome CRM v3.0: Каскадное ценообразование
+-- SmartHome CRM v3.1: Динамические комплекты в документах
 
 BEGIN;
 
--- 1. Добавляем глобальную наценку в настройки компании
-ALTER TABLE public.company_settings
-ADD COLUMN IF NOT EXISTS global_markup NUMERIC DEFAULT 15;
+-- 1. Добавляем иерархию в позиции КП
+ALTER TABLE public.cp_items 
+ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES public.cp_items(id) ON DELETE CASCADE;
 
--- 2. Создаем таблицу для правил категорий (поправки)
-CREATE TABLE IF NOT EXISTS public.price_rules (
-    id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-    category_name TEXT NOT NULL,
-    markup_delta NUMERIC DEFAULT 0,
-    updated_at TIMESTAMPTZ DEFAULT NOW(),
-    UNIQUE(category_name)
-);
+-- 2. Добавляем иерархию в позиции Счетов
+ALTER TABLE public.invoice_items 
+ADD COLUMN IF NOT EXISTS parent_id UUID REFERENCES public.invoice_items(id) ON DELETE CASCADE;
 
--- 3. Комментарии для ясности
-COMMENT ON COLUMN public.products.markup_percent IS 'Индивидуальная поправка к наценке (дельта)';
-COMMENT ON COLUMN public.company_settings.global_markup IS 'Базовая наценка компании (в процентах)';
+-- 3. Индексы для скорости (опционально, но полезно)
+CREATE INDEX IF NOT EXISTS idx_cp_items_parent ON public.cp_items(parent_id);
+CREATE INDEX IF NOT EXISTS idx_invoice_items_parent ON public.invoice_items(parent_id);
 
 COMMIT;
 `;
@@ -37,6 +32,25 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
         { name: 'origin_country', type: 'text', description: 'Страна' },
         { name: 'weight', type: 'numeric', description: 'Вес (кг)' },
         { name: 'markup_percent', type: 'numeric', description: 'Индивидуальная наценка' }
+    ]
+  },
+  {
+    name: 'cp_items',
+    description: 'Позиции КП (с поддержкой вложенности)',
+    columns: [
+        { name: 'id', type: 'uuid', isPrimary: true },
+        { name: 'cp_id', type: 'uuid', references: 'commercial_proposals' },
+        { name: 'product_id', type: 'uuid', references: 'products', description: 'Может быть NULL для заголовка комплекта' },
+        { name: 'parent_id', type: 'uuid', references: 'cp_items', description: 'Ссылка на родительскую строку (комплект)' }
+    ]
+  },
+  {
+    name: 'invoice_items',
+    description: 'Позиции Счета (с поддержкой вложенности)',
+    columns: [
+        { name: 'id', type: 'uuid', isPrimary: true },
+        { name: 'invoice_id', type: 'uuid', references: 'invoices' },
+        { name: 'parent_id', type: 'uuid', references: 'invoice_items' }
     ]
   },
   {
@@ -61,10 +75,10 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
 ];
 
 export const SUPABASE_SETUP_GUIDE = `
-### ВАЖНО: Обновление базы данных (Версия 3.0)
+### ВАЖНО: Обновление базы данных (Версия 3.1)
 1. Скопируйте SQL-скрипт ниже.
 2. Откройте SQL Editor в Supabase.
 3. Выполните скрипт.
    
-Это добавит поддержку каскадных наценок (Общая -> Категория -> Товар).
+Это добавит возможность создавать комплекты ("папки") прямо внутри КП и Счетов.
 `;
