@@ -299,13 +299,15 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
                       {invoiceItems.map(item => {
                           const info = stockInfo[item.product_id] || { reserved: 0, free: 0 };
                           const qty = shippingMap[item.product_id] || 0;
-                          const hasEnough = info.reserved + info.free >= qty;
+                          const hasEnough = info.reserved + info.free >= item.quantity;
+                          const isDeficit = item.quantity > (info.reserved + info.free);
 
                           return (
-                              <tr key={item.id}>
+                              <tr key={item.id} className={isDeficit ? "bg-red-50/50" : ""}>
                                   <td className="p-3">
-                                      <p className="font-medium">{item.name}</p>
+                                      <p className={`font-medium ${isDeficit ? 'text-red-600' : ''}`}>{item.name}</p>
                                       {item.product?.has_serial && <span className="text-[9px] bg-amber-100 text-amber-700 px-1 rounded">Нужен S/N</span>}
+                                      {isDeficit && <span className="block text-[9px] font-bold text-red-500 mt-0.5">ДЕФИЦИТ</span>}
                                   </td>
                                   <td className="p-3 text-center font-bold">{item.quantity}</td>
                                   <td className="p-3 text-center text-blue-600 font-bold">{info.reserved}</td>
@@ -313,7 +315,7 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
                                   <td className="p-3">
                                       <input 
                                           type="number" 
-                                          className={`w-full h-8 border rounded text-center font-bold outline-none focus:ring-2 ${hasEnough ? 'border-blue-200 focus:ring-blue-200' : 'border-red-300 bg-red-50 text-red-600'}`}
+                                          className={`w-full h-8 border rounded text-center font-bold outline-none focus:ring-2 ${hasEnough ? 'border-blue-200 focus:ring-blue-200' : 'border-red-300 bg-white text-red-600'}`}
                                           value={qty}
                                           onChange={(e) => setShippingMap({...shippingMap, [item.product_id]: parseFloat(e.target.value) || 0})}
                                           max={info.reserved + info.free}

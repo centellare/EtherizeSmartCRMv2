@@ -110,7 +110,9 @@ export interface Product {
   base_price: number; // Cost / Закупка (BYN)
   retail_price: number; // Sales / Продажа (BYN)
   description?: string | null;
-  manufacturer?: string | null;
+  manufacturer?: string | null; // Added
+  origin_country?: string | null; // Added
+  weight?: number | null; // Added
   has_serial: boolean;
   warranty_days: number | null;
   stock_min_level?: number;

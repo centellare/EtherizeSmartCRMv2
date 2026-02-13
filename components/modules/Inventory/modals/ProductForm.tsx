@@ -22,6 +22,9 @@ export const ProductForm: React.FC<ProductFormProps> = ({ product, categories, e
     base_price: '',
     retail_price: '',
     description: '',
+    manufacturer: '',
+    origin_country: '',
+    weight: '',
     has_serial: false,
     image_url: ''
   });
@@ -37,13 +40,18 @@ export const ProductForm: React.FC<ProductFormProps> = ({ product, categories, e
         base_price: product.base_price.toString(),
         retail_price: product.retail_price.toString(),
         description: product.description || '',
+        manufacturer: product.manufacturer || '',
+        origin_country: product.origin_country || '',
+        weight: product.weight?.toString() || '',
         has_serial: product.has_serial,
         image_url: product.image_url || ''
       });
     } else {
         setFormData({
             name: '', sku: '', category: '', type: '', unit: 'шт', 
-            base_price: '', retail_price: '', description: '', has_serial: false, image_url: ''
+            base_price: '', retail_price: '', description: '', 
+            manufacturer: '', origin_country: '', weight: '',
+            has_serial: false, image_url: ''
         });
     }
   }, [product]);
@@ -58,6 +66,9 @@ export const ProductForm: React.FC<ProductFormProps> = ({ product, categories, e
       type: formData.type || 'Товар',
       base_price: parseFloat(formData.base_price) || 0,
       retail_price: parseFloat(formData.retail_price) || 0,
+      weight: formData.weight ? parseFloat(formData.weight) : null,
+      manufacturer: formData.manufacturer || null,
+      origin_country: formData.origin_country || null,
       image_url: formData.image_url || null
     };
 
@@ -119,18 +130,24 @@ export const ProductForm: React.FC<ProductFormProps> = ({ product, categories, e
             <Select label="Ед. измерения" value={formData.unit} onChange={(e:any) => setFormData({...formData, unit: e.target.value})} options={[{value:'шт', label:'шт'}, {value:'м', label:'м'}, {value:'компл', label:'компл'}, {value:'упак', label:'упак'}]} />
         </div>
 
-        <Input label="Ссылка на изображение (URL)" value={formData.image_url} onChange={(e:any) => setFormData({...formData, image_url: e.target.value})} icon="image" placeholder="https://example.com/image.jpg" />
+        <div className="grid grid-cols-3 gap-4">
+            <Input label="Производитель" value={formData.manufacturer} onChange={(e:any) => setFormData({...formData, manufacturer: e.target.value})} />
+            <Input label="Страна" value={formData.origin_country} onChange={(e:any) => setFormData({...formData, origin_country: e.target.value})} />
+            <Input label="Вес (кг)" type="number" step="0.001" value={formData.weight} onChange={(e:any) => setFormData({...formData, weight: e.target.value})} />
+        </div>
 
         <div className="w-full">
             <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Описание</label>
             <textarea 
                 className="w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-sm outline-none focus:border-blue-500"
-                rows={3}
+                rows={2}
                 value={formData.description}
                 onChange={(e) => setFormData({...formData, description: e.target.value})}
                 placeholder="Характеристики, заметки..."
             />
         </div>
+
+        <Input label="Ссылка на изображение (URL)" value={formData.image_url} onChange={(e:any) => setFormData({...formData, image_url: e.target.value})} icon="image" placeholder="https://example.com/image.jpg" />
 
         <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
             <div className="grid grid-cols-2 gap-4 mb-4">

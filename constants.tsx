@@ -3,152 +3,50 @@ import { TableSchema } from './types';
 
 // Migration SQL to be executed by user
 export const MIGRATION_SQL_V3 = `
--- SmartHome CRM v2.7: Маркетинг, Рефералы и Связи
+-- SmartHome CRM v2.8: Расширение карточки товара (Импорт)
 
 BEGIN;
 
--- 1. [NEW] Маркетинг и Рефералы (Клиенты)
-ALTER TABLE public.clients
-ADD COLUMN IF NOT EXISTS lead_source TEXT DEFAULT 'other',
-ADD COLUMN IF NOT EXISTS referred_by UUID REFERENCES public.clients(id);
+-- 1. Добавляем поля в таблицу products для соответствия реальному прайс-листу
+ALTER TABLE public.products
+ADD COLUMN IF NOT EXISTS manufacturer TEXT, -- Поставщик/Производитель
+ADD COLUMN IF NOT EXISTS origin_country TEXT, -- Страна происхождения
+ADD COLUMN IF NOT EXISTS weight NUMERIC; -- Вес, КГ
 
--- 2. [NEW] Горизонтальные связи (Знакомства)
-CREATE TABLE IF NOT EXISTS public.client_connections (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    client_a UUID REFERENCES public.clients(id) ON DELETE CASCADE,
-    client_b UUID REFERENCES public.clients(id) ON DELETE CASCADE,
-    type TEXT NOT NULL, -- 'neighbor', 'relative', 'friend', 'partner', 'other'
-    comment TEXT,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    created_by UUID REFERENCES public.profiles(id)
-);
-
--- RLS для связей
-ALTER TABLE public.client_connections ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "View connections" ON public.client_connections
-FOR SELECT USING (
-  (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'director', 'manager', 'specialist')
-);
-
-CREATE POLICY "Manage connections" ON public.client_connections
-FOR ALL USING (
-  (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'director', 'manager')
-  OR created_by = auth.uid()
-);
-
--- 3. СБРОС И ОБНОВЛЕНИЕ ПРАВ ДОСТУПА (RLS) ДЛЯ ЗАДАЧ
-DROP POLICY IF EXISTS "Tasks update policy" ON public.tasks;
-DROP POLICY IF EXISTS "Users can update their own tasks" ON public.tasks;
-DROP POLICY IF EXISTS "Enable update for users based on email" ON public.tasks;
-
-CREATE POLICY "Tasks update policy" ON public.tasks
-FOR UPDATE
-USING (
-  (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'director')
-  OR
-  auth.uid() = assigned_to
-  OR
-  auth.uid() = created_by
-)
-WITH CHECK (
-  (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'director')
-  OR
-  auth.uid() = assigned_to
-  OR
-  auth.uid() = created_by
-);
-
--- 4. Гарантируем наличие полей (безопасно, если уже есть)
-ALTER TABLE public.tasks 
-ADD COLUMN IF NOT EXISTS completed_by UUID REFERENCES public.profiles(id);
-
-ALTER TABLE public.products 
-ADD COLUMN IF NOT EXISTS image_url TEXT;
-
-ALTER TABLE public.company_settings 
-ADD COLUMN IF NOT EXISTS logo_url TEXT;
-
-ALTER TABLE public.invoices 
-ADD COLUMN IF NOT EXISTS object_id UUID REFERENCES public.objects(id);
-
--- 5. Функция для быстрой аналитики (на будущее)
-CREATE OR REPLACE FUNCTION get_finance_analytics(year_input int)
-RETURNS json
-LANGUAGE plpgsql
-AS $$
-DECLARE
-  start_balance decimal;
-  monthly_data json;
-BEGIN
-  -- 1. Calculate Balance at start of year
-  SELECT COALESCE(SUM(CASE WHEN type = 'income' THEN COALESCE(fact_amount, 0) ELSE -amount END), 0)
-  INTO start_balance
-  FROM transactions
-  WHERE extract(year from created_at) < year_input
-  AND deleted_at IS NULL
-  AND (status = 'approved' OR type = 'income');
-
-  -- 2. Calculate Monthly Stats
-  SELECT json_agg(t) INTO monthly_data FROM (
-    SELECT
-      extract(month from created_at) as month,
-      SUM(CASE WHEN type = 'income' THEN COALESCE(fact_amount, 0) ELSE 0 END) as income,
-      SUM(CASE WHEN type = 'expense' THEN amount ELSE 0 END) as expense
-    FROM transactions
-    WHERE extract(year from created_at) = year_input
-    AND deleted_at IS NULL
-    AND (status = 'approved' OR type = 'income')
-    GROUP BY 1
-  ) t;
-
-  RETURN json_build_object(
-    'start_balance', start_balance,
-    'months', COALESCE(monthly_data, '[]'::json)
-  );
-END;
-$$;
+-- 2. Обновляем view или кэши (если есть, здесь просто для примера)
+COMMENT ON COLUMN public.products.manufacturer IS 'Производитель или Поставщик';
 
 COMMIT;
-
-NOTIFY pgrst, 'reload schema';
 `;
 
 export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
   {
+    name: 'products',
+    description: 'Номенклатура (Расширенная)',
+    columns: [
+        { name: 'id', type: 'uuid', isPrimary: true },
+        { name: 'manufacturer', type: 'text', description: 'Бренд/Поставщик' },
+        { name: 'origin_country', type: 'text', description: 'Страна' },
+        { name: 'weight', type: 'numeric', description: 'Вес (кг)' }
+    ]
+  },
+  {
     name: 'client_connections',
-    description: 'Связи между клиентами (знакомства)',
+    description: 'Связи между клиентами',
     columns: [
         { name: 'id', type: 'uuid', isPrimary: true },
         { name: 'client_a', type: 'uuid', references: 'clients' },
         { name: 'client_b', type: 'uuid', references: 'clients' },
-        { name: 'type', type: 'text', description: 'Тип связи (сосед, друг...)' }
-    ]
-  },
-  {
-    name: 'tasks',
-    description: 'Задачи (обновление прав)',
-    columns: [
-        { name: 'id', type: 'uuid', isPrimary: true },
-        { name: 'completed_by', type: 'uuid', description: 'Кто завершил', references: 'profiles' }
-    ]
-  },
-  {
-    name: 'clients',
-    description: 'Клиенты (Маркетинг)',
-    columns: [
-        { name: 'id', type: 'uuid', isPrimary: true },
-        { name: 'lead_source', type: 'text', description: 'Источник (Instagram, Партнер...)' },
-        { name: 'referred_by', type: 'uuid', description: 'Кто порекомендовал (ID клиента)', references: 'clients' }
+        { name: 'type', type: 'text' }
     ]
   }
 ];
 
 export const SUPABASE_SETUP_GUIDE = `
-### ВАЖНО: Обновление базы данных (Версия 2.7)
+### ВАЖНО: Обновление базы данных (Версия 2.8)
 1. Скопируйте SQL-скрипт ниже.
 2. Откройте SQL Editor в Supabase.
 3. Выполните скрипт.
    
-Это добавит таблицу связей между клиентами, маркетинг и исправления прав.
+Это добавит поля "Производитель", "Страна" и "Вес" в товары.
 `;

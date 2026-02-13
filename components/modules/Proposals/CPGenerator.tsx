@@ -1,13 +1,13 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Button, Input, Select, Toast, Badge } from '../../ui';
+import { Button, Input, Select, Toast, Badge, ProductImage } from '../../ui';
 import { Product } from '../../../types';
 
 interface CPGeneratorProps {
   profile: any;
   proposalId?: string | null;
-  initialObjectId?: string | null; // NEW PROP
+  initialObjectId?: string | null; 
   onSuccess: () => void;
   onCancel: () => void;
 }
@@ -17,11 +17,11 @@ interface CartItem {
   name: string;
   description?: string;
   quantity: number;
-  base_price: number; // Cost / Закупка (BYN)
-  retail_price: number; // Sales / Продажа (BYN)
+  base_price: number; 
+  retail_price: number; 
   category: string;
   unit: string;
-  manual_markup_percent: number; // Editable Markup
+  manual_markup_percent: number; 
 }
 
 const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialObjectId, onSuccess, onCancel }) => {
@@ -35,36 +35,27 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
   const [title, setTitle] = useState('');
   const [selectedObjectId, setSelectedObjectId] = useState('');
   const [linkedClient, setLinkedClient] = useState<{id: string, name: string} | null>(null);
-  
   const [hasVat, setHasVat] = useState(true);
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
   
-  // Filters
+  // Filters & UI
   const [search, setSearch] = useState('');
-  const [catFilter, setCatFilter] = useState('all');
+  const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const init = async () => {
       setLoading(true);
       try {
         const [prodRes, objRes, stockRes] = await Promise.all([
-          supabase.from('products').select('*').eq('is_archived', false).order('name'),
-          supabase.from('objects')
-            .select('id, name, address, client:clients(id, name)')
-            .is('is_deleted', false)
-            .order('name'),
-          supabase.from('inventory_items')
-            .select('product_id, quantity')
-            .eq('status', 'in_stock')
-            .is('deleted_at', null)
+          supabase.from('products').select('*').eq('is_archived', false).order('category').order('name'),
+          supabase.from('objects').select('id, name, address, client:clients(id, name)').is('is_deleted', false).order('name'),
+          supabase.from('inventory_items').select('product_id, quantity').eq('status', 'in_stock').is('deleted_at', null)
         ]);
         
         if (prodRes.data) setProducts(prodRes.data as unknown as Product[]);
         if (objRes.data) setObjects(objRes.data);
-        
-        // Calculate Stock
         if (stockRes.data) {
             const stocks = stockRes.data.reduce((acc: Record<string, number>, item: any) => {
                 acc[item.product_id] = (acc[item.product_id] || 0) + item.quantity;
@@ -73,46 +64,24 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
             setStockMap(stocks);
         }
 
-        // PRE-SELECT OBJECT IF PROVIDED AND NOT EDITING
         if (initialObjectId && !proposalId && objRes.data) {
             const targetObj = objRes.data.find((o: any) => o.id === initialObjectId);
-            if (targetObj) {
-                setSelectedObjectId(targetObj.id);
-                // Title auto-fill handled in the other useEffect
-            }
+            if (targetObj) setSelectedObjectId(targetObj.id);
         }
 
-        // Load existing proposal if in edit mode
         if (proposalId) {
-          const { data: cp } = await supabase
-            .from('commercial_proposals')
-            .select('*, client:clients(id, name)')
-            .eq('id', proposalId)
-            .single();
-          
+          const { data: cp } = await supabase.from('commercial_proposals').select('*, client:clients(id, name)').eq('id', proposalId).single();
           if (cp) {
             const cpData = cp as any;
             setTitle(cpData.title || '');
             setLinkedClient(cpData.client);
-            
-            // Try to load linked object from CP first, fallback to finding via client
-            if (cpData.object_id) {
-                setSelectedObjectId(cpData.object_id);
-            } else if (objRes.data) {
-                const relatedObject = objRes.data.find((o: any) => o.client?.id === cpData.client_id);
-                if (relatedObject) setSelectedObjectId(relatedObject.id);
-            }
-            
+            if (cpData.object_id) setSelectedObjectId(cpData.object_id);
             setHasVat(cpData.has_vat || false);
 
             const { data: items } = await supabase.from('cp_items').select('*').eq('cp_id', proposalId);
-
             if (items) {
-              // Re-hydrate logic
-              const hydratedCart: CartItem[] = items.map((i: any) => {
+              setCart(items.map((i: any) => {
                   const liveProd = (prodRes.data as unknown as Product[])?.find(p => p.id === i.product_id);
-                  const base = liveProd ? liveProd.base_price : 0;
-                  
                   return {
                     product_id: i.product_id,
                     name: i.snapshot_name || liveProd?.name || 'Unknown',
@@ -120,32 +89,25 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
                     unit: i.snapshot_unit || 'шт',
                     category: i.snapshot_global_category || 'General',
                     quantity: i.quantity,
-                    base_price: base,
-                    // Используем price_at_moment как цену за единицу в BYN
+                    base_price: liveProd ? liveProd.base_price : 0,
                     retail_price: i.price_at_moment || 0,
                     manual_markup_percent: i.manual_markup || 0
                   };
-              });
-              setCart(hydratedCart);
+              }));
             }
           }
         }
-      } catch (e: any) {
-        console.error(e);
-        setToast({ message: 'Ошибка инициализации: ' + e.message, type: 'error' });
-      }
+      } catch (e: any) { setToast({ message: 'Ошибка: ' + e.message, type: 'error' }); }
       setLoading(false);
     };
     init();
   }, [proposalId, initialObjectId]);
 
-  // AUTO-LINK Client
   useEffect(() => {
       if (selectedObjectId) {
           const obj = objects.find(o => o.id === selectedObjectId);
           if (obj && obj.client) {
               setLinkedClient(obj.client);
-              // Only auto-set title if it's empty (new CP)
               if (!title || (title.startsWith('КП для объекта') && title.includes(obj.name))) {
                   setTitle(`КП для объекта "${obj.name}"`);
               }
@@ -153,48 +115,28 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
       }
   }, [selectedObjectId, objects]);
 
-  // Calculate Unit Price in BYN
   const calculateItemPrice = (item: CartItem) => {
-      if (item.base_price > 0) {
-          return item.base_price * (1 + (item.manual_markup_percent / 100));
-      }
+      if (item.base_price > 0) return item.base_price * (1 + (item.manual_markup_percent / 100));
       return item.retail_price; 
   };
 
-  const calculateItemTotal = (item: CartItem) => {
-    const unitPrice = calculateItemPrice(item);
-    return unitPrice * item.quantity;
-  };
+  const calculateItemTotal = (item: CartItem) => calculateItemPrice(item) * item.quantity;
 
   const totals = useMemo(() => {
-    let subtotal = 0;
-    let costTotal = 0;
-
-    cart.forEach(i => {
-      subtotal += calculateItemTotal(i);
-      costTotal += i.base_price * i.quantity;
-    });
-    
+    let subtotal = 0; let costTotal = 0;
+    cart.forEach(i => { subtotal += calculateItemTotal(i); costTotal += i.base_price * i.quantity; });
     const vat = hasVat ? subtotal * 0.2 : 0;
     const profit = subtotal - costTotal;
     const markupPercent = costTotal > 0 ? (profit / costTotal) * 100 : 0;
-
     return { subtotal, vat, total: subtotal + vat, profit, markupPercent };
   }, [cart, hasVat]);
 
   const addToCart = (product: Product) => {
     setCart(prev => {
       const exists = prev.find(c => c.product_id === product.id);
-      if (exists) {
-        return prev.map(c => c.product_id === product.id ? { ...c, quantity: c.quantity + 1 } : c);
-      }
-      
-      // Calculate initial default markup from catalog
+      if (exists) return prev.map(c => c.product_id === product.id ? { ...c, quantity: c.quantity + 1 } : c);
       let initialMarkup = 0;
-      if (product.base_price > 0) {
-          initialMarkup = ((product.retail_price - product.base_price) / product.base_price) * 100;
-      }
-
+      if (product.base_price > 0) initialMarkup = ((product.retail_price - product.base_price) / product.base_price) * 100;
       return [...prev, {
         product_id: product.id,
         name: product.name,
@@ -209,26 +151,19 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
     });
   };
 
-  const updateCartItem = (id: string, field: keyof CartItem, value: any) => {
-    setCart(prev => prev.map(c => c.product_id === id ? { ...c, [field]: value } : c));
-  };
-
-  const removeFromCart = (id: string) => {
-      setCart(prev => prev.filter(c => c.product_id !== id));
-  };
+  const updateCartItem = (id: string, field: keyof CartItem, value: any) => setCart(prev => prev.map(c => c.product_id === id ? { ...c, [field]: value } : c));
+  const removeFromCart = (id: string) => setCart(prev => prev.filter(c => c.product_id !== id));
 
   const handleSave = async () => {
     if (!linkedClient) { setToast({ message: 'Выберите объект с клиентом', type: 'error' }); return; }
     if (cart.length === 0) { setToast({ message: 'Корзина пуста', type: 'error' }); return; }
-
     setLoading(true);
     try {
       let cpId = proposalId;
-
       const headerPayload = {
         title: title || null,
         client_id: linkedClient.id,
-        object_id: selectedObjectId || null, // SAVING OBJECT ID
+        object_id: selectedObjectId || null,
         status: 'draft',
         exchange_rate: 1, 
         has_vat: hasVat,
@@ -250,53 +185,46 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
           cp_id: cpId,
           product_id: item.product_id,
           quantity: item.quantity,
-          final_price_byn: calculateItemTotal(item) / item.quantity, // Unit price BYN (Effective)
-          price_at_moment: calculateItemPrice(item), // Unit price BYN
+          final_price_byn: calculateItemTotal(item) / item.quantity,
+          price_at_moment: calculateItemPrice(item),
           manual_markup: item.manual_markup_percent,
-          // Snapshots
           snapshot_name: item.name,
           snapshot_description: item.description,
           snapshot_unit: item.unit,
           snapshot_global_category: item.category
         }));
-
-        const { error: itemsError } = await supabase.from('cp_items').insert(itemsPayload);
-        if (itemsError) throw itemsError;
+        await supabase.from('cp_items').insert(itemsPayload);
       }
-
       setToast({ message: 'КП успешно сохранено', type: 'success' });
       onSuccess();
-    } catch (e: any) {
-      console.error(e);
-      if (e.code === 'PGRST204' || e.message?.includes('manual_markup') || e.message?.includes('snapshot') || e.message?.includes('object_id')) {
-        setToast({ 
-            message: 'Ошибка БД: Выполните скрипт в разделе "База данных"!', 
-            type: 'error' 
-        });
-      } else {
-        setToast({ message: 'Ошибка: ' + e.message, type: 'error' });
-      }
-    }
+    } catch (e: any) { setToast({ message: 'Ошибка: ' + e.message, type: 'error' }); }
     setLoading(false);
   };
 
-  // Filters
-  const uniqueCategories = useMemo(() => Array.from(new Set(products.map(p => p.category))).sort(), [products]);
-  
-  const filteredCatalog = useMemo(() => {
-    return products.filter(p => {
-      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) || p.sku?.toLowerCase().includes(search.toLowerCase());
-      const matchCat = catFilter === 'all' || p.category === catFilter;
-      return matchSearch && matchCat;
+  const groupedCatalog = useMemo(() => {
+    const groups: Record<string, Product[]> = {};
+    products.forEach(p => {
+        const match = p.name.toLowerCase().includes(search.toLowerCase()) || p.sku?.toLowerCase().includes(search.toLowerCase());
+        if (match) {
+            const cat = p.category || 'Без категории';
+            if (!groups[cat]) groups[cat] = [];
+            groups[cat].push(p);
+        }
     });
-  }, [products, search, catFilter]);
+    return Object.entries(groups).sort((a,b) => a[0].localeCompare(b[0]));
+  }, [products, search]);
+
+  const toggleCategory = (cat: string) => {
+      setCollapsedCategories(prev => {
+          const next = new Set(prev);
+          if (next.has(cat)) next.delete(cat); else next.add(cat);
+          return next;
+      });
+  };
 
   const groupedCart = useMemo(() => {
     const groups: Record<string, CartItem[]> = {};
-    cart.forEach(item => {
-      if (!groups[item.category]) groups[item.category] = [];
-      groups[item.category].push(item);
-    });
+    cart.forEach(item => { if (!groups[item.category]) groups[item.category] = []; groups[item.category].push(item); });
     return groups;
   }, [cart]);
 
@@ -307,14 +235,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
       {/* Top Controls */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap gap-4 items-end shrink-0 shadow-sm">
         <div className="w-64">
-            <Select 
-                label="Объект" 
-                value={selectedObjectId} 
-                onChange={(e:any) => setSelectedObjectId(e.target.value)}
-                options={[{value:'', label:'Выберите объект...'}, ...objects.map(o => ({value:o.id, label:o.name}))]}
-                icon="home_work"
-                disabled={!!initialObjectId} // Disable changing object if passed initially (to keep context)
-            />
+            <Select label="Объект" value={selectedObjectId} onChange={(e:any) => setSelectedObjectId(e.target.value)} options={[{value:'', label:'Выберите объект...'}, ...objects.map(o => ({value:o.id, label:o.name}))]} icon="home_work" disabled={!!initialObjectId} />
         </div>
         <div className="flex-grow min-w-[200px] flex flex-col justify-end">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Заказчик</p>
@@ -323,16 +244,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
                 {linkedClient ? linkedClient.name : '—'}
             </div>
         </div>
-        
-        <div className="w-64">
-          <Input 
-            label="Название КП" 
-            placeholder="Напр: Смета на оборудование" 
-            value={title} 
-            onChange={(e:any) => setTitle(e.target.value)} 
-          />
-        </div>
-        
+        <div className="w-64"><Input label="Название КП" placeholder="Напр: Смета на оборудование" value={title} onChange={(e:any) => setTitle(e.target.value)} /></div>
         <div className="pb-3 px-2">
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={hasVat} onChange={(e) => setHasVat(e.target.checked)} className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500" />
@@ -345,53 +257,64 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
         </div>
       </div>
 
-      <div className="flex-grow grid grid-cols-1 lg:grid-cols-10 gap-4 overflow-hidden h-full">
+      <div className="flex-grow grid grid-cols-1 lg:grid-cols-10 gap-4 overflow-hidden h-full min-h-0">
         {/* Left: Catalog */}
-        <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden h-full">
+        <div className="lg:col-span-6 bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden h-full min-h-0">
           <div className="p-4 border-b border-slate-100 flex gap-2 shrink-0">
             <Input placeholder="Поиск товара..." value={search} onChange={(e:any) => setSearch(e.target.value)} className="flex-grow" icon="search" />
-            <div className="w-48">
-              <Select 
-                value={catFilter} 
-                onChange={(e:any) => setCatFilter(e.target.value)} 
-                options={[{value:'all', label:'Все категории'}, ...uniqueCategories.map(c => ({value:c, label:c}))]} 
-              />
-            </div>
           </div>
-          <div className="flex-grow overflow-y-auto p-2 scrollbar-hide">
-            {filteredCatalog.map(p => {
-              const stockQty = stockMap[p.id] || 0;
-              const hasStock = stockQty > 0;
-              
-              return (
-                <div key={p.id} onClick={() => addToCart(p)} className="p-3 mb-1 rounded-xl border border-slate-100 hover:border-blue-300 hover:bg-slate-50 cursor-pointer transition-all flex justify-between items-center group">
-                  <div className="flex flex-col gap-1 overflow-hidden">
-                    <div>
-                      <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider mr-2">{p.category}</span>
-                      {p.sku && <span className="text-[10px] text-slate-500 font-mono bg-slate-100 px-1 rounded">{p.sku}</span>}
-                    </div>
-                    <p className="text-sm font-bold text-slate-900 truncate">{p.name}</p>
-                  </div>
-                  <div className="text-right pl-2 shrink-0">
-                    <div className="flex flex-col items-end">
-                        <p className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded mb-1">{p.retail_price} BYN</p>
-                        <div className="flex gap-2 items-center">
-                            {hasStock ? (
-                                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Склад: {stockQty}</span>
-                            ) : (
-                                <span className="text-[10px] font-bold text-slate-300 bg-slate-50 px-1.5 py-0.5 rounded">Склад: 0</span>
+          <div className="flex-grow overflow-y-auto scrollbar-hide">
+            {groupedCatalog.length === 0 ? (
+                <div className="p-10 text-center text-slate-400">Товары не найдены</div>
+            ) : (
+                groupedCatalog.map(([cat, items]) => {
+                    const isCollapsed = collapsedCategories.has(cat);
+                    return (
+                        <div key={cat} className="border-b border-slate-100 last:border-0">
+                            <div 
+                                onClick={() => toggleCategory(cat)}
+                                className="bg-slate-50/80 px-4 py-2 cursor-pointer flex items-center justify-between hover:bg-slate-100 sticky top-0 z-10 backdrop-blur-sm"
+                            >
+                                <div className="flex items-center gap-2">
+                                    <span className={`material-icons-round text-slate-400 transition-transform ${isCollapsed ? '-rotate-90' : ''}`}>expand_more</span>
+                                    <span className="font-bold text-slate-700 text-xs uppercase tracking-wide">{cat}</span>
+                                </div>
+                                <Badge color="slate">{items.length}</Badge>
+                            </div>
+                            
+                            {!isCollapsed && (
+                                <div className="divide-y divide-slate-50">
+                                    {items.map(p => {
+                                        const stockQty = stockMap[p.id] || 0;
+                                        return (
+                                            <div key={p.id} onClick={() => addToCart(p)} className="p-3 hover:bg-blue-50/30 cursor-pointer transition-colors flex justify-between items-center group">
+                                                <div className="flex items-center gap-3 overflow-hidden">
+                                                    <ProductImage src={p.image_url} alt={p.name} className="w-10 h-10 rounded-md shrink-0 border border-slate-100" preview />
+                                                    <div className="flex flex-col gap-0.5 min-w-0">
+                                                        <p className="text-sm font-bold text-slate-900 truncate">{p.name}</p>
+                                                        {p.sku && <span className="text-[10px] text-slate-500 font-mono">{p.sku}</span>}
+                                                    </div>
+                                                </div>
+                                                <div className="text-right pl-2 shrink-0">
+                                                    <div className="flex flex-col items-end">
+                                                        <span className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded">{p.retail_price} BYN</span>
+                                                        <span className={`text-[9px] mt-1 font-bold ${stockQty > 0 ? 'text-emerald-600' : 'text-slate-300'}`}>Склад: {stockQty}</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
                             )}
                         </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+                    );
+                })
+            )}
           </div>
         </div>
 
         {/* Right: Cart */}
-        <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden h-full shadow-sm">
+        <div className="lg:col-span-4 bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden h-full min-h-0 shadow-sm">
           <div className="p-4 border-b border-slate-100 bg-slate-50 shrink-0">
             <h3 className="font-bold text-slate-900 flex items-center gap-2">
               <span className="material-icons-round text-slate-400">shopping_cart</span>
@@ -403,8 +326,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
             {cart.length === 0 ? (
               <p className="text-center text-slate-400 mt-10 italic text-sm">Выберите товары из списка слева</p>
             ) : (
-              Object.entries(groupedCart).map(([category, items]: [string, CartItem[]]) => {
-                return (
+              Object.entries(groupedCart).map(([category, items]: [string, CartItem[]]) => (
                   <div key={category} className="space-y-2">
                     <div className="bg-slate-100 px-3 py-1.5 rounded-lg sticky top-0 z-10 opacity-95 backdrop-blur-sm">
                       <span className="text-[10px] font-bold text-slate-600 uppercase tracking-tight">{category}</span>
@@ -421,73 +343,38 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
                             </div>
                             
                             <div className="flex items-center gap-2 mt-1.5">
-                                {/* Quantity */}
                                 <div className="flex flex-col w-12">
                                     <label className="text-[8px] text-slate-400 font-bold uppercase">Кол-во</label>
-                                    <input 
-                                      type="number" 
-                                      min="1" 
-                                      value={item.quantity} 
-                                      onChange={(e) => updateCartItem(item.product_id, 'quantity', parseInt(e.target.value) || 1)}
-                                      className="w-full h-7 bg-slate-50 border border-slate-200 rounded text-center font-bold text-xs focus:border-blue-500 outline-none"
-                                    />
+                                    <input type="number" min="1" value={item.quantity} onChange={(e) => updateCartItem(item.product_id, 'quantity', parseInt(e.target.value) || 1)} className="w-full h-7 bg-slate-50 border border-slate-200 rounded text-center font-bold text-xs focus:border-blue-500 outline-none" />
                                 </div>
-
-                                {/* Markup % */}
                                 <div className="flex flex-col w-14">
                                     <label className="text-[8px] text-slate-400 font-bold uppercase">Наценка %</label>
-                                    <input 
-                                      type="number" 
-                                      step="0.1"
-                                      value={item.manual_markup_percent} 
-                                      onChange={(e) => updateCartItem(item.product_id, 'manual_markup_percent', parseFloat(e.target.value) || 0)}
-                                      className={`w-full h-7 border rounded text-center font-bold text-xs focus:border-blue-500 outline-none ${item.manual_markup_percent < 0 ? 'text-red-500 bg-red-50 border-red-100' : 'text-emerald-600 bg-emerald-50 border-emerald-100'}`}
-                                    />
+                                    <input type="number" step="0.1" value={item.manual_markup_percent} onChange={(e) => updateCartItem(item.product_id, 'manual_markup_percent', parseFloat(e.target.value) || 0)} className={`w-full h-7 border rounded text-center font-bold text-xs focus:border-blue-500 outline-none ${item.manual_markup_percent < 0 ? 'text-red-500 bg-red-50 border-red-100' : 'text-emerald-600 bg-emerald-50 border-emerald-100'}`} />
                                 </div>
-
-                                {/* Price Display */}
                                 <div className="flex flex-col flex-grow items-end">
                                     <label className="text-[8px] text-slate-400 font-bold uppercase">Сумма (BYN)</label>
-                                    <div className="h-7 flex items-center">
-                                        <span className="font-bold text-sm text-slate-700">
-                                            {(unitPrice * item.quantity).toFixed(2)}
-                                        </span>
-                                    </div>
+                                    <div className="h-7 flex items-center"><span className="font-bold text-sm text-slate-700">{(unitPrice * item.quantity).toFixed(2)}</span></div>
                                 </div>
-                            </div>
-                            <div className="text-[9px] text-slate-400 text-right mt-0.5">
-                                {unitPrice.toFixed(2)} BYN / шт
                             </div>
                           </div>
                         );
                     })}
                   </div>
-                );
-              })
+                ))
             )}
           </div>
 
           <div className="p-5 bg-slate-50 border-t border-slate-200 shrink-0 z-10">
             <div className="space-y-1 mb-3">
-              <div className="flex justify-between text-xs">
-                <span className="text-slate-500">Сумма без НДС:</span>
-                <span className="font-bold text-slate-700">{totals.subtotal.toFixed(2)} BYN</span>
-              </div>
-              {hasVat && (
-                <div className="flex justify-between text-xs">
-                  <span className="text-slate-500">НДС 20%:</span>
-                  <span className="font-bold text-slate-700">{totals.vat.toFixed(2)} BYN</span>
-                </div>
-              )}
+              <div className="flex justify-between text-xs"><span className="text-slate-500">Сумма без НДС:</span><span className="font-bold text-slate-700">{totals.subtotal.toFixed(2)} BYN</span></div>
+              {hasVat && <div className="flex justify-between text-xs"><span className="text-slate-500">НДС 20%:</span><span className="font-bold text-slate-700">{totals.vat.toFixed(2)} BYN</span></div>}
             </div>
             <div className="flex justify-between items-center pt-3 border-t border-slate-200">
               <span className="font-bold text-slate-900 text-sm">ИТОГО:</span>
               <span className="font-bold text-xl text-blue-600">{totals.total.toFixed(2)} BYN</span>
             </div>
             <div className="mt-2 text-right">
-                 <span className={`text-[10px] font-bold ${totals.profit > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                   Прибыль: {totals.profit.toFixed(2)} BYN ({totals.markupPercent.toFixed(1)}%)
-                 </span>
+                 <span className={`text-[10px] font-bold ${totals.profit > 0 ? 'text-emerald-600' : 'text-red-500'}`}>Прибыль: {totals.profit.toFixed(2)} BYN ({totals.markupPercent.toFixed(1)}%)</span>
             </div>
           </div>
         </div>

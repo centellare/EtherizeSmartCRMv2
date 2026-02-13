@@ -7,3 +7,4 @@ export * from './ConfirmModal';
 export * from './Badge';
 export * from './Toast';
 export * from './Drawer';
+export * from './ProductImage';

@@ -29,7 +29,8 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
   const fetchData = async () => {
     setLoading(true);
     const { data: inv } = await supabase.from('invoices').select('*, client:clients(*), object:objects(name, address), creator:profiles(full_name)').eq('id', invoiceId).single();
-    const { data: invItems } = await supabase.from('invoice_items').select('*').eq('invoice_id', invoiceId);
+    // Added join to products to get base_price and TYPE for expense estimation
+    const { data: invItems } = await supabase.from('invoice_items').select('*, product:products(has_serial, base_price, type)').eq('invoice_id', invoiceId);
     const { data: set } = await supabase.from('company_settings').select('*').limit(1).maybeSingle();
 
     setInvoice(inv);
@@ -63,6 +64,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
               let supplyOrderId: string | null = null;
               let reservedCountTotal = 0;
               let deficitCountTotal = 0;
+              let estimatedDeficitCost = 0; // Total cost of needed items
 
               for (const item of items) {
                   if (!item.product_id) continue;
@@ -87,6 +89,16 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                   const deficit = item.quantity - canReserve;
                   
                   if (deficit > 0) {
+                      // Calculate cost of deficit
+                      const itemCost = item.product?.base_price || 0;
+                      const itemType = item.product?.type || 'product';
+                      
+                      // VAT LOGIC: If it's a product or material, we buy with VAT (1.2). Services usually no VAT.
+                      // Base price in DB is ex-VAT. Transaction needs to be inc-VAT (Cash Flow).
+                      const vatMultiplier = (itemType === 'service') ? 1.0 : 1.2;
+                      
+                      estimatedDeficitCost += (deficit * itemCost * vatMultiplier);
+
                       // Create Supply Order Header if not exists for this transaction
                       if (!supplyOrderId) {
                           // Check if one already exists for this invoice to avoid duplicates on re-clicks
@@ -108,17 +120,51 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
 
                       // Add Item to Supply Order
                       if (supplyOrderId) {
-                          await supabase.from('supply_order_items').insert({
-                              supply_order_id: supplyOrderId,
-                              product_id: item.product_id,
-                              quantity_needed: deficit,
-                              status: 'pending'
-                          });
-                          deficitCountTotal += deficit;
+                          const { data: existingItem } = await supabase.from('supply_order_items')
+                            .select('id')
+                            .eq('supply_order_id', supplyOrderId)
+                            .eq('product_id', item.product_id)
+                            .maybeSingle();
+
+                          if (!existingItem) {
+                              await supabase.from('supply_order_items').insert({
+                                  supply_order_id: supplyOrderId,
+                                  product_id: item.product_id,
+                                  quantity_needed: deficit,
+                                  status: 'pending'
+                              });
+                              deficitCountTotal += deficit;
+                          }
                       }
                   }
               }
               
+              // 3. Create Pending Expense for Deficit (Finance Integration)
+              // SAFETY CHECK: Ensure we don't create duplicate expense for this invoice
+              if (deficitCountTotal > 0 && estimatedDeficitCost > 0) {
+                  const { data: existingExpense } = await supabase.from('transactions')
+                    .select('id')
+                    .eq('invoice_id', invoiceId)
+                    .eq('type', 'expense')
+                    .maybeSingle();
+
+                  if (!existingExpense) {
+                      const expensePayload = {
+                          object_id: invoice.object_id,
+                          invoice_id: invoiceId, // Link to this invoice
+                          type: 'expense',
+                          amount: estimatedDeficitCost, // Current estimated cost with VAT
+                          requested_amount: estimatedDeficitCost,
+                          planned_date: new Date().toISOString(), // Immediate plan
+                          category: 'Закупка оборудования',
+                          description: `Авто-закупка по счету №${invoice.number} (${deficitCountTotal} поз.)`,
+                          status: 'pending',
+                          created_by: invoice.created_by
+                      };
+                      await supabase.from('transactions').insert([expensePayload]);
+                  }
+              }
+
               let msg = 'Счет отправлен.';
               if (reservedCountTotal > 0) msg += ` Зарезервировано: ${reservedCountTotal} поз.`;
               if (deficitCountTotal > 0) msg += ` В заказ снабжения: ${deficitCountTotal} поз.`;

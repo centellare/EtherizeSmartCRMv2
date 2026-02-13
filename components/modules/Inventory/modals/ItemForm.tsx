@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../../lib/supabase';
-import { Input, Select, Button, ConfirmModal } from '../../../ui';
+import { Input, Select, Button, ConfirmModal, ProductImage } from '../../../ui';
 import { Product, InventoryItem } from '../../../../types';
 
 interface ItemFormProps {
@@ -219,20 +219,39 @@ export const ItemForm: React.FC<ItemFormProps> = ({ mode, selectedItem, products
     <>
         <form onSubmit={(e) => handleFormSubmit(e, false)} className="space-y-4">
             {mode === 'add_item' ? (
-                <Select 
-                    label="Выберите товар из номенклатуры" 
-                    required 
-                    value={formData.product_id} 
-                    onChange={(e: any) => setFormData({...formData, product_id: e.target.value})}
-                    options={[{value: '', label: 'Поиск товара...'}, ...products.map(p => ({value: p.id, label: p.name}))]}
-                />
+                <>
+                    <Select 
+                        label="Выберите товар из номенклатуры" 
+                        required 
+                        value={formData.product_id} 
+                        onChange={(e: any) => setFormData({...formData, product_id: e.target.value})}
+                        options={[
+                            {value: '', label: 'Поиск товара...'}, 
+                            ...products.filter(p => p.type !== 'service').map(p => ({value: p.id, label: p.name}))
+                        ]}
+                    />
+                    {selectedProduct && (
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 flex gap-4 items-center animate-in fade-in slide-in-from-top-2">
+                            <ProductImage src={selectedProduct.image_url} alt={selectedProduct.name} className="w-16 h-16 rounded-lg border border-slate-200" preview />
+                            <div>
+                                <p className="font-bold text-slate-800 text-sm">{selectedProduct.name}</p>
+                                <p className="text-xs text-slate-500">{selectedProduct.sku ? `SKU: ${selectedProduct.sku}` : 'Без артикула'}</p>
+                            </div>
+                        </div>
+                    )}
+                </>
             ) : (
                 <div className="bg-blue-50 p-4 rounded-xl border border-blue-100">
-                    <p className="text-xs text-blue-500 font-bold uppercase">{mode === 'receive_supply' ? 'Приемка заказа' : 'Редактирование'}</p>
-                    <p className="font-bold text-blue-900 text-lg">{selectedProduct?.name || selectedItem?.product?.name}</p>
-                    {mode === 'receive_supply' && (
-                        <p className="text-xs text-slate-500 mt-1">Ожидалось: {selectedItem?.quantity_needed} шт.</p>
-                    )}
+                    <p className="text-xs text-blue-500 font-bold uppercase mb-2">{mode === 'receive_supply' ? 'Приемка заказа' : 'Редактирование'}</p>
+                    <div className="flex gap-4 items-center">
+                        <ProductImage src={selectedProduct?.image_url || selectedItem?.product?.image_url} alt="Product" className="w-16 h-16 rounded-lg bg-white border border-blue-200" preview />
+                        <div>
+                            <p className="font-bold text-blue-900 text-lg leading-tight">{selectedProduct?.name || selectedItem?.product?.name}</p>
+                            {mode === 'receive_supply' && (
+                                <p className="text-xs text-slate-500 mt-1">Ожидалось: {selectedItem?.quantity_needed} шт.</p>
+                            )}
+                        </div>
+                    </div>
                 </div>
             )}
             
