@@ -54,6 +54,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   
   const [closeForm, setCloseForm] = useState({ comment: '', link: '', doc_name: '' });
   const [checklists, setChecklists] = useState<Record<string, any[]>>({});
@@ -148,21 +149,37 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     e.preventDefault();
     if (!selectedTask) return;
     setLoading(true);
-    const { error } = await supabase.from('tasks').update({
-      status: 'completed',
-      completed_at: new Date().toISOString(),
-      completion_comment: closeForm.comment,
-      completion_doc_link: closeForm.link,
-      completion_doc_name: closeForm.doc_name
-    }).eq('id', selectedTask.id);
     
-    if (!error) {
-      setIsTaskCloseModalOpen(false);
-      setIsTaskDetailsModalOpen(false);
-      setCloseForm({ comment: '', link: '', doc_name: '' });
-      await refreshData();
+    try {
+        const { data, error } = await supabase.from('tasks').update({
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          completed_by: profile.id, // Explicitly set who completed it
+          completion_comment: closeForm.comment,
+          completion_doc_link: closeForm.link,
+          completion_doc_name: closeForm.doc_name
+        })
+        .eq('id', selectedTask.id)
+        .select(); // IMPORTANT: Select to check if row was actually updated
+        
+        if (error) throw error;
+
+        // RLS Check: If no data returned, it means permission denied silently
+        if (!data || data.length === 0) {
+            throw new Error('Нет прав на завершение этой задачи (только исполнитель или админ)');
+        }
+        
+        setIsTaskCloseModalOpen(false);
+        setIsTaskDetailsModalOpen(false);
+        setCloseForm({ comment: '', link: '', doc_name: '' });
+        await refreshData();
+    } catch (e: any) {
+        console.error(e);
+        // Show the error in UI instead of silent failure
+        alert(e.message || 'Ошибка при завершении задачи');
+    } finally {
+        setLoading(false);
     }
-    setLoading(false);
   };
 
   const canEditDelete = (task: any) => {

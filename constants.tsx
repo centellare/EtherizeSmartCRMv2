@@ -3,34 +3,47 @@ import { TableSchema } from './types';
 
 // Migration SQL to be executed by user
 export const MIGRATION_SQL_V2 = `
--- SmartHome ERP 2.4 Migration (CP Links & Settings)
+-- SmartHome ERP 2.5: Fix Permissions & Roles (Патч прав доступа)
 
 BEGIN;
 
--- 1. Добавляем поле картинки в товары
+-- 1. СБРОС И ОБНОВЛЕНИЕ ПРАВ ДОСТУПА (RLS) ДЛЯ ЗАДАЧ
+-- Удаляем старые, возможно конфликтующие политики
+DROP POLICY IF EXISTS "Tasks update policy" ON public.tasks;
+DROP POLICY IF EXISTS "Users can update their own tasks" ON public.tasks;
+DROP POLICY IF EXISTS "Enable update for users based on email" ON public.tasks;
+
+-- Создаем единую политику обновления:
+-- Разрешено: Админам, Директорам, Создателю задачи, Исполнителю задачи
+CREATE POLICY "Tasks update policy" ON public.tasks
+FOR UPDATE
+USING (
+  (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'director')
+  OR
+  auth.uid() = assigned_to
+  OR
+  auth.uid() = created_by
+)
+WITH CHECK (
+  (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'director')
+  OR
+  auth.uid() = assigned_to
+  OR
+  auth.uid() = created_by
+);
+
+-- 2. Гарантируем наличие полей (безопасно)
+ALTER TABLE public.tasks 
+ADD COLUMN IF NOT EXISTS completed_by UUID REFERENCES public.profiles(id);
+
 ALTER TABLE public.products 
 ADD COLUMN IF NOT EXISTS image_url TEXT;
 
--- 2. Связь Счета с Объектом
-ALTER TABLE public.invoices 
-ADD COLUMN IF NOT EXISTS object_id UUID REFERENCES public.objects(id);
-
--- 3. Связь Транзакции со Счетом
-ALTER TABLE public.transactions 
-ADD COLUMN IF NOT EXISTS invoice_id UUID REFERENCES public.invoices(id);
-
--- 4. Связь КП с Объектом
-ALTER TABLE public.commercial_proposals 
-ADD COLUMN IF NOT EXISTS object_id UUID REFERENCES public.objects(id);
-
--- 5. Логотип компании
 ALTER TABLE public.company_settings 
 ADD COLUMN IF NOT EXISTS logo_url TEXT;
 
--- 6. Обновление индексов
-CREATE INDEX IF NOT EXISTS idx_invoices_object ON public.invoices(object_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_invoice ON public.transactions(invoice_id);
-CREATE INDEX IF NOT EXISTS idx_cp_object ON public.commercial_proposals(object_id);
+ALTER TABLE public.invoices 
+ADD COLUMN IF NOT EXISTS object_id UUID REFERENCES public.objects(id);
 
 COMMIT;
 
@@ -38,6 +51,14 @@ NOTIFY pgrst, 'reload schema';
 `;
 
 export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
+  {
+    name: 'tasks',
+    description: 'Задачи (обновление прав)',
+    columns: [
+        { name: 'id', type: 'uuid', isPrimary: true },
+        { name: 'completed_by', type: 'uuid', description: 'Кто завершил', references: 'profiles' }
+    ]
+  },
   {
     name: 'products',
     description: 'Номенклатура',
@@ -53,20 +74,14 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
         { name: 'id', type: 'uuid', isPrimary: true },
         { name: 'object_id', type: 'uuid', description: 'Привязка к объекту', references: 'objects' }
     ]
-  },
-  {
-    name: 'company_settings',
-    description: 'Настройки компании',
-    columns: [
-        { name: 'id', type: 'uuid', isPrimary: true },
-        { name: 'logo_url', type: 'text', description: 'URL логотипа' }
-    ]
   }
 ];
 
 export const SUPABASE_SETUP_GUIDE = `
-### Инструкция по обновлению (Версия 2.4)
-1. Скопируйте SQL-скрипт.
-2. Выполните его в SQL Editor панели Supabase.
-3. Это добавит связи объектов с КП и поле для логотипа.
+### ВАЖНО: Исправление прав доступа (Версия 2.5)
+1. Скопируйте SQL-скрипт ниже.
+2. Откройте SQL Editor в Supabase.
+3. Выполните скрипт.
+   
+Это исправит ошибку "Нет прав", разрешив Директорам и Исполнителям закрывать задачи.
 `;

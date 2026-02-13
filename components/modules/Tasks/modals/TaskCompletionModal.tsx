@@ -17,19 +17,27 @@ export const TaskCompletionModal: React.FC<TaskCompletionModalProps> = ({ task, 
     if (!task) return;
     setLoading(true);
     try {
-      const { error } = await supabase.from('tasks').update({
+      const { data, error } = await supabase.from('tasks').update({
         status: 'completed',
         completed_at: new Date().toISOString(),
         completion_comment: form.comment,
         completion_doc_link: form.link,
         completion_doc_name: form.doc_name
-      }).eq('id', task.id);
+      })
+      .eq('id', task.id)
+      .select(); // Check for rows
       
       if (error) throw error;
+
+      // If RLS filters the row (permission denied), data will be empty but no error thrown
+      if (!data || data.length === 0) {
+          throw new Error('Нет прав на завершение этой задачи.');
+      }
+
       onSuccess();
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Ошибка при завершении задачи');
+      alert(err.message || 'Ошибка при завершении задачи');
     } finally {
       setLoading(false);
     }
