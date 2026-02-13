@@ -3,7 +3,7 @@ import { TableSchema } from './types';
 
 // Migration SQL to be executed by user
 export const MIGRATION_SQL_V2 = `
--- SmartHome ERP 2.5: Fix Permissions & Roles (Патч прав доступа)
+-- SmartHome ERP 2.5: Fix Permissions & Roles (Патч прав доступа) + Referrals
 
 BEGIN;
 
@@ -41,6 +41,11 @@ ADD COLUMN IF NOT EXISTS logo_url TEXT;
 
 ALTER TABLE public.invoices 
 ADD COLUMN IF NOT EXISTS object_id UUID REFERENCES public.objects(id);
+
+-- [NEW] Marketing & Referrals
+ALTER TABLE public.clients
+ADD COLUMN IF NOT EXISTS lead_source TEXT DEFAULT 'other',
+ADD COLUMN IF NOT EXISTS referred_by UUID REFERENCES public.clients(id);
 
 -- 3. [NEW] Функция для быстрой аналитики (на будущее)
 CREATE OR REPLACE FUNCTION get_finance_analytics(year_input int)
@@ -108,14 +113,23 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
         { name: 'id', type: 'uuid', isPrimary: true },
         { name: 'object_id', type: 'uuid', description: 'Привязка к объекту', references: 'objects' }
     ]
+  },
+  {
+    name: 'clients',
+    description: 'Клиенты (Маркетинг)',
+    columns: [
+        { name: 'id', type: 'uuid', isPrimary: true },
+        { name: 'lead_source', type: 'text', description: 'Источник (Instagram, Партнер...)' },
+        { name: 'referred_by', type: 'uuid', description: 'Кто порекомендовал (ID клиента)', references: 'clients' }
+    ]
   }
 ];
 
 export const SUPABASE_SETUP_GUIDE = `
-### ВАЖНО: Исправление прав доступа (Версия 2.5)
+### ВАЖНО: Исправление прав доступа и Маркетинг (Версия 2.6)
 1. Скопируйте SQL-скрипт ниже.
 2. Откройте SQL Editor в Supabase.
 3. Выполните скрипт.
    
-Это исправит ошибку "Нет прав", разрешив Директорам и Исполнителям закрывать задачи.
+Это добавит поля для отслеживания источников клиентов и рефералов.
 `;

@@ -1,6 +1,7 @@
 
-import React, { useState } from 'react';
-import { Button } from '../../../ui';
+import React, { useState, useEffect } from 'react';
+import { supabase } from '../../../../lib/supabase';
+import { Button, Badge } from '../../../ui';
 
 const CopyButton: React.FC<{ text: string }> = ({ text }) => {
   const [copied, setCopied] = useState(false);
@@ -29,7 +30,43 @@ interface ClientDetailsProps {
   onAddObject: (clientId: string) => void;
 }
 
+const SOURCES_MAP: Record<string, string> = {
+    'instagram': 'Instagram',
+    'website': 'Веб-сайт',
+    'referral': 'Рекомендация',
+    'partner': 'Партнер',
+    'cold_call': 'Холодный звонок',
+    'exhibition': 'Выставка',
+    'other': 'Другое'
+};
+
 export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, onNavigateToObject, onAddObject }) => {
+  const [referrals, setReferrals] = useState<any[]>([]);
+  const [referrer, setReferrer] = useState<any>(null);
+  const [loadingRefs, setLoadingRefs] = useState(false);
+
+  useEffect(() => {
+      if (client?.id) {
+          fetchConnections();
+      }
+  }, [client]);
+
+  const fetchConnections = async () => {
+      setLoadingRefs(true);
+      // Who referred this client?
+      if (client.referred_by) {
+          const { data: ref } = await supabase.from('clients').select('id, name').eq('id', client.referred_by).single();
+          setReferrer(ref);
+      } else {
+          setReferrer(null);
+      }
+
+      // Who did this client refer?
+      const { data: downline } = await supabase.from('clients').select('id, name, created_at').eq('referred_by', client.id);
+      setReferrals(downline || []);
+      setLoadingRefs(false);
+  };
+
   if (!client) return null;
 
   return (
@@ -78,6 +115,44 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
                 <span className="material-icons-round text-slate-400">support_agent</span>
                 <span className="text-sm text-slate-700 font-medium">{client.manager?.full_name || 'Не назначен'}</span>
             </div>
+            </div>
+        </div>
+
+        {/* MARKETING SECTION */}
+        <div className="bg-purple-50 p-4 rounded-2xl border border-purple-100">
+            <p className="text-[10px] font-bold text-purple-400 uppercase tracking-widest mb-3 ml-1 flex items-center gap-1">
+                <span className="material-icons-round text-sm">hub</span> Связи и Источник
+            </p>
+            
+            <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                    <span className="text-xs text-purple-900">Пришел через:</span>
+                    <Badge color="purple">{SOURCES_MAP[client.lead_source] || client.lead_source || 'Не указано'}</Badge>
+                </div>
+
+                {referrer && (
+                    <div className="bg-white p-3 rounded-xl border border-purple-100 flex items-center gap-3">
+                        <span className="material-icons-round text-purple-400">arrow_forward</span>
+                        <div>
+                            <p className="text-[10px] text-slate-400 uppercase">По рекомендации от</p>
+                            <p className="text-sm font-bold text-slate-800">{referrer.name}</p>
+                        </div>
+                    </div>
+                )}
+
+                {referrals.length > 0 && (
+                    <div>
+                        <p className="text-[10px] text-slate-400 uppercase mb-2">Привел клиентов ({referrals.length}):</p>
+                        <div className="space-y-2">
+                            {referrals.map(ref => (
+                                <div key={ref.id} className="bg-white p-2 px-3 rounded-lg border border-slate-100 flex items-center gap-2">
+                                    <span className="material-icons-round text-emerald-500 text-sm">person_add</span>
+                                    <span className="text-xs font-medium text-slate-700">{ref.name}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
 

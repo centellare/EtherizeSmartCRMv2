@@ -11,8 +11,19 @@ interface ClientFormProps {
   onSuccess: () => void;
 }
 
+const SOURCES = [
+    { value: 'instagram', label: 'Instagram / Соцсети' },
+    { value: 'website', label: 'Наш сайт (SEO/Ads)' },
+    { value: 'referral', label: 'Рекомендация (Сарафан)' },
+    { value: 'partner', label: 'Партнер (Дизайнер/Архитектор)' },
+    { value: 'cold_call', label: 'Холодный поиск' },
+    { value: 'exhibition', label: 'Выставка / Мероприятие' },
+    { value: 'other', label: 'Другое' }
+];
+
 export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff, profile, onSuccess }) => {
   const [loading, setLoading] = useState(false);
+  const [clients, setClients] = useState<any[]>([]); // For referral selection
   const [formData, setFormData] = useState({
     name: '',
     type: 'person' as 'person' | 'company',
@@ -22,7 +33,9 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
     email: '',
     requisites: '',
     comment: '',
-    manager_id: profile?.id || ''
+    manager_id: profile?.id || '',
+    lead_source: 'other',
+    referred_by: ''
   });
 
   useEffect(() => {
@@ -36,15 +49,29 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
         email: initialData.email || '',
         requisites: initialData.requisites || '',
         comment: initialData.comment || '',
-        manager_id: initialData.manager_id || profile?.id || ''
+        manager_id: initialData.manager_id || profile?.id || '',
+        lead_source: initialData.lead_source || 'other',
+        referred_by: initialData.referred_by || ''
       });
     }
+    
+    // Fetch clients for referral list
+    const fetchClients = async () => {
+        const { data } = await supabase.from('clients').select('id, name').is('deleted_at', null).order('name');
+        setClients(data || []);
+    };
+    fetchClients();
   }, [mode, initialData, profile]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const payload = { ...formData, updated_at: new Date().toISOString(), updated_by: profile.id };
+    const payload = { 
+        ...formData, 
+        referred_by: formData.lead_source === 'referral' ? (formData.referred_by || null) : null, // Clear referral if source changed
+        updated_at: new Date().toISOString(), 
+        updated_by: profile.id 
+    };
     if (mode === 'create') (payload as any).created_by = profile.id;
     
     // Для физлиц очищаем контактные данные
@@ -66,6 +93,9 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
   };
 
   const managers = staff.filter(s => s.role === 'manager' || s.role === 'director');
+  
+  // Filter out current client from referral list (can't refer self)
+  const potentialReferrers = clients.filter(c => c.id !== initialData?.id);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -102,6 +132,30 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
             </div>
         </div>
       )}
+
+      {/* MARKETING BLOCK */}
+      <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 space-y-4">
+          <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest ml-1">Маркетинг (Откуда пришел)</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Select 
+                  label="Источник" 
+                  value={formData.lead_source} 
+                  onChange={(e: any) => setFormData({...formData, lead_source: e.target.value})}
+                  options={SOURCES}
+                  icon="campaign"
+              />
+              {formData.lead_source === 'referral' && (
+                  <Select 
+                      label="Кто порекомендовал?" 
+                      value={formData.referred_by} 
+                      onChange={(e: any) => setFormData({...formData, referred_by: e.target.value})}
+                      options={[{value: '', label: 'Выберите клиента...'}, ...potentialReferrers.map(c => ({ value: c.id, label: c.name }))]}
+                      icon="handshake"
+                      className="animate-in fade-in slide-in-from-left-2"
+                  />
+              )}
+          </div>
+      </div>
 
       <div className="grid grid-cols-2 gap-4">
         <Input label="Телефон" value={formData.phone} onChange={(e: any) => setFormData({...formData, phone: e.target.value})} icon="phone" />
