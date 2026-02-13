@@ -2,12 +2,17 @@
 import { TableSchema } from './types';
 
 // Migration SQL to be executed by user
-export const MIGRATION_SQL_V2 = `
--- SmartHome ERP 2.5: Fix Permissions & Roles (Патч прав доступа) + Referrals
+export const MIGRATION_SQL_V3 = `
+-- SmartHome CRM v2.6: Маркетинг и Рефералы + Исправления
 
 BEGIN;
 
--- 1. СБРОС И ОБНОВЛЕНИЕ ПРАВ ДОСТУПА (RLS) ДЛЯ ЗАДАЧ
+-- 1. [NEW] Маркетинг и Рефералы (Клиенты)
+ALTER TABLE public.clients
+ADD COLUMN IF NOT EXISTS lead_source TEXT DEFAULT 'other',
+ADD COLUMN IF NOT EXISTS referred_by UUID REFERENCES public.clients(id);
+
+-- 2. СБРОС И ОБНОВЛЕНИЕ ПРАВ ДОСТУПА (RLS) ДЛЯ ЗАДАЧ
 DROP POLICY IF EXISTS "Tasks update policy" ON public.tasks;
 DROP POLICY IF EXISTS "Users can update their own tasks" ON public.tasks;
 DROP POLICY IF EXISTS "Enable update for users based on email" ON public.tasks;
@@ -29,7 +34,7 @@ WITH CHECK (
   auth.uid() = created_by
 );
 
--- 2. Гарантируем наличие полей (безопасно)
+-- 3. Гарантируем наличие полей (безопасно, если уже есть)
 ALTER TABLE public.tasks 
 ADD COLUMN IF NOT EXISTS completed_by UUID REFERENCES public.profiles(id);
 
@@ -42,12 +47,7 @@ ADD COLUMN IF NOT EXISTS logo_url TEXT;
 ALTER TABLE public.invoices 
 ADD COLUMN IF NOT EXISTS object_id UUID REFERENCES public.objects(id);
 
--- [NEW] Marketing & Referrals
-ALTER TABLE public.clients
-ADD COLUMN IF NOT EXISTS lead_source TEXT DEFAULT 'other',
-ADD COLUMN IF NOT EXISTS referred_by UUID REFERENCES public.clients(id);
-
--- 3. [NEW] Функция для быстрой аналитики (на будущее)
+-- 4. Функция для быстрой аналитики (на будущее)
 CREATE OR REPLACE FUNCTION get_finance_analytics(year_input int)
 RETURNS json
 LANGUAGE plpgsql
@@ -126,10 +126,10 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
 ];
 
 export const SUPABASE_SETUP_GUIDE = `
-### ВАЖНО: Исправление прав доступа и Маркетинг (Версия 2.6)
+### ВАЖНО: Обновление базы данных (Версия 2.6)
 1. Скопируйте SQL-скрипт ниже.
 2. Откройте SQL Editor в Supabase.
 3. Выполните скрипт.
    
-Это добавит поля для отслеживания источников клиентов и рефералов.
+Это добавит отслеживание источников клиентов, реферальную систему и исправит права доступа.
 `;
