@@ -7,6 +7,7 @@ import { Product } from '../../../types';
 interface CPGeneratorProps {
   profile: any;
   proposalId?: string | null;
+  initialObjectId?: string | null; // NEW PROP
   onSuccess: () => void;
   onCancel: () => void;
 }
@@ -23,7 +24,7 @@ interface CartItem {
   manual_markup_percent: number; // Editable Markup
 }
 
-const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSuccess, onCancel }) => {
+const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialObjectId, onSuccess, onCancel }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [objects, setObjects] = useState<any[]>([]);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
@@ -70,6 +71,15 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
                 return acc;
             }, {});
             setStockMap(stocks);
+        }
+
+        // PRE-SELECT OBJECT IF PROVIDED AND NOT EDITING
+        if (initialObjectId && !proposalId && objRes.data) {
+            const targetObj = objRes.data.find((o: any) => o.id === initialObjectId);
+            if (targetObj) {
+                setSelectedObjectId(targetObj.id);
+                // Title auto-fill handled in the other useEffect
+            }
         }
 
         // Load existing proposal if in edit mode
@@ -127,7 +137,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
       setLoading(false);
     };
     init();
-  }, [proposalId]);
+  }, [proposalId, initialObjectId]);
 
   // AUTO-LINK Client
   useEffect(() => {
@@ -135,9 +145,10 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
           const obj = objects.find(o => o.id === selectedObjectId);
           if (obj && obj.client) {
               setLinkedClient(obj.client);
-              if (!title) setTitle(`КП для объекта "${obj.name}"`);
-          } else if (selectedObjectId !== '') { 
-              // Don't auto-clear if it was set by editing load, but logic above handles it
+              // Only auto-set title if it's empty (new CP)
+              if (!title || (title.startsWith('КП для объекта') && title.includes(obj.name))) {
+                  setTitle(`КП для объекта "${obj.name}"`);
+              }
           }
       }
   }, [selectedObjectId, objects]);
@@ -290,7 +301,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
   }, [cart]);
 
   return (
-    <div className="flex flex-col h-[calc(100vh-220px)] min-h-[500px] gap-4">
+    <div className="flex flex-col h-full min-h-[500px] gap-4">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       {/* Top Controls */}
@@ -302,6 +313,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, onSucces
                 onChange={(e:any) => setSelectedObjectId(e.target.value)}
                 options={[{value:'', label:'Выберите объект...'}, ...objects.map(o => ({value:o.id, label:o.name}))]}
                 icon="home_work"
+                disabled={!!initialObjectId} // Disable changing object if passed initially (to keep context)
             />
         </div>
         <div className="flex-grow min-w-[200px] flex flex-col justify-end">

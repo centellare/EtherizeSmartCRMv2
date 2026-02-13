@@ -8,6 +8,7 @@ import { TasksTab } from './TasksTab';
 import { FinancesTab } from './FinancesTab';
 import { ArchiveTab } from './ArchiveTab';
 import { SupplyTab } from './SupplyTab';
+import CPGenerator from '../Proposals/CPGenerator';
 
 const STAGES = [
   { id: 'negotiation', label: 'Переговоры' },
@@ -46,6 +47,9 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
   const [isPendingTasksWarningOpen, setIsPendingTasksWarningOpen] = useState(false);
   const [autoOpenTaskModal, setAutoOpenTaskModal] = useState(false);
   const [directorConfirmed, setDirectorConfirmed] = useState(false);
+  
+  // New CP Modal State
+  const [isCPModalOpen, setIsCPModalOpen] = useState(false);
 
   const [stageForm, setStageForm] = useState({ next_stage: '', responsible_id: '', deadline: '' });
   const [rollbackForm, setRollbackForm] = useState({ reason: '', responsible_id: '' });
@@ -178,10 +182,10 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
   };
 
   return (
-    <div className="animate-in fade-in duration-300">
+    <div className="animate-in fade-in duration-300 h-full flex flex-col">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
-      <div className="bg-white rounded-[32px] p-8 border border-[#e1e2e1] mb-8 shadow-sm">
+      <div className="bg-white rounded-[32px] p-8 border border-[#e1e2e1] mb-8 shadow-sm flex-shrink-0">
         <WorkflowHeader 
           object={object} 
           allStagesData={allStagesData}
@@ -197,32 +201,60 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
         )}
       </div>
 
-      <div className="flex gap-2 mb-6 bg-slate-100 p-1.5 rounded-full w-fit overflow-x-auto">
+      <div className="flex gap-2 mb-6 bg-slate-100 p-1.5 rounded-full w-fit overflow-x-auto flex-shrink-0">
         <button onClick={() => setActiveTab('stage')} className={`px-5 py-1.5 rounded-full text-xs font-bold uppercase transition-all ${activeTab === 'stage' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}>Этап</button>
         <button onClick={() => setActiveTab('supply')} className={`px-5 py-1.5 rounded-full text-xs font-bold uppercase transition-all ${activeTab === 'supply' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}>Снабжение</button>
         {canSeeFinances && <button onClick={() => setActiveTab('finance')} className={`px-5 py-1.5 rounded-full text-xs font-bold uppercase transition-all ${activeTab === 'finance' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}>Финансы</button>}
         <button onClick={() => setActiveTab('docs')} className={`px-5 py-1.5 rounded-full text-xs font-bold uppercase transition-all ${activeTab === 'docs' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}>Архив</button>
       </div>
 
-      {activeTab === 'stage' && (
-        <TasksTab 
-          object={object} profile={profile} viewedStageId={viewedStageId} tasks={tasks} staff={staff} canManage={canManage}
-          refreshData={fetchData} onStartNextStage={handleNextStageInit} onJumpForward={() => {}} 
-          onRollback={() => { setRollbackForm({ reason: '', responsible_id: '' }); setIsRollbackModalOpen(true); }}
-          updateStatus={updateObjectStatus} forceOpenTaskModal={autoOpenTaskModal} onTaskModalOpened={() => setAutoOpenTaskModal(false)}
-        />
-      )}
+      <div className="flex-grow">
+        {activeTab === 'stage' && (
+            <TasksTab 
+            object={object} profile={profile} viewedStageId={viewedStageId} tasks={tasks} staff={staff} canManage={canManage}
+            refreshData={fetchData} onStartNextStage={handleNextStageInit} onJumpForward={() => {}} 
+            onRollback={() => { setRollbackForm({ reason: '', responsible_id: '' }); setIsRollbackModalOpen(true); }}
+            updateStatus={updateObjectStatus} forceOpenTaskModal={autoOpenTaskModal} onTaskModalOpened={() => setAutoOpenTaskModal(false)}
+            />
+        )}
 
-      {activeTab === 'supply' && (
-        <SupplyTab object={object} profile={profile} />
-      )}
+        {activeTab === 'supply' && (
+            <SupplyTab 
+                object={object} 
+                profile={profile}
+                onCreateCP={() => setIsCPModalOpen(true)}
+            />
+        )}
 
-      {activeTab === 'finance' && canSeeFinances && (
-        <FinancesTab object={object} profile={profile} transactions={transactions} isAdmin={isAdmin} refreshData={fetchData} />
-      )}
+        {activeTab === 'finance' && canSeeFinances && (
+            <FinancesTab object={object} profile={profile} transactions={transactions} isAdmin={isAdmin} refreshData={fetchData} />
+        )}
 
-      {activeTab === 'docs' && (
-        <ArchiveTab tasks={tasks} profile={profile} />
+        {activeTab === 'docs' && (
+            <ArchiveTab tasks={tasks} profile={profile} />
+        )}
+      </div>
+
+      {/* CP Creation Modal (Fullscreen-ish) */}
+      {isCPModalOpen && (
+          <div className="fixed inset-0 z-[2000] bg-slate-100 flex flex-col animate-in fade-in slide-in-from-bottom-10">
+              <div className="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center shadow-sm">
+                  <h3 className="text-xl font-bold text-slate-800">Создание КП для {object.name}</h3>
+                  <button onClick={() => setIsCPModalOpen(false)} className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors">
+                      <span className="material-icons-round">close</span>
+                  </button>
+              </div>
+              <div className="flex-grow p-4 overflow-hidden">
+                  <div className="bg-white rounded-[32px] h-full shadow-lg border border-slate-200 overflow-hidden p-2">
+                      <CPGenerator 
+                          profile={profile} 
+                          initialObjectId={object.id}
+                          onSuccess={() => { setIsCPModalOpen(false); setToast({ message: 'КП создано', type: 'success' }); }}
+                          onCancel={() => setIsCPModalOpen(false)}
+                      />
+                  </div>
+              </div>
+          </div>
       )}
 
       {/* Modals for Stage Transition */}
