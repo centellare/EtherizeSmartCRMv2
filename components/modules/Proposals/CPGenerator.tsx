@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Button, Input, Select, Toast, Badge, ProductImage } from '../../ui';
+import { Button, Input, Select, Toast, Badge, ProductImage, Drawer } from '../../ui';
 import { Product } from '../../../types';
 
 interface CPGeneratorProps {
@@ -47,8 +47,10 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
   
   // Filters & UI
   const [search, setSearch] = useState('');
-  // Changed from 'collapsed' to 'expanded' so default (empty set) is collapsed
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
+  
+  // Product Details Drawer
+  const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
 
   useEffect(() => {
     const init = async () => {
@@ -506,7 +508,16 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
                                                 <div className="flex items-center gap-3 overflow-hidden">
                                                     <ProductImage src={p.image_url} alt={p.name} className="w-9 h-9 rounded-md shrink-0 border border-slate-100" preview />
                                                     <div className="flex flex-col gap-0.5 min-w-0">
-                                                        <p className="text-sm font-bold text-slate-900 truncate">{p.name}</p>
+                                                        <div className="flex items-center gap-2">
+                                                            <p className="text-sm font-bold text-slate-900 truncate">{p.name}</p>
+                                                            <button 
+                                                                onClick={(e) => { e.stopPropagation(); setViewingProduct(p); }}
+                                                                className="w-5 h-5 rounded-full hover:bg-blue-100 text-slate-300 hover:text-blue-600 flex items-center justify-center transition-colors shrink-0"
+                                                                title="Подробнее о товаре"
+                                                            >
+                                                                <span className="material-icons-round text-[16px]">info</span>
+                                                            </button>
+                                                        </div>
                                                         {p.sku && <span className="text-[10px] text-slate-500 font-mono">{p.sku}</span>}
                                                     </div>
                                                 </div>
@@ -662,6 +673,66 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
           </div>
         </div>
       </div>
+
+      <Drawer isOpen={!!viewingProduct} onClose={() => setViewingProduct(null)} title="Карточка товара" width="max-w-md">
+        {viewingProduct && (
+            <div className="space-y-6">
+                <div className="flex justify-center bg-slate-50 p-6 rounded-3xl border border-slate-100">
+                    <ProductImage src={viewingProduct.image_url} className="w-48 h-48 object-contain" preview />
+                </div>
+                
+                <div>
+                    <h3 className="text-xl font-bold text-slate-900 leading-tight">{viewingProduct.name}</h3>
+                    <div className="flex flex-wrap gap-2 mt-3">
+                        {viewingProduct.sku && <Badge color="slate">SKU: {viewingProduct.sku}</Badge>}
+                        <Badge color="blue">{viewingProduct.category}</Badge>
+                        <Badge color="emerald">{viewingProduct.unit}</Badge>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Базовая цена</p>
+                        <p className="text-lg font-bold text-slate-700">{viewingProduct.base_price} BYN</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Розница</p>
+                        <p className="text-lg font-bold text-blue-600">{viewingProduct.retail_price} BYN</p>
+                    </div>
+                </div>
+
+                <div className="space-y-3">
+                    <div className="flex justify-between border-b border-slate-50 pb-2">
+                        <span className="text-sm text-slate-500">Производитель</span>
+                        <span className="text-sm font-medium">{viewingProduct.manufacturer || '—'}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-50 pb-2">
+                        <span className="text-sm text-slate-500">Страна</span>
+                        <span className="text-sm font-medium">{viewingProduct.origin_country || '—'}</span>
+                    </div>
+                    <div className="flex justify-between border-b border-slate-50 pb-2">
+                        <span className="text-sm text-slate-500">Вес</span>
+                        <span className="text-sm font-medium">{viewingProduct.weight ? `${viewingProduct.weight} кг` : '—'}</span>
+                    </div>
+                </div>
+
+                {viewingProduct.description && (
+                    <div className="bg-slate-50 p-4 rounded-2xl">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Описание</p>
+                        <p className="text-sm text-slate-600 italic leading-relaxed">{viewingProduct.description}</p>
+                    </div>
+                )}
+
+                <Button 
+                    onClick={() => { addToCart(viewingProduct); setViewingProduct(null); }} 
+                    className="w-full h-12"
+                    icon="add_shopping_cart"
+                >
+                    Добавить в смету
+                </Button>
+            </div>
+        )}
+      </Drawer>
     </div>
   );
 };
