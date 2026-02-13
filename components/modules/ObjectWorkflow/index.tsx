@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { supabase } from '../../../lib/supabase';
 import { Button, Modal, Input, Select, ConfirmModal, Toast } from '../../ui';
 import { WorkflowHeader } from './WorkflowHeader';
@@ -235,16 +236,22 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
         )}
       </div>
 
-      {/* CP Creation Modal (Fullscreen-ish) */}
-      {isCPModalOpen && (
-          <div className="fixed inset-0 z-[2000] bg-slate-100 flex flex-col animate-in fade-in slide-in-from-bottom-10">
-              <div className="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center shadow-sm">
-                  <h3 className="text-xl font-bold text-slate-800">Создание КП для {object.name}</h3>
-                  <button onClick={() => setIsCPModalOpen(false)} className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors">
+      {/* CP Creation Modal (Portal to Body) */}
+      {isCPModalOpen && createPortal(
+          <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in slide-in-from-bottom-4">
+              <div className="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center shadow-sm shrink-0">
+                  <div>
+                      <h3 className="text-xl font-bold text-slate-800">Создание КП</h3>
+                      <p className="text-xs text-slate-500">для объекта: {object.name}</p>
+                  </div>
+                  <button 
+                    onClick={() => setIsCPModalOpen(false)} 
+                    className="w-10 h-10 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition-colors text-slate-500"
+                  >
                       <span className="material-icons-round">close</span>
                   </button>
               </div>
-              <div className="flex-grow p-4 overflow-hidden">
+              <div className="flex-grow p-4 md:p-6 overflow-hidden">
                   <div className="bg-white rounded-[32px] h-full shadow-lg border border-slate-200 overflow-hidden p-2">
                       <CPGenerator 
                           profile={profile} 
@@ -254,7 +261,8 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
                       />
                   </div>
               </div>
-          </div>
+          </div>,
+          document.body
       )}
 
       {/* Modals for Stage Transition */}
