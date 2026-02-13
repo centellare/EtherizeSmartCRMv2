@@ -33,7 +33,9 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
         ]);
 
         if (prodRes.data) setProducts((prodRes.data || []) as unknown as Product[]);
-        if (settingsRes.data?.global_markup !== undefined) setGlobalMarkup(settingsRes.data.global_markup);
+        if (settingsRes.data && settingsRes.data.global_markup !== null) {
+            setGlobalMarkup(settingsRes.data.global_markup);
+        }
         
         const rulesMap: Record<string, number> = {};
         rulesRes.data?.forEach((r: any) => {
@@ -69,7 +71,12 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
       if (settings) {
           await supabase.from('company_settings').update({ global_markup: val }).eq('id', settings.id);
       } else {
-          await supabase.from('company_settings').insert({ global_markup: val, company_name: 'My Company' });
+          // If no settings exist, create with defaults
+          await supabase.from('company_settings').insert({ 
+              global_markup: val, 
+              company_name: 'My Company',
+              default_vat_percent: 20
+          });
       }
       
       // Recalculate ALL products in DB
@@ -123,14 +130,10 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
       const updates = catProducts.map(p => {
           const prodDelta = p.markup_percent || 0;
           const newRetail = calculateRetail(p.base_price, catDelta, prodDelta);
-          return { id: p.id, markup_percent: prodDelta, retail_price: newRetail }; // we send markup_percent to satisfy upsert strictness if needed, or just update retail
+          return { id: p.id, retail_price: newRetail }; 
       });
 
       // We have to update one by one or utilize upsert. Since retail_price varies per item, bulk update is tricky without a custom function or loop.
-      // For UX responsiveness with 100-500 items, parallel requests are okay.
-      // Optimization: Create a DB function `recalc_category_prices(cat, global, cat_delta)`.
-      // For now, client-side loop is safer for logic control.
-      
       const promises = updates.map(u => 
           supabase.from('products').update({ retail_price: u.retail_price }).eq('id', u.id)
       );

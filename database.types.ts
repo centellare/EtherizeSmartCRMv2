@@ -15,6 +15,27 @@ export type Database = {
   }
   public: {
     Tables: {
+      price_rules: {
+        Row: {
+          id: string
+          category_name: string
+          markup_delta: number
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          category_name: string
+          markup_delta?: number
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          category_name?: string
+          markup_delta?: number
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       client_connections: {
         Row: {
           client_a: string | null
@@ -165,6 +186,7 @@ export type Database = {
           company_name: string
           created_at: string | null
           default_vat_percent: number
+          global_markup: number | null
           id: string
           logo_url: string | null
           requisites: string | null
@@ -174,6 +196,7 @@ export type Database = {
           company_name?: string
           created_at?: string | null
           default_vat_percent?: number
+          global_markup?: number | null
           id?: string
           logo_url?: string | null
           requisites?: string | null
@@ -183,6 +206,7 @@ export type Database = {
           company_name?: string
           created_at?: string | null
           default_vat_percent?: number
+          global_markup?: number | null
           id?: string
           logo_url?: string | null
           requisites?: string | null
@@ -1358,6 +1382,7 @@ export type Database = {
           fact_date: string | null
           id: string
           object_id: string | null
+          invoice_id: string | null
           planned_amount: number | null
           planned_date: string | null
           processed_at: string | null
@@ -1380,6 +1405,7 @@ export type Database = {
           fact_date?: string | null
           id?: string
           object_id?: string | null
+          invoice_id?: string | null
           planned_amount?: number | null
           planned_date?: string | null
           processed_at?: string | null
@@ -1402,6 +1428,7 @@ export type Database = {
           fact_date?: string | null
           id?: string
           object_id?: string | null
+          invoice_id?: string | null
           planned_amount?: number | null
           planned_date?: string | null
           processed_at?: string | null
