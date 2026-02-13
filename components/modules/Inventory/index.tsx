@@ -28,6 +28,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
   const [products, setProducts] = useState<Product[]>([]);
   const [items, setItems] = useState<InventoryItem[]>([]);
   const [objects, setObjects] = useState<any[]>([]);
+  const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
 
   // Cart State
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -38,6 +39,10 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
   const fetchData = async () => {
+    // We always fetch pending orders count to update the badge
+    const { count } = await supabase.from('supply_orders').select('*', { count: 'exact', head: true }).neq('status', 'received');
+    setPendingOrdersCount(count || 0);
+
     if (activeTab === 'orders') return; // SupplyOrders fetches its own data
     
     setLoading(true);
@@ -147,7 +152,14 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
 
       <div className="flex gap-2 mb-6 bg-slate-100 p-1.5 rounded-full w-fit overflow-x-auto">
         <button onClick={() => setActiveTab('stock')} className={`px-5 py-2 rounded-full text-xs font-bold uppercase transition-all ${activeTab === 'stock' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Склад / Отгрузки</button>
-        <button onClick={() => setActiveTab('orders')} className={`px-5 py-2 rounded-full text-xs font-bold uppercase transition-all ${activeTab === 'orders' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Заказы (Дефицит)</button>
+        <button onClick={() => setActiveTab('orders')} className={`px-5 py-2 rounded-full text-xs font-bold uppercase transition-all flex items-center gap-2 ${activeTab === 'orders' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>
+            Заказы (Дефицит)
+            {pendingOrdersCount > 0 && (
+                <span className="w-5 h-5 bg-red-500 text-white rounded-full flex items-center justify-center text-[10px] font-bold">
+                    {pendingOrdersCount}
+                </span>
+            )}
+        </button>
         <button onClick={() => setActiveTab('nomenclature')} className={`px-5 py-2 rounded-full text-xs font-bold uppercase transition-all ${activeTab === 'nomenclature' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Номенклатура</button>
         <button onClick={() => setActiveTab('warranty')} className={`px-5 py-2 rounded-full text-xs font-bold uppercase transition-all ${activeTab === 'warranty' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Гарантия / Сервис</button>
       </div>

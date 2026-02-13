@@ -57,9 +57,17 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
       setStatusLoading(true);
       try {
           await supabase.from('invoices').update({ status: newStatus }).eq('id', invoiceId);
+          
+          // Logic: If status changes from Draft -> Sent/Paid, trigger reservation AND deficit creation
           if ((newStatus === 'sent' || newStatus === 'paid') && invoice.status === 'draft') {
+              let supplyOrderId: string | null = null;
+              let reservedCountTotal = 0;
+              let deficitCountTotal = 0;
+
               for (const item of items) {
                   if (!item.product_id) continue;
+                  
+                  // 1. Try to reserve available stock
                   const { data: available } = await supabase.from('inventory_items')
                       .select('id')
                       .eq('product_id', item.product_id)
@@ -67,17 +75,61 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                       .is('reserved_for_invoice_id', null)
                       .limit(item.quantity);
                   
-                  if (available && available.length > 0) {
-                      const ids = available.map(a => a.id);
+                  const canReserve = available ? available.length : 0;
+                  
+                  if (canReserve > 0) {
+                      const ids = available!.map(a => a.id);
                       await supabase.from('inventory_items').update({ status: 'reserved', reserved_for_invoice_id: invoiceId }).in('id', ids);
+                      reservedCountTotal += canReserve;
+                  }
+
+                  // 2. Check for deficit
+                  const deficit = item.quantity - canReserve;
+                  
+                  if (deficit > 0) {
+                      // Create Supply Order Header if not exists for this transaction
+                      if (!supplyOrderId) {
+                          // Check if one already exists for this invoice to avoid duplicates on re-clicks
+                          const { data: existingOrder } = await supabase.from('supply_orders').select('id').eq('invoice_id', invoiceId).maybeSingle();
+                          
+                          if (existingOrder) {
+                              supplyOrderId = existingOrder.id;
+                          } else {
+                              const { data: newOrder, error: orderError } = await supabase.from('supply_orders').insert([{
+                                  invoice_id: invoiceId,
+                                  status: 'pending',
+                                  created_by: invoice.created_by 
+                              }]).select('id').single();
+                              
+                              if (orderError) throw orderError;
+                              supplyOrderId = newOrder.id;
+                          }
+                      }
+
+                      // Add Item to Supply Order
+                      if (supplyOrderId) {
+                          await supabase.from('supply_order_items').insert({
+                              supply_order_id: supplyOrderId,
+                              product_id: item.product_id,
+                              quantity_needed: deficit,
+                              status: 'pending'
+                          });
+                          deficitCountTotal += deficit;
+                      }
                   }
               }
-              setToast({ message: 'Счет отправлен. Товар зарезервирован.', type: 'success' });
+              
+              let msg = 'Счет отправлен.';
+              if (reservedCountTotal > 0) msg += ` Зарезервировано: ${reservedCountTotal} поз.`;
+              if (deficitCountTotal > 0) msg += ` В заказ снабжения: ${deficitCountTotal} поз.`;
+              
+              setToast({ message: msg, type: 'success' });
           } else {
               setToast({ message: 'Статус счета обновлен', type: 'success' });
           }
           fetchData();
       } catch (e: any) {
+          console.error(e);
           setToast({ message: 'Ошибка: ' + e.message, type: 'error' });
       } finally {
           setStatusLoading(false);
@@ -127,7 +179,6 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
       const priceNoVat = invoice.has_vat ? priceWithVat / 1.2 : priceWithVat;
       const totalNoVat = invoice.has_vat ? totalWithVat / 1.2 : totalWithVat;
       const totalVatSum = totalWithVat - totalNoVat;
-      // Fixed: included priceWithVat in the return object
       return { ...item, priceWithVat, priceNoVat, totalNoVat, totalVatSum, totalWithVat };
   });
 
