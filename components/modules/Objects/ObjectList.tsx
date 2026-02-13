@@ -74,6 +74,14 @@ export const ObjectList: React.FC<ObjectListProps> = ({
               <h4 className="text-xl font-medium text-[#1c1b1f] mb-1 group-hover:text-[#005ac1] transition-colors leading-tight">
                 {obj.name}
               </h4>
+              
+              {obj.client?.name && (
+                <div className="flex items-center gap-1.5 mb-2 text-xs font-medium text-slate-600">
+                    <span className="material-icons-round text-sm text-slate-400">person</span>
+                    {obj.client.name}
+                </div>
+              )}
+
               <p className="text-sm text-slate-500 mb-4 flex items-start gap-1">
                 <span className="material-icons-round text-base text-slate-400 mt-0.5">location_on</span>
                 {obj.address || 'Адрес не указан'}
