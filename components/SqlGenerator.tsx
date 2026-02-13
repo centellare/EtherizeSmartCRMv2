@@ -21,16 +21,16 @@ const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
       <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-[24px] border border-indigo-200 shadow-sm">
         <h3 className="text-lg font-bold text-indigo-900 mb-2 flex items-center gap-2">
           <span className="material-icons-round text-indigo-600">upgrade</span>
-          Обновление структуры (v2.6): Маркетинг и Связи
+          Обновление структуры (v2.7): Связи, Маркетинг и Права
         </h3>
         <p className="text-sm text-indigo-800 mb-4 leading-relaxed">
           Этот скрипт добавляет новые возможности:
           <br/>
-          1. <strong>Маркетинг:</strong> Поля <code>lead_source</code> и <code>referred_by</code> для отслеживания, откуда пришли клиенты.
+          1. <strong>Связи клиентов:</strong> Таблица <code>client_connections</code> для отслеживания знакомств (Соседи, Друзья).
           <br/>
-          2. <strong>Безопасность:</strong> Исправление RLS политик для задач (завершение задач).
+          2. <strong>Маркетинг:</strong> Поля для источников лидов и рефералов.
           <br/>
-          3. <strong>Аналитика:</strong> SQL-функция для быстрого расчета баланса.
+          3. <strong>Безопасность:</strong> Исправление RLS политик для задач и связей.
         </p>
         
         <div className="relative group">

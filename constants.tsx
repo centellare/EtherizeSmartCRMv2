@@ -3,7 +3,7 @@ import { TableSchema } from './types';
 
 // Migration SQL to be executed by user
 export const MIGRATION_SQL_V3 = `
--- SmartHome CRM v2.6: Маркетинг и Рефералы + Исправления
+-- SmartHome CRM v2.7: Маркетинг, Рефералы и Связи
 
 BEGIN;
 
@@ -12,7 +12,32 @@ ALTER TABLE public.clients
 ADD COLUMN IF NOT EXISTS lead_source TEXT DEFAULT 'other',
 ADD COLUMN IF NOT EXISTS referred_by UUID REFERENCES public.clients(id);
 
--- 2. СБРОС И ОБНОВЛЕНИЕ ПРАВ ДОСТУПА (RLS) ДЛЯ ЗАДАЧ
+-- 2. [NEW] Горизонтальные связи (Знакомства)
+CREATE TABLE IF NOT EXISTS public.client_connections (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    client_a UUID REFERENCES public.clients(id) ON DELETE CASCADE,
+    client_b UUID REFERENCES public.clients(id) ON DELETE CASCADE,
+    type TEXT NOT NULL, -- 'neighbor', 'relative', 'friend', 'partner', 'other'
+    comment TEXT,
+    created_at TIMESTAMPTZ DEFAULT now(),
+    created_by UUID REFERENCES public.profiles(id)
+);
+
+-- RLS для связей
+ALTER TABLE public.client_connections ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "View connections" ON public.client_connections
+FOR SELECT USING (
+  (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'director', 'manager', 'specialist')
+);
+
+CREATE POLICY "Manage connections" ON public.client_connections
+FOR ALL USING (
+  (SELECT role FROM public.profiles WHERE id = auth.uid()) IN ('admin', 'director', 'manager')
+  OR created_by = auth.uid()
+);
+
+-- 3. СБРОС И ОБНОВЛЕНИЕ ПРАВ ДОСТУПА (RLS) ДЛЯ ЗАДАЧ
 DROP POLICY IF EXISTS "Tasks update policy" ON public.tasks;
 DROP POLICY IF EXISTS "Users can update their own tasks" ON public.tasks;
 DROP POLICY IF EXISTS "Enable update for users based on email" ON public.tasks;
@@ -34,7 +59,7 @@ WITH CHECK (
   auth.uid() = created_by
 );
 
--- 3. Гарантируем наличие полей (безопасно, если уже есть)
+-- 4. Гарантируем наличие полей (безопасно, если уже есть)
 ALTER TABLE public.tasks 
 ADD COLUMN IF NOT EXISTS completed_by UUID REFERENCES public.profiles(id);
 
@@ -47,7 +72,7 @@ ADD COLUMN IF NOT EXISTS logo_url TEXT;
 ALTER TABLE public.invoices 
 ADD COLUMN IF NOT EXISTS object_id UUID REFERENCES public.objects(id);
 
--- 4. Функция для быстрой аналитики (на будущее)
+-- 5. Функция для быстрой аналитики (на будущее)
 CREATE OR REPLACE FUNCTION get_finance_analytics(year_input int)
 RETURNS json
 LANGUAGE plpgsql
@@ -91,27 +116,21 @@ NOTIFY pgrst, 'reload schema';
 
 export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
   {
+    name: 'client_connections',
+    description: 'Связи между клиентами (знакомства)',
+    columns: [
+        { name: 'id', type: 'uuid', isPrimary: true },
+        { name: 'client_a', type: 'uuid', references: 'clients' },
+        { name: 'client_b', type: 'uuid', references: 'clients' },
+        { name: 'type', type: 'text', description: 'Тип связи (сосед, друг...)' }
+    ]
+  },
+  {
     name: 'tasks',
     description: 'Задачи (обновление прав)',
     columns: [
         { name: 'id', type: 'uuid', isPrimary: true },
         { name: 'completed_by', type: 'uuid', description: 'Кто завершил', references: 'profiles' }
-    ]
-  },
-  {
-    name: 'products',
-    description: 'Номенклатура',
-    columns: [
-        { name: 'id', type: 'uuid', isPrimary: true },
-        { name: 'image_url', type: 'text', description: 'Ссылка на фото товара' }
-    ]
-  },
-  {
-    name: 'commercial_proposals',
-    description: 'Коммерческие предложения',
-    columns: [
-        { name: 'id', type: 'uuid', isPrimary: true },
-        { name: 'object_id', type: 'uuid', description: 'Привязка к объекту', references: 'objects' }
     ]
   },
   {
@@ -126,10 +145,10 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
 ];
 
 export const SUPABASE_SETUP_GUIDE = `
-### ВАЖНО: Обновление базы данных (Версия 2.6)
+### ВАЖНО: Обновление базы данных (Версия 2.7)
 1. Скопируйте SQL-скрипт ниже.
 2. Откройте SQL Editor в Supabase.
 3. Выполните скрипт.
    
-Это добавит отслеживание источников клиентов, реферальную систему и исправит права доступа.
+Это добавит таблицу связей между клиентами, маркетинг и исправления прав.
 `;
