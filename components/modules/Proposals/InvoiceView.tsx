@@ -118,7 +118,8 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                             .maybeSingle();
 
                           if (existingItem) {
-                              await supabase.from('supply_order_items').update({ quantity_needed: existingItem.quantity_needed + deficit }).eq('id', existingItem.id);
+                              const currentNeeded = existingItem.quantity_needed || 0;
+                              await supabase.from('supply_order_items').update({ quantity_needed: currentNeeded + deficit }).eq('id', existingItem.id);
                           } else {
                               await supabase.from('supply_order_items').insert({
                                   supply_order_id: supplyOrderId,

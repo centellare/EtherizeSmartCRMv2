@@ -121,9 +121,10 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
               if (reservedItems) {
                   for (const rItem of reservedItems) {
                       if (remainingToShip <= 0) break;
-                      const take = Math.min(rItem.quantity, remainingToShip);
+                      const rQty = rItem.quantity || 0;
+                      const take = Math.min(rQty, remainingToShip);
                       
-                      if (take === rItem.quantity) {
+                      if (take === rQty) {
                           await supabase.from('inventory_items').update({
                               status: 'deployed',
                               current_object_id: targetObject.id,
@@ -131,7 +132,7 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
                               assigned_to_id: profile.id
                           }).eq('id', rItem.id);
                       } else {
-                          await supabase.from('inventory_items').update({ quantity: rItem.quantity - take }).eq('id', rItem.id);
+                          await supabase.from('inventory_items').update({ quantity: rQty - take }).eq('id', rItem.id);
                           await supabase.from('inventory_items').insert({
                               product_id: item.product_id,
                               quantity: take,
@@ -162,16 +163,17 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
                   if (freeItems) {
                       for (const fItem of freeItems) {
                           if (remainingToShip <= 0) break;
-                          const take = Math.min(fItem.quantity, remainingToShip);
+                          const fQty = fItem.quantity || 0;
+                          const take = Math.min(fQty, remainingToShip);
                           
-                          if (take === fItem.quantity) {
+                          if (take === fQty) {
                               await supabase.from('inventory_items').update({
                                   status: 'deployed',
                                   current_object_id: targetObject.id,
                                   assigned_to_id: profile.id
                               }).eq('id', fItem.id);
                           } else {
-                              await supabase.from('inventory_items').update({ quantity: fItem.quantity - take }).eq('id', fItem.id);
+                              await supabase.from('inventory_items').update({ quantity: fQty - take }).eq('id', fItem.id);
                               await supabase.from('inventory_items').insert({
                                   product_id: item.product_id,
                                   quantity: take,
