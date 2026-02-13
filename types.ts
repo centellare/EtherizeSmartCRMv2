@@ -119,7 +119,13 @@ export interface Product {
   image_url?: string | null; // NEW: Product Image
   is_archived: boolean;
   created_at: string;
-  markup_percent?: number; 
+  markup_percent?: number; // Individual Delta
+}
+
+export interface PriceRule {
+  id: string;
+  category_name: string;
+  markup_delta: number;
 }
 
 export type InventoryItemStatus = 'in_stock' | 'deployed' | 'maintenance' | 'scrapped' | 'reserved';
@@ -193,6 +199,7 @@ export interface CompanySettings {
   requisites?: string;
   bank_details?: string;
   default_vat_percent: number;
+  global_markup?: number;
 }
 
 // --- NEW TYPES FOR DOCUMENTS & ORDERS ---
