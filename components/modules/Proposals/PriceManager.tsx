@@ -21,7 +21,8 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
   const [search, setSearch] = useState('');
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
-  const canEdit = profile?.role === 'admin' || profile?.role === 'director';
+  // Allow Storekeeper to edit prices
+  const canEdit = profile?.role === 'admin' || profile?.role === 'director' || profile?.role === 'storekeeper';
 
   const fetchData = useCallback(async () => {
     setLoading(true);

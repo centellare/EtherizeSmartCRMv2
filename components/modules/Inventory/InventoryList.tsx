@@ -40,6 +40,10 @@ const InventoryList: React.FC<InventoryListProps> = ({
   const [typeFilter, setTypeFilter] = useState<'all' | 'product' | 'material'>('all');
 
   const isAdmin = profile?.role === 'admin';
+  const isStorekeeper = profile?.role === 'storekeeper';
+  const isDirector = profile?.role === 'director';
+  // Update: Director has full rights too
+  const canManage = isAdmin || isStorekeeper || isDirector;
 
   const handleUnreserve = async (itemId: string) => {
       if(!window.confirm('Снять резерв с товара? Он станет доступен для использования.')) return;
@@ -278,7 +282,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
                                                                                 <div className="flex flex-col items-start gap-1">
                                                                                     <Badge color="blue">Резерв</Badge>
                                                                                     {item.invoice && <span className="text-[9px]">Счет №{item.invoice.number}</span>}
-                                                                                    <button onClick={() => handleUnreserve(item.id)} className="text-[9px] text-red-500 underline">Снять</button>
+                                                                                    {canManage && <button onClick={() => handleUnreserve(item.id)} className="text-[9px] text-red-500 underline">Снять</button>}
                                                                                 </div>
                                                                             ) : <Badge color="emerald">Свободно</Badge>}
                                                                         </td>
@@ -290,7 +294,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
                                                                                     <span className="material-icons-round text-sm">{isInCart ? 'remove' : 'add'}</span>
                                                                                 </button>
                                                                             )}
-                                                                            {isAdmin && (
+                                                                            {canManage && (
                                                                                 <>
                                                                                     <button onClick={() => onEdit(item)} className="w-7 h-7 rounded bg-slate-100 text-slate-500 hover:text-blue-600 flex items-center justify-center"><span className="material-icons-round text-sm">edit</span></button>
                                                                                     <button onClick={() => setDeleteId(item.id)} className="w-7 h-7 rounded bg-slate-100 text-slate-500 hover:text-red-600 flex items-center justify-center"><span className="material-icons-round text-sm">delete</span></button>

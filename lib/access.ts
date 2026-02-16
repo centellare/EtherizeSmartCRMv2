@@ -24,6 +24,10 @@ export const isModuleAllowed = (role: string | undefined, moduleId: string): boo
       // Директора видят всё, кроме системных настроек базы данных
       return moduleId !== 'database';
     
+    case 'storekeeper':
+      // Снабжение/Финансист: Склад, Финансы, Задачи, Объекты (просмотр), КП/Счета/Прайс
+      return ['inventory', 'finances', 'tasks', 'objects', 'proposals'].includes(moduleId);
+
     case 'admin':
       // Администраторам доступно всё
       return true;

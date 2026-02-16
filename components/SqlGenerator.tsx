@@ -21,12 +21,12 @@ const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
       <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-[24px] border border-indigo-200 shadow-sm">
         <h3 className="text-lg font-bold text-indigo-900 mb-2 flex items-center gap-2">
           <span className="material-icons-round text-indigo-600">upgrade</span>
-          Обновление структуры (v3.4): Фикс функций
+          Обновление структуры (v3.6): Новая роль
         </h3>
         <p className="text-sm text-indigo-800 mb-4 leading-relaxed">
-          Этот скрипт удаляет конфликтующие версии функций базы данных и создает корректные.
+          Этот скрипт добавляет роль <strong>storekeeper</strong> (Снабжение / Финансы) в базу данных.
           <br/>
-          <strong>Важно:</strong> Выполните это, чтобы исправить ошибку "Could not choose the best candidate function".
+          <strong>Важно:</strong> Выполните это перед созданием сотрудника с новой ролью.
         </p>
         
         <div className="relative group">

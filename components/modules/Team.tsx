@@ -7,11 +7,12 @@ const ROLES = [
   { value: 'admin', label: 'Администратор' },
   { value: 'director', label: 'Директор' },
   { value: 'manager', label: 'Менеджер объектов' },
+  { value: 'storekeeper', label: 'Снабжение / Финансы' },
   { value: 'specialist', label: 'Специалист' }
 ];
 
 // Define User Role Type explicitly locally if not imported
-type UserRole = 'admin' | 'director' | 'manager' | 'specialist';
+type UserRole = 'admin' | 'director' | 'manager' | 'specialist' | 'storekeeper';
 
 const Team: React.FC<{ profile: any }> = ({ profile }) => {
   const [members, setMembers] = useState<any[]>([]);
@@ -199,6 +200,7 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
                   member.role === 'admin' ? 'bg-red-50 text-red-600' :
                   member.role === 'director' ? 'bg-purple-50 text-purple-600' :
                   member.role === 'manager' ? 'bg-blue-50 text-blue-600' :
+                  member.role === 'storekeeper' ? 'bg-amber-50 text-amber-600' :
                   'bg-emerald-50 text-emerald-600'
                 }`}>
                   {getUserInitials(member.full_name)}
@@ -217,9 +219,10 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
                 <Badge color={
                   member.role === 'admin' ? 'red' : 
                   member.role === 'director' ? 'purple' : 
-                  member.role === 'manager' ? 'blue' : 'emerald'
+                  member.role === 'manager' ? 'blue' : 
+                  member.role === 'storekeeper' ? 'amber' : 'emerald'
                 }>
-                  {ROLES.find(r => r.value === member.role)?.label.toUpperCase()}
+                  {ROLES.find(r => r.value === member.role)?.label.toUpperCase() || member.role}
                 </Badge>
               </div>
 

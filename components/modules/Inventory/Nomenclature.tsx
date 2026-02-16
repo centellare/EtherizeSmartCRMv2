@@ -25,7 +25,8 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
   // Grouping State: Use 'expanded' logic so default is closed (empty set)
   const [expandedCategories, setExpandedCategories] = useState<Set<string>>(new Set());
 
-  const canEdit = profile?.role === 'admin' || profile?.role === 'director' || profile?.role === 'manager';
+  // Storekeeper needs to manage product catalog
+  const canEdit = profile?.role === 'admin' || profile?.role === 'director' || profile?.role === 'manager' || profile?.role === 'storekeeper';
 
   const fetchData = useCallback(async () => {
     setLoading(true);

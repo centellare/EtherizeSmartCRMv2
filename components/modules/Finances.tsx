@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase, measureQuery } from '../../lib/supabase';
-import { Button, Input, Modal, ConfirmModal, Toast } from '../ui';
+import { Button, Input, Modal, ConfirmModal, Toast, Select } from '../ui';
 import { Transaction } from '../../types';
 import { getMinskISODate, formatDate } from '../../lib/dateUtils';
 
@@ -35,6 +35,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const [activeWidget, setActiveWidget] = useState<string | null>(null); // 'debtors', 'income_fact', 'income_plan', 'expense_fact', 'expense_plan'
   const [unclosedDocsOnly, setUnclosedDocsOnly] = useState(false);
   const [docSearchQuery, setDocSearchQuery] = useState('');
+  const [selectedObjectId, setSelectedObjectId] = useState<string>(''); // GLOBAL OBJECT FILTER
 
   // UI States
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set());
@@ -51,9 +52,12 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const isAdmin = profile?.role === 'admin';
   const isDirector = profile?.role === 'director';
   const isManager = profile?.role === 'manager';
+  const isStorekeeper = profile?.role === 'storekeeper';
   const isSpecialist = profile?.role === 'specialist';
-  const canApprove = isAdmin || isDirector || isManager;
-  const canEditDelete = isAdmin || isDirector;
+  
+  // Storekeeper has financial rights
+  const canApprove = isAdmin || isDirector || isManager || isStorekeeper;
+  const canEditDelete = isAdmin || isDirector || isStorekeeper;
 
   const fetchData = useCallback(async (silent = false) => {
     if (!profile?.id) return;
@@ -90,7 +94,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         setTransactions(mappedTrans);
       }
 
-      const { data: objData } = await supabase.from('objects').select('id, name').is('is_deleted', false);
+      const { data: objData } = await supabase.from('objects').select('id, name, client:clients(name)').is('is_deleted', false).order('name');
       if (objData) setObjects(objData);
     } catch (error) { 
       console.error('Finance fetch error:', error); 
@@ -115,12 +119,19 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   // 1. GLOBAL METRICS (Lifetime, Snapshot)
   const globalMetrics = useMemo(() => {
       const todayStr = getMinskISODate();
-      const allIncome = transactions.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
-      const allExpense = transactions.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0);
+      
+      // Filter by Object if selected
+      let relevantTransactions = transactions;
+      if (selectedObjectId) {
+          relevantTransactions = transactions.filter(t => t.object_id === selectedObjectId);
+      }
+
+      const allIncome = relevantTransactions.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
+      const allExpense = relevantTransactions.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0);
       const balance = allIncome - allExpense;
 
       // Debtors: Planned Income (Pending/Partial) where planned_date < today
-      const debtorsList = transactions.filter(t => 
+      const debtorsList = relevantTransactions.filter(t => 
           t.type === 'income' && 
           (t.status === 'pending' || t.status === 'partial') && 
           t.planned_date && 
@@ -133,11 +144,14 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
           debtorsSum,
           debtorsCount: debtorsList.length
       };
-  }, [transactions]);
+  }, [transactions, selectedObjectId]);
 
   // 2. PERIOD FLOW METRICS (Depends on Dates)
   const periodMetrics = useMemo(() => {
       const filteredByDate = transactions.filter(t => {
+          // Object Filter
+          if (selectedObjectId && t.object_id !== selectedObjectId) return false;
+
           const dateStr = getMinskISODate(t.created_at);
           const matchesStart = !startDate || dateStr >= startDate;
           const matchesEnd = !endDate || dateStr <= endDate;
@@ -166,13 +180,16 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
           expenseFactSum, expenseFactCount: expenseFactList.length,
           expensePlanSum, expensePlanCount: expensePlanList.length
       };
-  }, [transactions, startDate, endDate]);
+  }, [transactions, startDate, endDate, selectedObjectId]);
 
   // 3. FINAL LIST FILTERING
   const filteredTransactions = useMemo(() => {
     const todayStr = getMinskISODate();
 
     return transactions.filter((t: any) => {
+      // 0. Object Filter (Top Priority)
+      if (selectedObjectId && t.object_id !== selectedObjectId) return false;
+
       // 1. Text Search Filter (Documents)
       const searchLower = docSearchQuery.toLowerCase();
       const matchesDocSearch = !docSearchQuery || t.payments?.some((p: any) => 
@@ -209,7 +226,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
 
       return true;
     });
-  }, [transactions, startDate, endDate, activeWidget, unclosedDocsOnly, docSearchQuery]);
+  }, [transactions, startDate, endDate, activeWidget, unclosedDocsOnly, docSearchQuery, selectedObjectId]);
 
   const formatCurrency = (val: number) => new Intl.NumberFormat('ru-BY', { style: 'currency', currency: 'BYN', maximumFractionDigits: 2 }).format(val);
 
@@ -314,6 +331,23 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         <>
           {/* Controls visible only in Journal mode */}
           <div className="flex flex-wrap gap-2 mb-6 items-center">
+             
+             {/* Object Filter */}
+             <div className="w-[240px]">
+                <Select 
+                    value={selectedObjectId} 
+                    onChange={(e:any) => setSelectedObjectId(e.target.value)}
+                    options={[
+                        {value: '', label: 'Все объекты (Сводка)'},
+                        ...objects.map(o => ({value: o.id, label: o.name}))
+                    ]}
+                    icon="business"
+                    className="!h-10 !py-2 !text-xs bg-white border-slate-200"
+                />
+             </div>
+
+             <div className="h-8 w-[1px] bg-slate-200 mx-2 hidden md:block"></div>
+
              <div className="flex items-center gap-2">
                 <Input placeholder="Акт № / Дата..." value={docSearchQuery} onChange={(e:any) => setDocSearchQuery(e.target.value)} icon="search" className="h-10 !py-2 !text-xs w-[160px]" />
                 <label className="flex items-center gap-2 cursor-pointer bg-white px-3 py-2 rounded-xl border border-slate-200 hover:bg-slate-50 transition-colors h-10">
@@ -350,6 +384,11 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
                  {activeWidget && (
                      <span className="text-xs bg-slate-800 text-white px-2 py-0.5 rounded-lg lowercase animate-in fade-in">
                          фильтр: {activeWidget === 'debtors' ? 'дебиторка' : activeWidget.replace('_', ' ')}
+                     </span>
+                 )}
+                 {selectedObjectId && (
+                     <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-lg lowercase animate-in fade-in">
+                         объект: {objects.find(o => o.id === selectedObjectId)?.name}
                      </span>
                  )}
             </h5>

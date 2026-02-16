@@ -191,6 +191,28 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
     setLoading(false);
   };
 
+  // NEW: Handler for jumping forward to saved stage
+  const handleJumpForward = async () => {
+    if (!profile?.id || !object.rolled_back_from) return;
+    setLoading(true);
+    try {
+      const { error } = await supabase.rpc('restore_object_stage', {
+        p_object_id: object.id,
+        p_user_id: profile.id
+      });
+      
+      if (error) throw error;
+
+      setToast({ message: 'Этап успешно восстановлен', type: 'success' });
+      await fetchData();
+    } catch (err: any) {
+      console.error(err);
+      setToast({ message: err.message || 'Ошибка восстановления этапа', type: 'error' });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="animate-in fade-in duration-300 h-full flex flex-col">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -222,7 +244,9 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
         {activeTab === 'stage' && (
             <TasksTab 
             object={object} profile={profile} viewedStageId={viewedStageId} tasks={tasks} staff={staff} canManage={canManage}
-            refreshData={fetchData} onStartNextStage={handleNextStageInit} onJumpForward={() => {}} 
+            refreshData={fetchData} 
+            onStartNextStage={handleNextStageInit} 
+            onJumpForward={handleJumpForward} // Pass the handler
             onRollback={() => { setRollbackForm({ reason: '', responsible_id: '' }); setIsRollbackModalOpen(true); }}
             updateStatus={updateObjectStatus} forceOpenTaskModal={autoOpenTaskModal} onTaskModalOpened={() => setAutoOpenTaskModal(false)}
             />

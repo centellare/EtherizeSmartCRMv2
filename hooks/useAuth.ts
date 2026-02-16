@@ -8,7 +8,7 @@ export interface Profile {
   id: string;
   full_name: string;
   email: string;
-  role: 'admin' | 'director' | 'manager' | 'specialist';
+  role: 'admin' | 'director' | 'manager' | 'specialist' | 'storekeeper';
   phone?: string;
   birth_date?: string;
   deleted_at?: string | null;

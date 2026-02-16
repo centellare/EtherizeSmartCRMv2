@@ -29,8 +29,10 @@ export const ObjectList: React.FC<ObjectListProps> = ({
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {objects.map(obj => {
         const isCritical = obj.current_status === 'review_required';
-        const isResponsible = obj.responsible_id === profile.id;
-        const canEdit = isAdminOrDirector || (isManager && isResponsible);
+        
+        // Update: Managers can edit any object
+        const canEdit = isAdminOrDirector || isManager;
+        // Delete is reserved for Admins/Directors
         const canDelete = isAdminOrDirector;
 
         return (
