@@ -378,50 +378,6 @@ const SpecialistView: React.FC<{ tasks: any[], objects: any[], userId: string }>
   );
 };
 
-// 3. Workload Bar Chart
-const TeamWorkloadChart: React.FC<{ staff: any[], tasks: any[] }> = ({ staff, tasks }) => {
-  const workload = useMemo(() => {
-    return staff.map(s => {
-      const active = tasks.filter(t => t.assigned_to === s.id && t.status === 'pending').length;
-      return { name: s.full_name.split(' ')[0], count: active, role: s.role };
-    })
-    .filter(s => s.role !== 'admin' && s.role !== 'director') // Only executors
-    .sort((a,b) => b.count - a.count);
-  }, [staff, tasks]);
-
-  const maxTasks = Math.max(...workload.map(w => w.count), 5);
-
-  if (workload.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-[140px] opacity-30 italic text-center">
-        <span className="material-icons-round text-4xl mb-2">people_outline</span>
-        <p className="text-xs font-bold uppercase">Нет данных по команде</p>
-      </div>
-    );
-  }
-
-  return (
-    <div 
-      className="flex items-end gap-3 h-[140px] mt-4 pb-2 px-2 overflow-x-auto scrollbar-hide cursor-pointer"
-      onClick={() => window.location.hash = 'team'}
-      title="Перейти к команде"
-    >
-      {workload.map(w => (
-        <div key={w.name} className="flex flex-col items-center gap-2 group min-w-[40px] flex-1">
-          <span className="text-xs font-bold text-slate-700 group-hover:text-blue-600 transition-colors">{w.count}</span>
-          <div className="w-full bg-slate-100 rounded-t-lg relative overflow-hidden flex-grow flex items-end">
-            <div 
-              className="w-full bg-blue-500 rounded-t-lg transition-all duration-700 group-hover:bg-blue-600"
-              style={{ height: `${(w.count / maxTasks) * 100}%`, minHeight: '4px' }}
-            ></div>
-          </div>
-          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter truncate w-full text-center">{w.name}</span>
-        </div>
-      ))}
-    </div>
-  );
-};
-
 // 2. CSS Grid Gantt Chart (Reused for Manager)
 const ProjectTimeline: React.FC<{ objects: any[] }> = ({ objects }) => {
   const timelineData = useMemo(() => {
@@ -490,6 +446,11 @@ const ManagerView: React.FC<{ tasks: any[], objects: any[], userId: string, staf
   const blockedObjects = activeObjects.filter(o => o.current_status === 'on_pause' || o.current_status === 'review_required');
   const myObjects = activeObjects.filter(o => o.responsible_id === userId);
 
+  // Filter staff: Me + Specialists
+  const ganttStaff = useMemo(() => {
+      return staff.filter(s => s.id === userId || s.role === 'specialist');
+  }, [staff, userId]);
+
   return (
     <div className="space-y-8">
       {/* Top Cards */}
@@ -527,8 +488,8 @@ const ManagerView: React.FC<{ tasks: any[], objects: any[], userId: string, staf
          </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-         {/* Gantt Chart Area */}
+      <div className="grid grid-cols-1 gap-8">
+         {/* Top 5 Projects Timeline */}
          <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
             <div className="flex justify-between items-center mb-4">
                <h4 className="text-lg font-bold text-slate-900">Таймлайн проектов</h4>
@@ -537,13 +498,9 @@ const ManagerView: React.FC<{ tasks: any[], objects: any[], userId: string, staf
             <ProjectTimeline objects={activeObjects} />
          </div>
 
-         {/* Workload Area */}
-         <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
-            <div className="flex justify-between items-center mb-2">
-               <h4 className="text-lg font-bold text-slate-900">Загрузка команды</h4>
-               <span className="text-xs text-slate-400">Активные задачи</span>
-            </div>
-            <TeamWorkloadChart staff={staff} tasks={tasks} />
+         {/* Workload Gantt - Replaced Chart */}
+         <div className="w-full">
+            <TeamGantt staff={ganttStaff} tasks={tasks} />
          </div>
       </div>
     </div>

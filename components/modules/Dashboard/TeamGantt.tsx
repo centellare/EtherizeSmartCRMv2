@@ -24,9 +24,23 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
     return { start, end, days };
   }, []);
 
-  // Фильтруем сотрудников (исключаем админов без задач, если нужно, или показываем всех кроме удаленных)
-  const activeStaff = useMemo(() => {
-    return staff.filter(s => s.role !== 'admin' && s.role !== 'director');
+  // Сортировка и подготовка списка сотрудников
+  // Показываем всех переданных в props, но сортируем по роли для удобства
+  const sortedStaff = useMemo(() => {
+    const rolePriority: Record<string, number> = {
+      'specialist': 1,
+      'manager': 2,
+      'storekeeper': 3,
+      'director': 4,
+      'admin': 5
+    };
+
+    return [...staff].sort((a, b) => {
+      const pA = rolePriority[a.role] || 99;
+      const pB = rolePriority[b.role] || 99;
+      if (pA !== pB) return pA - pB;
+      return a.full_name.localeCompare(b.full_name);
+    });
   }, [staff]);
 
   // Хелпер для позиционирования
@@ -114,9 +128,10 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
 
             {/* Rows */}
             <div className="space-y-4 relative z-10">
-                {activeStaff.map(member => {
+                {sortedStaff.map(member => {
                     const memberTasks = tasks.filter(t => t.assigned_to === member.id && t.status === 'pending');
                     
+                    // Show row even if no tasks, to see availability
                     return (
                         <div key={member.id} className="flex items-center group hover:bg-slate-50 rounded-xl transition-colors py-2">
                             {/* User Info */}
