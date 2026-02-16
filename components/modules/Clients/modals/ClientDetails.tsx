@@ -137,7 +137,11 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
       fetchConnections();
   };
 
+  const cleanPhone = (p: string) => p ? p.replace(/[^0-9+]/g, '') : '';
+
   if (!client) return null;
+
+  const phoneClean = cleanPhone(client.phone);
 
   return (
     <div className="space-y-6 pb-10">
@@ -162,19 +166,39 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
         )}
 
         <div className="grid grid-cols-1 gap-3">
+            <div className="p-4 bg-white rounded-2xl border border-[#e1e2e1] flex flex-col sm:flex-row justify-between sm:items-center gap-3 group/field">
+                <div className="min-w-0 flex-grow">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Телефон</p>
+                    <p className="text-sm font-medium">{client.phone || '—'}</p>
+                </div>
+                {client.phone && (
+                    <div className="flex items-center gap-2">
+                        <a 
+                            href={`https://wa.me/${phoneClean}`} 
+                            target="_blank" rel="noreferrer"
+                            className="w-8 h-8 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center hover:bg-emerald-100 transition-colors"
+                            title="WhatsApp"
+                        >
+                            <span className="material-icons-round text-sm">chat</span>
+                        </a>
+                        <a 
+                            href={`https://t.me/${phoneClean}`} 
+                            target="_blank" rel="noreferrer"
+                            className="w-8 h-8 rounded-full bg-blue-50 text-blue-500 flex items-center justify-center hover:bg-blue-100 transition-colors"
+                            title="Telegram"
+                        >
+                            <span className="material-icons-round text-sm">send</span>
+                        </a>
+                        <CopyButton text={client.phone} />
+                    </div>
+                )}
+            </div>
             <div className="p-4 bg-white rounded-2xl border border-[#e1e2e1] flex justify-between items-center group/field">
-            <div className="min-w-0 flex-grow">
-                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Телефон</p>
-                <p className="text-sm font-medium">{client.phone || '—'}</p>
-            </div>
-            {client.phone && <CopyButton text={client.phone} />}
-            </div>
-            <div className="p-4 bg-white rounded-2xl border border-[#e1e2e1] flex justify-between items-center group/field">
-            <div className="min-w-0 flex-grow pr-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Email</p>
-                <p className="text-sm font-medium truncate">{client.email || '—'}</p>
-            </div>
-            {client.email && <CopyButton text={client.email} />}
+                <div className="min-w-0 flex-grow pr-2">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Email</p>
+                    <p className="text-sm font-medium truncate">{client.email || '—'}</p>
+                </div>
+                {client.email && <CopyButton text={client.email} />}
             </div>
         </div>
 

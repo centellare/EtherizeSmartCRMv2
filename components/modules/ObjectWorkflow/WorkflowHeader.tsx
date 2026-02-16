@@ -31,6 +31,7 @@ interface WorkflowHeaderProps {
   profile: any;
   onBack: () => void;
   onUpdateStatus: (status: string) => void;
+  onOpenClient?: () => void; // New prop
   canManage: boolean;
   isExpanded: boolean;
   onToggle: () => void;
@@ -41,7 +42,8 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
   allStagesData,
   profile, 
   onBack, 
-  onUpdateStatus, 
+  onUpdateStatus,
+  onOpenClient,
   canManage,
   isExpanded,
   onToggle
@@ -76,9 +78,14 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
                   <div className="h-4 w-[1px] bg-slate-300 mx-1 hidden md:block"></div>
                   
                   {/* Client name in compact view */}
-                  <span className="text-sm font-bold text-slate-400 truncate max-w-[150px]">
+                  <button 
+                    onClick={(e) => { e.stopPropagation(); onOpenClient && onOpenClient(); }}
+                    className="text-sm font-bold text-slate-400 hover:text-blue-600 truncate max-w-[150px] transition-colors flex items-center gap-1 group"
+                    title="Открыть карточку клиента"
+                  >
+                    <span className="material-icons-round text-sm opacity-0 group-hover:opacity-100 transition-opacity -ml-4">person</span>
                     {object.client?.name || 'Без клиента'}
-                  </span>
+                  </button>
                   
                   <span className="text-slate-200 hidden md:block">|</span>
 
@@ -168,9 +175,12 @@ export const WorkflowHeader: React.FC<WorkflowHeaderProps> = ({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 bg-slate-50/50 p-5 rounded-[24px] border border-slate-100 animate-in slide-in-from-top-4 duration-300">
           <div className="space-y-1 min-w-0">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Клиент</p>
-            <div className="flex items-center gap-2 overflow-hidden">
-              <span className="material-icons-round text-slate-400 text-lg shrink-0">person</span>
-              <p className="text-sm font-bold text-slate-700 truncate">{object.client?.name || '—'}</p>
+            <div 
+              onClick={onOpenClient}
+              className="flex items-center gap-2 overflow-hidden cursor-pointer hover:bg-slate-100 p-1 -ml-1 rounded-lg transition-colors group"
+            >
+              <span className="material-icons-round text-slate-400 text-lg shrink-0 group-hover:text-blue-600">person</span>
+              <p className="text-sm font-bold text-slate-700 truncate group-hover:text-blue-600 underline decoration-dashed decoration-slate-300 underline-offset-4">{object.client?.name || '—'}</p>
             </div>
           </div>
 

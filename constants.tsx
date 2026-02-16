@@ -2,17 +2,37 @@
 import { TableSchema } from './types';
 
 // Migration SQL to be executed by user
-export const MIGRATION_SQL_V3 = `
--- SmartHome CRM v3.6: Добавление роли "Кладовщик/Финансист"
+export const MIGRATION_SQL_V5 = `
+-- SmartHome CRM v5.0: Исправление связей истории
 
 BEGIN;
 
--- ВАЖНО: PostgreSQL не поддерживает IF NOT EXISTS для добавления значений в ENUM в старых версиях.
--- Если роль уже есть, эта команда может выдать ошибку, которую можно игнорировать.
-ALTER TYPE "public"."user_role" ADD VALUE 'storekeeper';
+-- 1. Добавляем внешний ключ к таблице истории, если его нет
+DO $$ 
+BEGIN 
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'object_history_profile_id_fkey') THEN 
+    ALTER TABLE "public"."object_history" 
+    ADD CONSTRAINT "object_history_profile_id_fkey" 
+    FOREIGN KEY ("profile_id") 
+    REFERENCES "public"."profiles"("id"); 
+  END IF; 
+END $$;
+
+-- 2. Убеждаемся, что RLS включен (повтор V4 на всякий случай)
+ALTER TABLE "public"."object_history" ENABLE ROW LEVEL SECURITY;
+
+-- 3. Политики доступа
+DROP POLICY IF EXISTS "Enable read access for authenticated users" ON "public"."object_history";
+CREATE POLICY "Enable read access for authenticated users" ON "public"."object_history" FOR SELECT TO authenticated USING (true);
+
+DROP POLICY IF EXISTS "Enable insert for users based on user_id" ON "public"."object_history";
+CREATE POLICY "Enable insert for users based on user_id" ON "public"."object_history" FOR INSERT TO authenticated WITH CHECK (auth.uid() = profile_id);
 
 COMMIT;
 `;
+
+// Keep V4 for reference or legacy, but UI will point to V5
+export const MIGRATION_SQL_V4 = MIGRATION_SQL_V5;
 
 export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
   {
@@ -67,10 +87,10 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
 ];
 
 export const SUPABASE_SETUP_GUIDE = `
-### ВАЖНО: Обновление базы данных (Версия 3.6)
+### ВАЖНО: Обновление базы данных (Версия 5.0)
 1. Скопируйте SQL-скрипт ниже.
 2. Откройте SQL Editor в Supabase.
 3. Выполните скрипт.
    
-Это добавит новую роль 'storekeeper' в список допустимых ролей базы данных.
+Это исправит отображение заметок в хронологии и настроит права доступа.
 `;

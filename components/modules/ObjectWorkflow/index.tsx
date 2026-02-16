@@ -2,14 +2,16 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../../../lib/supabase';
-import { Button, Modal, Input, Select, ConfirmModal, Toast } from '../../ui';
+import { Button, Modal, Input, Select, ConfirmModal, Toast, Drawer } from '../../ui';
 import { WorkflowHeader } from './WorkflowHeader';
 import { StageTimeline } from './StageTimeline';
 import { TasksTab } from './TasksTab';
 import { FinancesTab } from './FinancesTab';
 import { ArchiveTab } from './ArchiveTab';
 import { SupplyTab } from './SupplyTab';
+import { TimelineTab } from './TimelineTab'; // Import Timeline
 import CPGenerator from '../Proposals/CPGenerator';
+import { ClientDetails } from '../Clients/modals/ClientDetails';
 
 const STAGES = [
   { id: 'negotiation', label: 'Переговоры' },
@@ -39,6 +41,9 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
   const [loading, setLoading] = useState(true);
   const [staff, setStaff] = useState<any[]>([]);
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
+  
+  // Client Viewing State
+  const [clientToView, setClientToView] = useState<any>(null);
   
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
@@ -148,7 +153,6 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
         p_object_id: object.id,
         p_next_stage: stageForm.next_stage,
         p_responsible_id: stageForm.responsible_id,
-        // FIX: Ensure null is passed if deadline string is empty
         p_deadline: stageForm.deadline ? new Date(stageForm.deadline).toISOString() : null,
         p_user_id: profile.id
       });
@@ -191,7 +195,6 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
     setLoading(false);
   };
 
-  // NEW: Handler for jumping forward to saved stage
   const handleJumpForward = async () => {
     if (!profile?.id || !object.rolled_back_from) return;
     setLoading(true);
@@ -213,6 +216,24 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
     }
   };
 
+  const handleOpenClient = async () => {
+    if (!object.client_id) return;
+    setLoading(true);
+    try {
+        const { data: client } = await supabase.from('clients').select('*, manager:profiles!fk_clients_manager(full_name), objects!fk_objects_client(id, name, is_deleted)').eq('id', object.client_id).single();
+        if (client) {
+            setClientToView(client);
+        } else {
+            setToast({ message: 'Клиент не найден', type: 'error' });
+        }
+    } catch (e) {
+        console.error(e);
+        setToast({ message: 'Ошибка загрузки клиента', type: 'error' });
+    } finally {
+        setLoading(false);
+    }
+  };
+
   return (
     <div className="animate-in fade-in duration-300 h-full flex flex-col">
       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
@@ -224,6 +245,7 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
           profile={profile} 
           onBack={onBack} 
           onUpdateStatus={updateObjectStatus}
+          onOpenClient={handleOpenClient}
           canManage={canManage}
           isExpanded={isHeaderExpanded}
           onToggle={() => setIsHeaderExpanded(!isHeaderExpanded)}
@@ -237,6 +259,7 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
         <button onClick={() => setActiveTab('stage')} className={`px-5 py-1.5 rounded-full text-xs font-bold uppercase transition-all ${activeTab === 'stage' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}>Этап</button>
         <button onClick={() => setActiveTab('supply')} className={`px-5 py-1.5 rounded-full text-xs font-bold uppercase transition-all ${activeTab === 'supply' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}>Снабжение</button>
         {canSeeFinances && <button onClick={() => setActiveTab('finance')} className={`px-5 py-1.5 rounded-full text-xs font-bold uppercase transition-all ${activeTab === 'finance' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}>Финансы</button>}
+        <button onClick={() => setActiveTab('timeline')} className={`px-5 py-1.5 rounded-full text-xs font-bold uppercase transition-all ${activeTab === 'timeline' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}>Хронология</button>
         <button onClick={() => setActiveTab('docs')} className={`px-5 py-1.5 rounded-full text-xs font-bold uppercase transition-all ${activeTab === 'docs' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500'}`}>Архив</button>
       </div>
 
@@ -246,7 +269,7 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
             object={object} profile={profile} viewedStageId={viewedStageId} tasks={tasks} staff={staff} canManage={canManage}
             refreshData={fetchData} 
             onStartNextStage={handleNextStageInit} 
-            onJumpForward={handleJumpForward} // Pass the handler
+            onJumpForward={handleJumpForward} 
             onRollback={() => { setRollbackForm({ reason: '', responsible_id: '' }); setIsRollbackModalOpen(true); }}
             updateStatus={updateObjectStatus} forceOpenTaskModal={autoOpenTaskModal} onTaskModalOpened={() => setAutoOpenTaskModal(false)}
             />
@@ -264,12 +287,16 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
             <FinancesTab object={object} profile={profile} transactions={transactions} isAdmin={isAdmin} refreshData={fetchData} />
         )}
 
+        {activeTab === 'timeline' && (
+            <TimelineTab object={object} profile={profile} />
+        )}
+
         {activeTab === 'docs' && (
             <ArchiveTab tasks={tasks} profile={profile} />
         )}
       </div>
 
-      {/* CP Creation Modal (Portal to Body) */}
+      {/* CP Creation Modal */}
       {isCPModalOpen && createPortal(
           <div className="fixed inset-0 z-[9999] bg-slate-100 flex flex-col animate-in fade-in slide-in-from-bottom-4">
               <div className="bg-white px-6 py-4 border-b border-slate-200 flex justify-between items-center shadow-sm shrink-0">
@@ -298,7 +325,21 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
           document.body
       )}
 
-      {/* Modals for Stage Transition */}
+      {/* Client Details Drawer */}
+      <Drawer isOpen={!!clientToView} onClose={() => setClientToView(null)} title="Информация о клиенте">
+        {clientToView && (
+            <ClientDetails 
+                client={clientToView} 
+                onClose={() => setClientToView(null)} 
+                onNavigateToObject={(id) => { 
+                    setClientToView(null);
+                    window.location.hash = `objects/${id}`;
+                }}
+                onAddObject={() => {}} // Disabled here
+            />
+        )}
+      </Drawer>
+
       <Modal isOpen={isStageModalOpen} onClose={() => setIsStageModalOpen(false)} title={`Переход к этапу: ${nextStage?.label}`}>
         <form onSubmit={handleNextStage} className="space-y-5">
            <Select label="Ответственный" required value={stageForm.responsible_id} onChange={(e:any) => setStageForm({...stageForm, responsible_id: e.target.value})} options={[{value:'', label:'Выберите сотрудника'}, ...staff.map(s => ({value: s.id, label: s.full_name}))]} icon="person" />

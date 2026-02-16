@@ -43,6 +43,9 @@ const ItemDetailsDrawer: React.FC<ItemDetailsDrawerProps> = ({ item, isOpen, onC
   if (!item) return null;
 
   const isDeployed = item.status === 'deployed';
+  // Safe access to nested objects
+  const currentObjectName = (item as any).objects?.name || item.object?.name || 'Неизвестный объект';
+  const currentObjectId = item.current_object_id || (item as any).objects?.id;
 
   return (
     <>
@@ -113,13 +116,19 @@ const ItemDetailsDrawer: React.FC<ItemDetailsDrawerProps> = ({ item, isOpen, onC
                         </p>
                     </div>
                   </div>
-                  {item.current_object_id && (
+                  {currentObjectId && (
                     <div className="p-4 bg-blue-50/50">
                         <p className="text-[10px] text-blue-400 uppercase mb-1">Текущее местоположение</p>
-                        <div className="flex items-center gap-2">
+                        <div 
+                            className="flex items-center gap-2 cursor-pointer hover:opacity-70 transition-opacity"
+                            onClick={() => {
+                                window.location.hash = `objects/${currentObjectId}`;
+                                onClose();
+                            }}
+                            title="Перейти к объекту"
+                        >
                             <span className="material-icons-round text-blue-600 text-sm">home_work</span>
-                            {/* Исправлено: безопасное обращение к item.objects через (item as any) */}
-                            <p className="font-bold text-blue-900 text-sm">{(item as any).objects?.name || item.object?.name || 'Неизвестный объект'}</p>
+                            <p className="font-bold text-blue-900 text-sm underline decoration-dashed underline-offset-4">{currentObjectName}</p>
                         </div>
                     </div>
                   )}
