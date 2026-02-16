@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase, measureQuery } from '../../lib/supabase';
 import { Badge, Button } from '../ui';
 import { formatDate, getMinskISODate } from '../../lib/dateUtils';
+import { TeamGantt } from './Dashboard/TeamGantt';
 
 const formatCurrency = (val: number) => 
   new Intl.NumberFormat('ru-BY', { style: 'currency', currency: 'BYN', maximumFractionDigits: 0 }).format(val);
@@ -261,49 +262,19 @@ const DirectorView: React.FC<{ tasks: any[], objects: any[], transactions: any[]
          </div>
       </div>
 
-      {/* 3. Bottom Row */}
+      {/* 3. Team Workload Gantt (NEW) */}
+      <div className="w-full">
+         <TeamGantt staff={staff} tasks={tasks} />
+      </div>
+
+      {/* 4. Bottom Row */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
          <div>
             <PipelineValue objects={objects} proposals={[]} />
          </div>
-         <div className="lg:col-span-2 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm">
-            <div className="flex justify-between items-center mb-4">
-               <h4 className="text-lg font-bold text-slate-900">Эффективность команды</h4>
-               <Button variant="ghost" onClick={() => window.location.hash = 'team'} className="text-xs h-8">Подробнее</Button>
-            </div>
-            {/* Simple efficiency table */}
-            <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
-                    <thead>
-                        <tr className="border-b border-slate-100 text-slate-400 text-xs uppercase">
-                            <th className="pb-2 font-bold">Сотрудник</th>
-                            <th className="pb-2 font-bold text-center">Задач</th>
-                            <th className="pb-2 font-bold text-center">Просрочено</th>
-                            <th className="pb-2 font-bold text-right">Нагрузка</th>
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-50">
-                        {staff.filter(s => s.role !== 'admin' && s.role !== 'director').slice(0, 5).map(member => {
-                            const memberTasks = tasks.filter(t => t.assigned_to === member.id && t.status === 'pending');
-                            const overdue = memberTasks.filter(t => t.deadline && t.deadline < getMinskISODate()).length;
-                            const loadPercent = Math.min(100, memberTasks.length * 10); // arbitrary metric
-
-                            return (
-                                <tr key={member.id} className="group hover:bg-slate-50">
-                                    <td className="py-3 font-medium text-slate-700">{member.full_name}</td>
-                                    <td className="py-3 text-center">{memberTasks.length}</td>
-                                    <td className={`py-3 text-center font-bold ${overdue > 0 ? 'text-red-500' : 'text-slate-300'}`}>{overdue}</td>
-                                    <td className="py-3 text-right">
-                                        <div className="w-24 h-2 bg-slate-100 rounded-full ml-auto overflow-hidden">
-                                            <div className={`h-full ${overdue > 2 ? 'bg-red-400' : 'bg-blue-400'}`} style={{ width: `${loadPercent}%` }}></div>
-                                        </div>
-                                    </td>
-                                </tr>
-                            );
-                        })}
-                    </tbody>
-                </table>
-            </div>
+         {/* Removed redundant efficiency table since we have Gantt now */}
+         <div className="lg:col-span-2 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex items-center justify-center opacity-50">
+            <p className="text-sm text-slate-400">Здесь можно добавить виджет "Последние события" или "Логи"</p>
          </div>
       </div>
     </div>
