@@ -144,17 +144,22 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
     if (!profile?.id) return;
     setLoading(true);
     try {
-      await supabase.rpc('transition_object_stage', {
+      const { error } = await supabase.rpc('transition_object_stage', {
         p_object_id: object.id,
         p_next_stage: stageForm.next_stage,
         p_responsible_id: stageForm.responsible_id,
-        p_deadline: (stageForm.deadline || null) as unknown as string,
+        // FIX: Ensure null is passed if deadline string is empty
+        p_deadline: stageForm.deadline ? new Date(stageForm.deadline).toISOString() : null,
         p_user_id: profile.id
       });
+      
+      if (error) throw error;
+
       setIsStageModalOpen(false);
       setToast({ message: 'Переход на новый этап выполнен', type: 'success' });
       await fetchData();
     } catch (err: any) { 
+      console.error(err);
       setToast({ message: err.message || 'Ошибка перехода', type: 'error' });
     }
     setLoading(false);
@@ -165,18 +170,22 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
     if (!profile?.id || !rollbackForm.responsible_id) return;
     setLoading(true);
     try {
-      await supabase.rpc('rollback_object_stage', {
+      const { error } = await supabase.rpc('rollback_object_stage', {
         p_object_id: object.id,
         p_target_stage: viewedStageId,
         p_reason: rollbackForm.reason,
         p_responsible_id: rollbackForm.responsible_id,
         p_user_id: profile.id
       });
+      
+      if (error) throw error;
+
       setIsRollbackModalOpen(false);
       setAutoOpenTaskModal(true);
       setToast({ message: 'Объект возвращен на доработку', type: 'success' });
       await fetchData();
     } catch (err: any) { 
+       console.error(err);
        setToast({ message: err.message || 'Ошибка возврата', type: 'error' });
     }
     setLoading(false);
