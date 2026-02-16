@@ -1512,6 +1512,13 @@ export type Database = {
         Returns: Database["public"]["Enums"]["user_role"]
       }
       get_user_first_name: { Args: { full_name: string }; Returns: string }
+      restore_object_stage: {
+        Args: {
+          p_object_id: string
+          p_user_id: string
+        }
+        Returns: undefined
+      }
       rollback_object_stage: {
         Args: {
           p_object_id: string
@@ -1563,7 +1570,7 @@ export type Database = {
         | "commissioning"
         | "programming"
         | "support"
-      user_role: "admin" | "director" | "manager" | "specialist"
+      user_role: "admin" | "director" | "manager" | "specialist" | "storekeeper"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1711,7 +1718,7 @@ export const Constants = {
         "programming",
         "support",
       ],
-      user_role: ["admin", "director", "manager", "specialist"],
+      user_role: ["admin", "director", "manager", "specialist", "storekeeper"],
     },
   },
 } as const
