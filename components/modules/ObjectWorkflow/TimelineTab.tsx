@@ -54,15 +54,21 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ object, profile }) => 
       // 3. Manual Profile Mapping for History (Robustness fix)
       let historyWithProfiles: any[] = [];
       if (historyData && historyData.length > 0) {
-          const profileIds = Array.from(new Set(historyData.map(h => h.profile_id).filter(Boolean)));
-          const { data: profiles } = await supabase.from('profiles').select('id, full_name').in('id', profileIds);
+          // Fix TS error: explicit cast to string[] after filtering nulls
+          const profileIds = Array.from(new Set(historyData.map((h: any) => h.profile_id).filter((id: any) => !!id))) as string[];
           
-          const profileMap = (profiles || []).reduce((acc: any, p: any) => {
+          let profiles: any[] = [];
+          if (profileIds.length > 0) {
+             const { data } = await supabase.from('profiles').select('id, full_name').in('id', profileIds);
+             profiles = data || [];
+          }
+          
+          const profileMap = profiles.reduce((acc: any, p: any) => {
               acc[p.id] = p.full_name;
               return acc;
           }, {});
 
-          historyWithProfiles = historyData.map(h => ({
+          historyWithProfiles = historyData.map((h: any) => ({
               ...h,
               user_name: h.profile_id ? (profileMap[h.profile_id] || 'Неизвестный') : 'Система'
           }));
