@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Input, Select } from '../../../ui';
-import { formatDate } from '../../../../lib/dateUtils';
+import { formatDate, getMinskISODate } from '../../../../lib/dateUtils';
 
 interface PaymentFormProps {
   transaction: any;
@@ -22,6 +22,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ transaction, payment, 
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
       amount: '',
+      payment_date: getMinskISODate(),
       comment: '',
       requires_doc: false,
       doc_type: 'Акт',
@@ -35,6 +36,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ transaction, payment, 
       if (isEdit && payment) {
           setFormData({
               amount: payment.amount.toString(),
+              payment_date: payment.payment_date ? getMinskISODate(payment.payment_date) : getMinskISODate(),
               comment: payment.comment || '',
               requires_doc: payment.requires_doc || false,
               doc_type: payment.doc_type || 'Акт',
@@ -65,6 +67,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ transaction, payment, 
     try {
         const payload = {
             amount: amt,
+            payment_date: formData.payment_date ? new Date(formData.payment_date).toISOString() : new Date().toISOString(),
             comment: formData.comment,
             requires_doc: formData.requires_doc,
             doc_type: formData.requires_doc ? formData.doc_type : null,
@@ -85,13 +88,6 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ transaction, payment, 
         }
 
         // Recalculate transaction status/fact
-        // NOTE: Ideally this should be a database trigger or RPC to ensure atomicity,
-        // but for now we follow the existing client-side logic pattern.
-        // We need to re-fetch the transaction payments to calculate sum accurately, 
-        // OR we just rely on the parent component to refresh data. 
-        // However, updating the 'fact_amount' on transaction is good practice for caching.
-        
-        // Let's do a quick update on transaction if creating new payment
         if (!isEdit) {
              const newFact = (transaction.fact_amount || 0) + amt;
              const status = newFact >= transaction.amount - 0.01 ? 'approved' : 'partial';
@@ -108,26 +104,37 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ transaction, payment, 
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-        {/* Info Block */}
-        {!isEdit && (
-            <div className="relative group">
-                <Input label="Сумма оплаты" type="number" step="0.01" required value={formData.amount} onChange={(e:any) => setFormData({...formData, amount: e.target.value})} icon="account_balance_wallet" />
-                <button 
-                    type="button" 
-                    onClick={() => setFormData({...formData, amount: (transaction.amount - (transaction.fact_amount || 0)).toFixed(2)})}
-                    className="absolute right-3 top-[32px] px-3 py-1 bg-blue-50 text-blue-600 text-[10px] font-bold rounded-lg border border-blue-100 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
-                >
-                    ОСТАТОК
-                </button>
-            </div>
-        )}
-        
-        {isEdit && (
-             <div className="bg-white p-4 rounded-xl border border-slate-100 mb-4">
-                 <p className="text-[10px] font-bold text-slate-400 uppercase">Сумма (не редактируется)</p>
-                 <p className="text-2xl font-bold text-emerald-600">{formData.amount} BYN</p>
-             </div>
-        )}
+        <div className="grid grid-cols-2 gap-4">
+            {/* Amount Field */}
+            {!isEdit ? (
+                <div className="relative group">
+                    <Input label="Сумма оплаты" type="number" step="0.01" required value={formData.amount} onChange={(e:any) => setFormData({...formData, amount: e.target.value})} icon="account_balance_wallet" />
+                    <button 
+                        type="button" 
+                        onClick={() => setFormData({...formData, amount: (transaction.amount - (transaction.fact_amount || 0)).toFixed(2)})}
+                        className="absolute right-3 top-[32px] px-2 py-1 bg-blue-50 text-blue-600 text-[9px] font-bold rounded border border-blue-100 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                        title="Вставить остаток долга"
+                    >
+                        ОСТАТОК
+                    </button>
+                </div>
+            ) : (
+                 <div className="bg-white p-2 px-4 rounded-xl border border-slate-100 flex flex-col justify-center">
+                     <p className="text-[10px] font-bold text-slate-400 uppercase">Сумма</p>
+                     <p className="text-xl font-bold text-emerald-600">{formData.amount} BYN</p>
+                 </div>
+            )}
+
+            {/* Date Field */}
+            <Input 
+                label="Дата платежа" 
+                type="date" 
+                required 
+                value={formData.payment_date} 
+                onChange={(e:any) => setFormData({...formData, payment_date: e.target.value})} 
+                icon="calendar_today" 
+            />
+        </div>
 
         <Input label="Комментарий" value={formData.comment} onChange={(e:any) => setFormData({...formData, comment: e.target.value})} icon="comment" />
         
