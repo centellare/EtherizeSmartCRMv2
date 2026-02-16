@@ -83,12 +83,11 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
         .is('is_deleted', false)
         .eq('status', 'pending');
 
+      // Update: Specialists can view ALL tasks, filtering only done via FilterMode toggles
       if (filterMode === 'mine') {
         tasksQuery = tasksQuery.eq('assigned_to', profile.id);
       } else if (filterMode === 'created') {
         tasksQuery = tasksQuery.eq('created_by', profile.id);
-      } else if (isSpecialist) {
-        tasksQuery = tasksQuery.or(`assigned_to.eq.${profile.id},created_by.eq.${profile.id}`);
       }
 
       const [activeResult, staffResult, objectsResult] = await Promise.all([
@@ -109,7 +108,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
       isFetching.current = false;
       setLoading(false);
     }
-  }, [profile?.id, isSpecialist, tasks.length, filterMode]);
+  }, [profile?.id, tasks.length, filterMode]);
 
   useEffect(() => { fetchData(); }, [fetchData, activeTab, filterMode, activeRange]);
 
@@ -147,10 +146,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
         .gte('completed_at', `${archiveDates.start}T00:00:00`)
         .lte('completed_at', `${archiveDates.end}T23:59:59`);
 
-      if (isSpecialist || isManager) {
-        query = query.or(`assigned_to.eq.${profile.id},created_by.eq.${profile.id}`);
-      }
-
+      // Archive also respects filter mode but allows viewing all if mode is all
       if (filterMode === 'mine') {
         query = query.eq('assigned_to', profile.id);
       } else if (filterMode === 'created') {
@@ -171,7 +167,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
     } finally {
       setLoading(false);
     }
-  }, [profile?.id, isSpecialist, isManager, archiveDates, filterMode]);
+  }, [profile?.id, archiveDates, filterMode]);
 
   useEffect(() => {
     if (activeTab === 'archive') {
@@ -343,6 +339,8 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
             activeTab={activeTab}
             archivePage={archivePage}
             archiveTotal={archiveTotal}
+            currentUserId={profile.id}
+            isAdmin={isAdmin}
             onPageChange={fetchArchive}
             onTaskClick={(t) => { setSelectedTask(t); setModalMode('details'); }}
             onNavigateToObject={onNavigateToObject}
@@ -367,10 +365,9 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
         />
       </Modal>
 
-      {/* CHANGED: Task Details is now a Drawer */}
       <Drawer isOpen={modalMode === 'details'} onClose={handleCloseModal} title="Карточка задачи">
         {selectedTask && (
-            <div className="pb-20"> {/* Add padding for bottom buttons */}
+            <div className="pb-20"> 
                 <TaskDetails 
                     task={selectedTask}
                     profile={profile}

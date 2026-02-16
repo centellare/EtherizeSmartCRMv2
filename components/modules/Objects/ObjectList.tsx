@@ -12,7 +12,7 @@ const STATUS_MAP: Record<string, string> = {
 
 interface ObjectListProps {
   objects: any[];
-  canManage: boolean;
+  profile: any;
   onSelect: (id: string) => void;
   onView: (obj: any) => void;
   onEdit: (obj: any) => void;
@@ -20,12 +20,19 @@ interface ObjectListProps {
 }
 
 export const ObjectList: React.FC<ObjectListProps> = ({ 
-  objects, canManage, onSelect, onView, onEdit, onDelete 
+  objects, profile, onSelect, onView, onEdit, onDelete 
 }) => {
+  const isAdminOrDirector = profile.role === 'admin' || profile.role === 'director';
+  const isManager = profile.role === 'manager';
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {objects.map(obj => {
         const isCritical = obj.current_status === 'review_required';
+        const isResponsible = obj.responsible_id === profile.id;
+        const canEdit = isAdminOrDirector || (isManager && isResponsible);
+        const canDelete = isAdminOrDirector;
+
         return (
           <div 
             key={obj.id} 
@@ -57,15 +64,15 @@ export const ObjectList: React.FC<ObjectListProps> = ({
                     <button onClick={(e) => { e.stopPropagation(); onView(obj); }} className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 hover:text-blue-600 flex items-center justify-center transition-all" title="Просмотр">
                       <span className="material-icons-round text-lg">visibility</span>
                     </button>
-                    {canManage && (
-                      <>
-                        <button onClick={(e) => { e.stopPropagation(); onEdit(obj); }} className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 hover:text-blue-600 flex items-center justify-center transition-all" title="Редактировать">
-                          <span className="material-icons-round text-lg">edit</span>
-                        </button>
-                        <button onClick={(e) => { e.stopPropagation(); onDelete(obj.id); }} className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 hover:text-red-600 flex items-center justify-center transition-all" title="Удалить">
-                          <span className="material-icons-round text-lg">delete</span>
-                        </button>
-                      </>
+                    {canEdit && (
+                      <button onClick={(e) => { e.stopPropagation(); onEdit(obj); }} className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 hover:text-blue-600 flex items-center justify-center transition-all" title="Редактировать">
+                        <span className="material-icons-round text-lg">edit</span>
+                      </button>
+                    )}
+                    {canDelete && (
+                      <button onClick={(e) => { e.stopPropagation(); onDelete(obj.id); }} className="w-8 h-8 rounded-full bg-slate-50 text-slate-400 hover:text-red-600 flex items-center justify-center transition-all" title="Удалить">
+                        <span className="material-icons-round text-lg">delete</span>
+                      </button>
                     )}
                   </div>
                 </div>

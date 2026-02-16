@@ -40,6 +40,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
 
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   
+  // Logic updated: canManageAll allows Create/Delete globally. Edit is handled per item in ObjectList.
   const canManageAll = profile?.role === 'admin' || profile?.role === 'director';
 
   const fetchSingleObject = async (id: string) => {
@@ -167,7 +168,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
           </h2>
           <p className="text-slate-500 text-sm mt-1">Управление проектами и этапами работ</p>
         </div>
-        <Button onClick={() => { setSelectedObject(null); setModalMode('create'); }} icon="add_business">Создать объект</Button>
+        {canManageAll && <Button onClick={() => { setSelectedObject(null); setModalMode('create'); }} icon="add_business">Создать объект</Button>}
       </div>
 
       <div className="mb-8 bg-white p-4 rounded-3xl border border-[#e1e2e1] flex flex-col md:flex-row gap-4 shadow-sm">
@@ -206,7 +207,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
       ) : (
         <ObjectList 
             objects={filteredObjects}
-            canManage={canManageAll}
+            profile={profile}
             onSelect={(id) => setSelectedObjectId(id)}
             onView={(obj) => { setSelectedObject(obj); setModalMode('details'); }}
             onEdit={(obj) => { setSelectedObject(obj); setModalMode('edit'); }}

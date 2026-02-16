@@ -8,16 +8,19 @@ interface TaskListProps {
   activeTab: string;
   archivePage: number;
   archiveTotal: number;
+  currentUserId: string;
+  isAdmin: boolean;
   onPageChange: (page: number) => void;
   onTaskClick: (task: any) => void;
   onNavigateToObject: (objectId: string, stageId?: string) => void;
-  onRequestComplete?: (task: any) => void; // New prop
+  onRequestComplete?: (task: any) => void; 
 }
 
 const PAGE_SIZE = 50;
 
 export const TaskList: React.FC<TaskListProps> = ({ 
-  tasks, activeTab, archivePage, archiveTotal, onPageChange, onTaskClick, onNavigateToObject, onRequestComplete 
+  tasks, activeTab, archivePage, archiveTotal, currentUserId, isAdmin,
+  onPageChange, onTaskClick, onNavigateToObject, onRequestComplete 
 }) => {
   
   if (tasks.length === 0) {
@@ -39,6 +42,7 @@ export const TaskList: React.FC<TaskListProps> = ({
         {tasks.map((task) => {
           const isOverdue = task.deadline && task.deadline < getMinskISODate() && task.status !== 'completed';
           const isCompleted = task.status === 'completed';
+          const canAction = task.assigned_to === currentUserId || isAdmin;
           
           return (
             <div 
@@ -53,18 +57,19 @@ export const TaskList: React.FC<TaskListProps> = ({
                 <div 
                     onClick={(e) => {
                         e.stopPropagation();
-                        // If active and handler exists, trigger modal. 
-                        // If completed, do nothing (restoration is done via details)
-                        if (!isCompleted && onRequestComplete) {
+                        // Only allow action if canAction is true
+                        if (canAction && !isCompleted && onRequestComplete) {
                             onRequestComplete(task);
                         }
                     }}
-                    className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                    className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
+                        !canAction ? 'cursor-not-allowed opacity-50 bg-slate-100 text-slate-300' : 'cursor-pointer'
+                    } ${
                         isCompleted 
                         ? 'bg-emerald-50 text-emerald-500 cursor-default' 
                         : isOverdue 
                             ? 'bg-red-50 text-red-500 hover:bg-red-100' 
-                            : 'bg-blue-50 text-blue-500 hover:bg-blue-600 hover:text-white'
+                            : canAction ? 'bg-blue-50 text-blue-500 hover:bg-blue-600 hover:text-white' : ''
                     }`}
                 >
                   <span className="material-icons-round text-xl">
