@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { Button, Toast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
@@ -205,25 +205,64 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
 
   const vatRate = invoice.has_vat ? 20 : 0;
   
-  // Filter items for display based on showBundleDetails
-  const displayItems = items.filter(item => {
-      if (showBundleDetails) return true; // Show everything
-      // If hiding details: Show roots (parent_id null). Hide children (parent_id not null).
-      return !item.parent_id;
-  });
+  // Logic to group children under parents and number them (e.g., 2.1, 2.2)
+  const tableItems = useMemo(() => {
+      const roots = items.filter(i => !i.parent_id);
+      const childrenMap: Record<string, any[]> = {};
+      
+      items.forEach(i => {
+          if (i.parent_id) {
+              if (!childrenMap[i.parent_id]) childrenMap[i.parent_id] = [];
+              childrenMap[i.parent_id].push(i);
+          }
+      });
 
-  const tableItems = displayItems.map(item => {
-      const priceWithVat = item.price || 0; 
-      const totalWithVat = item.total || 0;
-      const priceNoVat = invoice.has_vat ? priceWithVat / 1.2 : priceWithVat;
-      const totalNoVat = invoice.has_vat ? totalWithVat / 1.2 : totalWithVat;
-      const totalVatSum = totalWithVat - totalNoVat;
-      return { ...item, priceWithVat, priceNoVat, totalNoVat, totalVatSum, totalWithVat };
-  });
+      const result: any[] = [];
+      
+      roots.forEach((root, idx) => {
+          const rootNum = (idx + 1).toString();
+          const priceWithVat = root.price || 0; 
+          const totalWithVat = root.total || 0;
+          const priceNoVat = invoice.has_vat ? priceWithVat / 1.2 : priceWithVat;
+          const totalNoVat = invoice.has_vat ? totalWithVat / 1.2 : totalWithVat;
+          const totalVatSum = totalWithVat - totalNoVat;
+
+          result.push({
+              ...root,
+              displayNumber: rootNum,
+              priceWithVat, priceNoVat, totalNoVat, totalVatSum, totalWithVat,
+              isChild: false
+          });
+
+          if (showBundleDetails && childrenMap[root.id]) {
+              childrenMap[root.id].forEach((child, cIdx) => {
+                  const childNum = `${rootNum}.${cIdx + 1}`;
+                  const cPriceWithVat = child.price || 0; 
+                  const cTotalWithVat = child.total || 0;
+                  const cPriceNoVat = invoice.has_vat ? cPriceWithVat / 1.2 : cPriceWithVat;
+                  const cTotalNoVat = invoice.has_vat ? cTotalWithVat / 1.2 : cTotalWithVat;
+                  const cTotalVatSum = cTotalWithVat - cTotalNoVat;
+
+                  result.push({
+                      ...child,
+                      displayNumber: childNum,
+                      priceWithVat: cPriceWithVat,
+                      priceNoVat: cPriceNoVat,
+                      totalNoVat: cTotalNoVat,
+                      totalVatSum: cTotalVatSum,
+                      totalWithVat: cTotalWithVat,
+                      isChild: true
+                  });
+              });
+          }
+      });
+
+      return result;
+  }, [items, showBundleDetails, invoice.has_vat]);
 
   const totalSum = invoice.total_amount || 0;
-  const totalVatSum = tableItems.reduce((acc, i) => acc + i.totalVatSum, 0); // Note: this might be slightly off if hiding details but total matches
-  // Actually totalVatSum should be calculated from total invoice amount if we hide rows, but typically bundle header contains total price.
+  // Note: this might be slightly off if hiding details but total matches
+  // However, for total calculation we usually trust the invoice.total_amount
   const calculatedTotalVat = invoice.has_vat ? totalSum - (totalSum / 1.2) : 0;
 
   const deliveryAddress = invoice.object?.address || 'Адрес не указан';
@@ -312,12 +351,16 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                     <tbody>
                         {tableItems.map((item, idx) => (
                             <tr key={idx} className="align-top">
-                                <td className="border border-black p-1 text-center">{idx + 1}</td>
+                                <td className="border border-black p-1 text-center">
+                                    {item.displayNumber}
+                                </td>
                                 <td className="border border-black p-1">
-                                    {item.name}
-                                    {!item.product_id && !showBundleDetails && (
-                                        <span className="block text-[8px] italic mt-0.5">(Комплект оборудования)</span>
-                                    )}
+                                    <div className={item.isChild ? 'pl-4' : ''}>
+                                        {item.name}
+                                        {!item.product_id && !showBundleDetails && (
+                                            <span className="block text-[8px] italic mt-0.5">(Комплект оборудования)</span>
+                                        )}
+                                    </div>
                                 </td>
                                 <td className="border border-black p-1 text-center">{item.unit}</td>
                                 <td className="border border-black p-1 text-center">{item.quantity}</td>
@@ -352,19 +395,21 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                 </div>
 
                 {/* SIGNATURES */}
-                <div className="flex justify-between items-start text-[11px] mt-8">
+                <div className="flex justify-between items-start text-[11px] mt-12">
                     <div className="w-[48%]">
-                        <div className="font-bold mb-8 border-b-2 border-black pb-1">Поставщик:</div>
-                        <div className="mt-8 flex items-end">
-                            <span>Поставщик</span>
-                            <div className="flex-grow border-b border-black mx-2"></div>
+                        <div className="font-bold mb-4">Поставщик: {settings.company_name}</div>
+                        <div className="flex items-end gap-2">
+                            <span>Руководитель</span>
+                            <div className="flex-grow border-b border-black"></div>
+                            <span>/ ФИО /</span>
                         </div>
                     </div>
                     <div className="w-[48%]">
-                        <div className="font-bold mb-8 border-b-2 border-black pb-1">Покупатель:</div>
-                        <div className="mt-8 flex items-end">
-                            <span>Покупатель</span>
-                            <div className="flex-grow border-b border-black mx-2"></div>
+                        <div className="font-bold mb-4">Покупатель: {invoice.client?.name}</div>
+                        <div className="flex items-end gap-2">
+                            <span>Подпись</span>
+                            <div className="flex-grow border-b border-black"></div>
+                            <span>/ ФИО /</span>
                         </div>
                     </div>
                 </div>

@@ -19,6 +19,9 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
   const [creatingInvoice, setCreatingInvoice] = useState(false);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   
+  // View Options
+  const [showBundleDetails, setShowBundleDetails] = useState(false);
+
   const [selectObjectModalOpen, setSelectObjectModalOpen] = useState(false);
   const [availableObjects, setAvailableObjects] = useState<any[]>([]);
   const [selectedObjectId, setSelectedObjectId] = useState<string>('');
@@ -35,7 +38,7 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
     const fetchCP = async () => {
       setLoading(true);
       const { data: cp } = await supabase.from('commercial_proposals').select('*, client:clients(name, requisites), object:objects(name, address), creator:profiles(full_name)').eq('id', proposalId).single();
-      const { data: cpItems } = await supabase.from('cp_items').select('*').eq('cp_id', proposalId);
+      const { data: cpItems } = await supabase.from('cp_items').select('*').eq('cp_id', proposalId).order('id'); // Ensure consistent order
       const { data: settings } = await supabase.from('company_settings').select('*').limit(1).maybeSingle();
 
       setData(cp);
@@ -75,6 +78,7 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
     setSelectObjectModalOpen(false);
     setCreatingInvoice(true);
     try {
+        // 1. Create Invoice Header
         const { data: inv, error: invError } = await supabase.from('invoices').insert([{
             cp_id: proposalId,
             client_id: data.client_id,
@@ -87,17 +91,47 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
 
         if (invError) throw invError;
 
-        const invItemsPayload = items.map(item => ({
-            invoice_id: inv.id,
-            product_id: item.product_id,
-            name: item.snapshot_name || 'Товар',
-            quantity: item.quantity,
-            unit: item.snapshot_unit || 'шт',
-            price: item.final_price_byn,
-            total: item.final_price_byn * item.quantity
-        }));
-        await supabase.from('invoice_items').insert(invItemsPayload);
+        // 2. Prepare Items with Hierarchy
+        const roots = items.filter(i => !i.parent_id);
+        const children = items.filter(i => i.parent_id);
+        const cpIdToInvId: Record<string, string> = {};
 
+        // Insert Roots First
+        for (const root of roots) {
+            const { data: insertedRoot, error: rootError } = await supabase.from('invoice_items').insert({
+                invoice_id: inv.id,
+                product_id: root.product_id,
+                name: root.snapshot_name || 'Товар',
+                quantity: root.quantity,
+                unit: root.snapshot_unit || 'шт',
+                price: root.final_price_byn,
+                total: root.final_price_byn * root.quantity,
+                parent_id: null
+            }).select('id').single();
+
+            if (rootError) throw rootError;
+            cpIdToInvId[root.id] = insertedRoot.id;
+        }
+
+        // Insert Children
+        if (children.length > 0) {
+            const childPayloads = children.map(child => ({
+                invoice_id: inv.id,
+                product_id: child.product_id,
+                name: child.snapshot_name || 'Товар',
+                quantity: child.quantity,
+                unit: child.snapshot_unit || 'шт',
+                price: child.final_price_byn,
+                total: child.final_price_byn * child.quantity,
+                // Map the parent ID to the newly created invoice item ID
+                parent_id: child.parent_id ? cpIdToInvId[child.parent_id] : null
+            }));
+            
+            const { error: childError } = await supabase.from('invoice_items').insert(childPayloads);
+            if (childError) throw childError;
+        }
+
+        // 3. Create Expected Transaction
         if (selectedObjectId) {
             const plannedDate = new Date();
             plannedDate.setDate(plannedDate.getDate() + 3);
@@ -160,17 +194,59 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
   if (!data) return <div className="p-10 text-center">КП не найдено</div>;
 
   const vatRate = data.has_vat ? 20 : 0;
-  const tableItems = items.map(item => {
-      const priceWithVat = item.final_price_byn;
-      const totalWithVat = item.final_price_byn * item.quantity;
-      const priceNoVat = data.has_vat ? priceWithVat / 1.2 : priceWithVat;
+
+  // 1. Calculate VAT from ROOT items only (to match the Total Amount correctly without double counting children)
+  const rootItemsForCalc = items.filter(i => !i.parent_id);
+  const totalVatSum = rootItemsForCalc.reduce((acc, i) => {
+      const totalWithVat = i.final_price_byn * i.quantity;
       const totalNoVat = data.has_vat ? totalWithVat / 1.2 : totalWithVat;
-      const totalVatSum = totalWithVat - totalNoVat;
-      return { ...item, priceNoVat, totalNoVat, totalVatSum, totalWithVat };
-  });
+      return acc + (totalWithVat - totalNoVat);
+  }, 0);
+
+  // 2. Logic to group children under parents and number them (e.g., 2.1, 2.2)
+  const tableItems = useMemo(() => {
+      const roots = items.filter(i => !i.parent_id);
+      const childrenMap: Record<string, any[]> = {};
+      
+      items.forEach(i => {
+          if (i.parent_id) {
+              if (!childrenMap[i.parent_id]) childrenMap[i.parent_id] = [];
+              childrenMap[i.parent_id].push(i);
+          }
+      });
+
+      const result: any[] = [];
+      
+      roots.forEach((root, idx) => {
+          const rootNum = (idx + 1).toString();
+          const priceWithVat = root.final_price_byn;
+          const totalWithVat = root.final_price_byn * root.quantity;
+          
+          result.push({
+              ...root,
+              displayNumber: rootNum,
+              totalWithVat,
+              isChild: false
+          });
+
+          if (showBundleDetails && childrenMap[root.id]) {
+              childrenMap[root.id].forEach((child, cIdx) => {
+                  const childNum = `${rootNum}.${cIdx + 1}`;
+                  const childTotalWithVat = child.final_price_byn * child.quantity;
+                  result.push({
+                      ...child,
+                      displayNumber: childNum,
+                      totalWithVat: childTotalWithVat,
+                      isChild: true
+                  });
+              });
+          }
+      });
+
+      return result;
+  }, [items, showBundleDetails]);
 
   const totalSum = data.total_amount_byn || 0;
-  const totalVatSum = tableItems.reduce((acc, i) => acc + i.totalVatSum, 0);
   const displayAddress = data.object?.address || data.client?.requisites || '—';
 
   return (
@@ -181,7 +257,11 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
         <div className="flex items-center gap-4">
           <Button variant="secondary" icon="arrow_back" onClick={onClose}>Назад</Button>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-4">
+          <label className="flex items-center gap-2 cursor-pointer text-sm">
+              <input type="checkbox" checked={showBundleDetails} onChange={e => setShowBundleDetails(e.target.checked)} className="rounded text-blue-600" />
+              Раскрыть комплекты
+          </label>
           <Button icon="receipt" variant="secondary" onClick={initiateCreateInvoice} loading={creatingInvoice}>Выставить счет</Button>
           <Button icon="print" onClick={handlePrintCP}>Печать КП</Button>
         </div>
@@ -259,12 +339,21 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
               <tbody>
                   {tableItems.map((item, idx) => (
                       <tr key={idx} className="align-top">
-                          <td className="border border-black p-1 text-center">{idx + 1}</td>
-                          <td className="border border-black p-1">{item.snapshot_name}</td>
+                          <td className="border border-black p-1 text-center">
+                              {item.displayNumber}
+                          </td>
+                          <td className="border border-black p-1">
+                              <div className={item.isChild ? 'pl-4' : ''}>
+                                  {item.snapshot_name}
+                                  {!item.product_id && !showBundleDetails && (
+                                      <span className="block text-[8px] italic mt-0.5">(Комплект оборудования)</span>
+                                  )}
+                              </div>
+                          </td>
                           <td className="border border-black p-1 text-center">{item.snapshot_unit}</td>
                           <td className="border border-black p-1 text-center">{item.quantity}</td>
+                          <td className="border border-black p-1 text-right">{item.final_price_byn.toFixed(2)}</td>
                           <td className="border border-black p-1 text-right">{item.totalWithVat.toFixed(2)}</td>
-                          <td className="border border-black p-1 text-right">{(item.totalWithVat * item.quantity).toFixed(2)}</td>
                       </tr>
                   ))}
               </tbody>
