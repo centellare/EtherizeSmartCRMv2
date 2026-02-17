@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { TableSchema } from '../types';
-import { MIGRATION_SQL_V5 } from '../constants';
+import { MIGRATION_SQL_V6 } from '../constants';
 
 interface SqlGeneratorProps { 
   schemas: TableSchema[]; 
@@ -11,7 +11,7 @@ const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(MIGRATION_SQL_V5);
+    navigator.clipboard.writeText(MIGRATION_SQL_V6);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -21,12 +21,12 @@ const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
       <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-[24px] border border-indigo-200 shadow-sm">
         <h3 className="text-lg font-bold text-indigo-900 mb-2 flex items-center gap-2">
           <span className="material-icons-round text-indigo-600">build_circle</span>
-          Обновление базы (v5.0): Исправление Хронологии
+          Обновление базы (v6.0): Исправление КП и Счетов
         </h3>
         <p className="text-sm text-indigo-800 mb-4 leading-relaxed">
-          Этот скрипт восстанавливает связи таблиц и права доступа.
+          Этот скрипт добавляет поддержку комплектов (вложенности) и исправляет типы цен.
           <br/>
-          <strong>Обязательно выполните его, если заметки добавляются, но не отображаются в списке.</strong>
+          <strong>Выполните его, если возникают ошибки при просмотре КП или Счетов.</strong>
         </p>
         
         <div className="relative group">
@@ -41,7 +41,7 @@ const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
           </div>
           <div className="bg-[#1e1e1e] p-6 rounded-[20px] border border-slate-800 overflow-hidden shadow-inner">
             <pre className="overflow-x-auto text-[#a5d6ff] font-mono text-xs leading-relaxed scrollbar-hide whitespace-pre-wrap max-h-[400px]">
-              {MIGRATION_SQL_V5}
+              {MIGRATION_SQL_V6}
             </pre>
           </div>
         </div>

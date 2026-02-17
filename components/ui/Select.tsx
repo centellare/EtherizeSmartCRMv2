@@ -15,16 +15,21 @@ export const Select: React.FC<SelectProps> = ({ label, icon, options, className 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Helper to ensure label is always a string
+  const safeLabel = (lbl: any): string => {
+      if (lbl === null || lbl === undefined) return '';
+      return String(lbl);
+  };
+
   // Находим выбранный объект из options
   const selectedOption = useMemo(() => 
     options.find(o => String(o.value) === String(value)), 
   [options, value]);
 
   // Синхронизация: если меню закрыто, показываем label выбранного значения.
-  // Если значение сбросили извне, обновляем текст.
   useEffect(() => {
     if (!isOpen) {
-      setSearch(selectedOption ? selectedOption.label : '');
+      setSearch(selectedOption ? safeLabel(selectedOption.label) : '');
     }
   }, [isOpen, selectedOption]);
 
@@ -33,8 +38,7 @@ export const Select: React.FC<SelectProps> = ({ label, icon, options, className 
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
-        // При закрытии без выбора возвращаем текст выбранного значения
-        setSearch(selectedOption ? selectedOption.label : '');
+        setSearch(selectedOption ? safeLabel(selectedOption.label) : '');
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -43,19 +47,15 @@ export const Select: React.FC<SelectProps> = ({ label, icon, options, className 
 
   // ЛОГИКА ФИЛЬТРАЦИИ
   const filteredOptions = useMemo(() => {
-    // 1. Если поиск пуст - показываем все
     if (!search) return options;
-
-    // 2. ВАЖНОЕ ИСПРАВЛЕНИЕ: Если текст в поиске полностью совпадает с выбранным значением,
-    // значит пользователь просто открыл список, но еще не начал искать новое.
-    // В этом случае показываем ВЕСЬ список.
-    if (selectedOption && search === selectedOption.label) {
+    
+    // Если текст совпадает с выбранным, показываем всё (пользователь просто открыл список)
+    if (selectedOption && search === safeLabel(selectedOption.label)) {
       return options;
     }
 
-    // 3. Иначе фильтруем по вхождению
     return options.filter(opt => 
-      opt.label.toLowerCase().includes(search.toLowerCase())
+      safeLabel(opt.label).toLowerCase().includes(search.toLowerCase())
     );
   }, [options, search, selectedOption]);
 
@@ -69,26 +69,22 @@ export const Select: React.FC<SelectProps> = ({ label, icon, options, className 
       };
       onChange(syntheticEvent);
     }
-    setSearch(option.label);
+    setSearch(safeLabel(option.label));
     setIsOpen(false);
   };
 
   const handleFocus = () => {
     if (disabled) return;
     setIsOpen(true);
-    // При фокусе выделяем текст, чтобы можно было сразу начать печатать поверх
     if (selectedOption) {
         inputRef.current?.select();
     }
   };
 
-  // Очистка поля для быстрого просмотра всего списка
   const handleClear = (e: React.MouseEvent) => {
     e.stopPropagation();
     setSearch('');
     if (onChange) {
-        // Опционально: можно сбрасывать значение при очистке, 
-        // но безопаснее просто показать список, а сброс оставить на выбор "Не выбрано"
         inputRef.current?.focus();
     }
     setIsOpen(true);
@@ -125,9 +121,7 @@ export const Select: React.FC<SelectProps> = ({ label, icon, options, className 
           autoComplete="off"
         />
 
-        {/* Кнопки управления справа */}
         <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1 z-10">
-            {/* Кнопка очистки появляется, если есть текст и поле активно/выбрано */}
             {!disabled && search && (
                 <button 
                     type="button"
@@ -143,7 +137,6 @@ export const Select: React.FC<SelectProps> = ({ label, icon, options, className 
             </span>
         </div>
 
-        {/* Выпадающий список */}
         {isOpen && !disabled && (
           <div className="absolute top-full left-0 w-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl max-h-60 overflow-y-auto z-[9999] animate-in fade-in zoom-in-95 duration-100 scrollbar-hide">
             {filteredOptions.length > 0 ? (
@@ -159,7 +152,7 @@ export const Select: React.FC<SelectProps> = ({ label, icon, options, className 
                             `}
                             title={opt.title}
                         >
-                            <span className="truncate">{opt.label}</span>
+                            <span className="truncate">{safeLabel(opt.label)}</span>
                             {isSelected && <span className="material-icons-round text-sm">check</span>}
                         </li>
                     );

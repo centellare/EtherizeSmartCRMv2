@@ -8,19 +8,29 @@ const LOCALE = 'ru-BY';
 
 /**
  * Форматирует дату для отображения в интерфейсе
+ * Безопасная версия: никогда не выбрасывает ошибку
  */
 export const formatDate = (dateInput: string | Date | null | undefined, includeTime = false): string => {
   if (!dateInput) return '—';
-  const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
   
-  return new Intl.DateTimeFormat(LOCALE, {
-    timeZone: TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: includeTime ? '2-digit' : undefined,
-    minute: includeTime ? '2-digit' : undefined,
-  }).format(date);
+  try {
+    const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+    
+    // Проверка на Invalid Date
+    if (isNaN(date.getTime())) return '—';
+
+    return new Intl.DateTimeFormat(LOCALE, {
+      timeZone: TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: includeTime ? '2-digit' : undefined,
+      minute: includeTime ? '2-digit' : undefined,
+    }).format(date);
+  } catch (e) {
+    console.warn('Date formatting error:', e);
+    return 'Ошибка даты';
+  }
 };
 
 /**
@@ -28,23 +38,28 @@ export const formatDate = (dateInput: string | Date | null | undefined, includeT
  * на основе текущего времени в Минске
  */
 export const getMinskISODate = (dateInput?: Date | string): string => {
-  const date = dateInput 
-    ? (typeof dateInput === 'string' ? new Date(dateInput) : dateInput)
-    : new Date();
+  try {
+    const date = dateInput 
+      ? (typeof dateInput === 'string' ? new Date(dateInput) : dateInput)
+      : new Date();
 
-  // Используем sv-SE локаль, так как она дает формат YYYY-MM-DD
-  return new Intl.DateTimeFormat('sv-SE', {
-    timeZone: TIMEZONE,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).format(date);
+    if (isNaN(date.getTime())) return new Date().toISOString().split('T')[0];
+
+    // Используем sv-SE локаль, так как она дает формат YYYY-MM-DD
+    return new Intl.DateTimeFormat('sv-SE', {
+      timeZone: TIMEZONE,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+    }).format(date);
+  } catch (e) {
+    return new Date().toISOString().split('T')[0]; // Fallback to UTC
+  }
 };
 
 /**
  * Возвращает текущее время в Минске в формате ISO для сохранения в БД
  */
 export const getMinskNowISO = (): string => {
-  return new Date().toISOString(); // Supabase хранит в UTC, что корректно. 
-  // Но для логики "сегодняшнего дня" используем getMinskISODate
+  return new Date().toISOString(); 
 };

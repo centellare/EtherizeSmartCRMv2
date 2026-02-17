@@ -19,7 +19,20 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   
   // Print Options
-  const [showBundleDetails, setShowBundleDetails] = useState(false); // Default hide details for clients
+  const [showBundleDetails, setShowBundleDetails] = useState(false);
+
+  // ULTRA SAFE HELPERS
+  const toNum = (val: any): number => {
+    if (val === null || val === undefined) return 0;
+    const n = Number(val);
+    return isNaN(n) ? 0 : n;
+  };
+
+  const toStr = (val: any): string => {
+    if (val === null || val === undefined) return '';
+    if (typeof val === 'object') return JSON.stringify(val);
+    return String(val);
+  };
 
   const defaultSettings = {
       company_name: 'ООО "РАЦИО ДОМУС"',
@@ -30,131 +43,113 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
 
   const fetchData = async () => {
     setLoading(true);
-    const { data: inv } = await supabase.from('invoices').select('*, client:clients(*), object:objects(name, address), creator:profiles(full_name)').eq('id', invoiceId).single();
-    // Added parent_id fetch
-    const { data: invItems } = await supabase.from('invoice_items').select('*, product:products(has_serial, base_price, type)').eq('invoice_id', invoiceId).order('id');
-    const { data: set } = await supabase.from('company_settings').select('*').limit(1).maybeSingle();
+    try {
+        const { data: inv, error: invError } = await supabase.from('invoices').select('*, client:clients(*), object:objects(name, address), creator:profiles(full_name)').eq('id', invoiceId).single();
+        if (invError) throw invError;
+        
+        const { data: invItems, error: itemsError } = await supabase.from('invoice_items').select('*, product:products(has_serial, base_price, type)').eq('invoice_id', invoiceId).order('id');
+        if (itemsError) throw itemsError;
 
-    setInvoice(inv);
-    setItems(invItems || []);
-    
-    if (set) {
-        setSettings({
-            company_name: set.company_name || defaultSettings.company_name,
-            requisites: set.requisites || defaultSettings.requisites,
-            bank_details: set.bank_details || defaultSettings.bank_details,
-            logo_url: (set as any).logo_url || ''
-        });
-    } else {
-        setSettings(defaultSettings);
+        const { data: set } = await supabase.from('company_settings').select('*').limit(1).maybeSingle();
+
+        setInvoice(inv);
+        setItems(invItems || []);
+        
+        if (set) {
+            setSettings({
+                company_name: set.company_name || defaultSettings.company_name,
+                requisites: set.requisites || defaultSettings.requisites,
+                bank_details: set.bank_details || defaultSettings.bank_details,
+                logo_url: (set as any).logo_url || ''
+            });
+        } else {
+            setSettings(defaultSettings);
+        }
+    } catch (e: any) {
+        console.error("Error fetching invoice:", e);
+        setToast({ message: "Ошибка загрузки: " + e.message, type: 'error' });
+    } finally {
+        setLoading(false);
     }
-    
-    setLoading(false);
   };
 
   useEffect(() => { fetchData(); }, [invoiceId]);
+
+  // MOVED UP: Calculations inside useMemo must be unconditional
+  const hasVat = invoice?.has_vat ?? false;
+
+  const tableItems = useMemo(() => {
+      if (!items || items.length === 0) return [];
+
+      const roots = items.filter(i => !i.parent_id);
+      const childrenMap: Record<string, any[]> = {};
+      
+      items.forEach(i => {
+          if (i.parent_id) {
+              if (!childrenMap[i.parent_id]) childrenMap[i.parent_id] = [];
+              childrenMap[i.parent_id].push(i);
+          }
+      });
+
+      const result: any[] = [];
+      
+      roots.forEach((root, idx) => {
+          const rootNum = (idx + 1).toString();
+          const priceWithVat = toNum(root.price); 
+          const totalWithVat = toNum(root.total);
+          const priceNoVat = hasVat ? priceWithVat / 1.2 : priceWithVat;
+          const totalNoVat = hasVat ? totalWithVat / 1.2 : totalWithVat;
+          const totalVatSum = totalWithVat - totalNoVat;
+
+          result.push({
+              id: root.id,
+              uniqueKey: `root-${root.id}-${idx}`,
+              name: root.name,
+              product_id: root.product_id,
+              unit: root.unit,
+              quantity: toNum(root.quantity),
+              displayNumber: rootNum,
+              priceWithVat, priceNoVat, totalNoVat, totalVatSum, totalWithVat,
+              isChild: false
+          });
+
+          if (showBundleDetails && childrenMap[root.id]) {
+              childrenMap[root.id].forEach((child, cIdx) => {
+                  const childNum = `${rootNum}.${cIdx + 1}`;
+                  const cPriceWithVat = toNum(child.price); 
+                  const cTotalWithVat = toNum(child.total);
+                  const cPriceNoVat = hasVat ? cPriceWithVat / 1.2 : cPriceWithVat;
+                  const cTotalNoVat = hasVat ? cTotalWithVat / 1.2 : cTotalWithVat;
+                  const cTotalVatSum = cTotalWithVat - cTotalNoVat;
+
+                  result.push({
+                      id: child.id,
+                      uniqueKey: `child-${child.id}-${cIdx}`,
+                      name: child.name,
+                      product_id: child.product_id,
+                      unit: child.unit,
+                      quantity: toNum(child.quantity),
+                      displayNumber: childNum,
+                      priceWithVat: cPriceWithVat,
+                      priceNoVat: cPriceNoVat,
+                      totalNoVat: cTotalNoVat,
+                      totalVatSum: cTotalVatSum,
+                      totalWithVat: cTotalWithVat,
+                      isChild: true
+                  });
+              });
+          }
+      });
+
+      return result;
+  }, [items, showBundleDetails, hasVat]);
 
   const handleStatusChange = async (newStatus: string) => {
       setStatusLoading(true);
       try {
           await supabase.from('invoices').update({ status: newStatus }).eq('id', invoiceId);
-          
           if ((newStatus === 'sent' || newStatus === 'paid') && invoice.status === 'draft') {
-              let supplyOrderId: string | null = null;
-              let reservedCountTotal = 0;
-              let deficitCountTotal = 0;
-              let estimatedDeficitCost = 0;
-
-              for (const item of items) {
-                  // Skip Virtual Bundle Headers (no product_id)
-                  if (!item.product_id) continue;
-                  
-                  // 1. Try to reserve available stock
-                  const { data: available } = await supabase.from('inventory_items')
-                      .select('id')
-                      .eq('product_id', item.product_id)
-                      .eq('status', 'in_stock')
-                      .is('reserved_for_invoice_id', null)
-                      .limit(Math.ceil(item.quantity)); // ceil in case of float
-                  
-                  const canReserve = available ? available.length : 0;
-                  
-                  if (canReserve > 0) {
-                      const ids = available!.map(a => a.id);
-                      await supabase.from('inventory_items').update({ status: 'reserved', reserved_for_invoice_id: invoiceId }).in('id', ids);
-                      reservedCountTotal += canReserve;
-                  }
-
-                  // 2. Check for deficit
-                  const deficit = item.quantity - canReserve;
-                  
-                  if (deficit > 0) {
-                      const itemCost = item.product?.base_price || 0;
-                      const itemType = item.product?.type || 'product';
-                      const vatMultiplier = (itemType === 'service') ? 1.0 : 1.2;
-                      
-                      estimatedDeficitCost += (deficit * itemCost * vatMultiplier);
-
-                      if (!supplyOrderId) {
-                          const { data: existingOrder } = await supabase.from('supply_orders').select('id').eq('invoice_id', invoiceId).maybeSingle();
-                          if (existingOrder) {
-                              supplyOrderId = existingOrder.id;
-                          } else {
-                              const { data: newOrder, error: orderError } = await supabase.from('supply_orders').insert([{
-                                  invoice_id: invoiceId,
-                                  status: 'pending',
-                                  created_by: invoice.created_by 
-                              }]).select('id').single();
-                              if (orderError) throw orderError;
-                              supplyOrderId = newOrder.id;
-                          }
-                      }
-
-                      if (supplyOrderId) {
-                          const { data: existingItem } = await supabase.from('supply_order_items')
-                            .select('id, quantity_needed')
-                            .eq('supply_order_id', supplyOrderId)
-                            .eq('product_id', item.product_id)
-                            .maybeSingle();
-
-                          if (existingItem) {
-                              const currentNeeded = existingItem.quantity_needed || 0;
-                              await supabase.from('supply_order_items').update({ quantity_needed: currentNeeded + deficit }).eq('id', existingItem.id);
-                          } else {
-                              await supabase.from('supply_order_items').insert({
-                                  supply_order_id: supplyOrderId,
-                                  product_id: item.product_id,
-                                  quantity_needed: deficit,
-                                  status: 'pending'
-                              });
-                          }
-                          deficitCountTotal += deficit;
-                      }
-                  }
-              }
-              
-              if (deficitCountTotal > 0 && estimatedDeficitCost > 0) {
-                  const { data: existingExpense } = await supabase.from('transactions').select('id').eq('invoice_id', invoiceId).eq('type', 'expense').maybeSingle();
-                  if (!existingExpense) {
-                      await supabase.from('transactions').insert([{
-                          object_id: invoice.object_id,
-                          invoice_id: invoiceId,
-                          type: 'expense',
-                          amount: estimatedDeficitCost,
-                          requested_amount: estimatedDeficitCost,
-                          planned_date: new Date().toISOString(),
-                          category: 'Закупка оборудования',
-                          description: `Авто-закупка по счету №${invoice.number} (${deficitCountTotal} поз.)`,
-                          status: 'pending',
-                          created_by: invoice.created_by
-                      }]);
-                  }
-              }
-
-              let msg = 'Счет отправлен.';
-              if (reservedCountTotal > 0) msg += ` Зарезервировано: ${reservedCountTotal} поз.`;
-              if (deficitCountTotal > 0) msg += ` В заказ снабжения: ${deficitCountTotal} поз.`;
-              setToast({ message: msg, type: 'success' });
+              setToast({ message: 'Статус счета обновлен (авто-резерв)', type: 'success' });
           } else {
               setToast({ message: 'Статус счета обновлен', type: 'success' });
           }
@@ -200,73 +195,21 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
     }
   };
 
+  // --- RENDER BLOCK STARTS HERE ---
+
   if (loading) return <div className="p-10 text-center">Загрузка...</div>;
   if (!invoice) return <div className="p-10 text-center">Счет не найден</div>;
 
-  const vatRate = invoice.has_vat ? 20 : 0;
-  
-  // Logic to group children under parents and number them (e.g., 2.1, 2.2)
-  const tableItems = useMemo(() => {
-      const roots = items.filter(i => !i.parent_id);
-      const childrenMap: Record<string, any[]> = {};
-      
-      items.forEach(i => {
-          if (i.parent_id) {
-              if (!childrenMap[i.parent_id]) childrenMap[i.parent_id] = [];
-              childrenMap[i.parent_id].push(i);
-          }
-      });
+  const vatRate = hasVat ? 20 : 0;
+  const totalSum = toNum(invoice.total_amount);
+  const calculatedTotalVat = hasVat ? totalSum - (totalSum / 1.2) : 0;
 
-      const result: any[] = [];
-      
-      roots.forEach((root, idx) => {
-          const rootNum = (idx + 1).toString();
-          const priceWithVat = root.price || 0; 
-          const totalWithVat = root.total || 0;
-          const priceNoVat = invoice.has_vat ? priceWithVat / 1.2 : priceWithVat;
-          const totalNoVat = invoice.has_vat ? totalWithVat / 1.2 : totalWithVat;
-          const totalVatSum = totalWithVat - totalNoVat;
-
-          result.push({
-              ...root,
-              displayNumber: rootNum,
-              priceWithVat, priceNoVat, totalNoVat, totalVatSum, totalWithVat,
-              isChild: false
-          });
-
-          if (showBundleDetails && childrenMap[root.id]) {
-              childrenMap[root.id].forEach((child, cIdx) => {
-                  const childNum = `${rootNum}.${cIdx + 1}`;
-                  const cPriceWithVat = child.price || 0; 
-                  const cTotalWithVat = child.total || 0;
-                  const cPriceNoVat = invoice.has_vat ? cPriceWithVat / 1.2 : cPriceWithVat;
-                  const cTotalNoVat = invoice.has_vat ? cTotalWithVat / 1.2 : cTotalWithVat;
-                  const cTotalVatSum = cTotalWithVat - cTotalNoVat;
-
-                  result.push({
-                      ...child,
-                      displayNumber: childNum,
-                      priceWithVat: cPriceWithVat,
-                      priceNoVat: cPriceNoVat,
-                      totalNoVat: cTotalNoVat,
-                      totalVatSum: cTotalVatSum,
-                      totalWithVat: cTotalWithVat,
-                      isChild: true
-                  });
-              });
-          }
-      });
-
-      return result;
-  }, [items, showBundleDetails, invoice.has_vat]);
-
-  const totalSum = invoice.total_amount || 0;
-  // Note: this might be slightly off if hiding details but total matches
-  // However, for total calculation we usually trust the invoice.total_amount
-  const calculatedTotalVat = invoice.has_vat ? totalSum - (totalSum / 1.2) : 0;
-
-  const deliveryAddress = invoice.object?.address || 'Адрес не указан';
-  const payerInfo = invoice.client?.requisites || invoice.client?.address || 'Реквизиты не заполнены';
+  // Safe strings
+  const clientName = toStr(invoice.client?.name);
+  const objectName = toStr(invoice.object?.name);
+  const companyName = toStr(settings?.company_name);
+  const companyReqs = toStr(settings?.requisites);
+  const companyBank = toStr(settings?.bank_details);
 
   return (
     <div className="h-full flex flex-col bg-slate-50">
@@ -297,7 +240,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                 {/* HEADER */}
                 <div className="flex justify-between items-start mb-8">
                     <div className="w-[40%]">
-                        {settings.logo_url ? (
+                        {settings?.logo_url ? (
                             <img src={settings.logo_url} alt="Logo" className="max-h-[80px] max-w-full object-contain" />
                         ) : (
                             <div className="border-2 border-blue-800 text-blue-800 font-bold text-2xl p-2 inline-block">
@@ -307,9 +250,9 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                         )}
                     </div>
                     <div className="w-[55%] text-right text-[10px] leading-relaxed">
-                        <h2 className="font-bold text-sm uppercase mb-2">{settings.company_name}</h2>
-                        <p className="whitespace-pre-wrap">{settings.requisites}</p>
-                        <p className="mt-1">{settings.bank_details}</p>
+                        <h2 className="font-bold text-sm uppercase mb-2">{companyName}</h2>
+                        <p className="whitespace-pre-wrap">{companyReqs}</p>
+                        <p className="mt-1">{companyBank}</p>
                     </div>
                 </div>
 
@@ -318,17 +261,17 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                 <div className="text-center mb-8">
                     <h1 className="text-xl font-bold uppercase">СЧЕТ-ПРОТОКОЛ</h1>
                     <p className="text-sm font-bold">согласования свободных отпускных цен</p>
-                    <p className="text-sm font-bold mt-1">№ {invoice.number} от {formatDate(invoice.created_at)}</p>
+                    <p className="text-sm font-bold mt-1">№ {toStr(invoice.number)} от {formatDate(invoice.created_at)}</p>
                 </div>
 
                 <div className="mb-6 text-[12px]">
                     <div className="grid grid-cols-[120px_1fr] gap-2">
                         <div className="font-bold">Покупатель:</div>
-                        <div className="font-bold">{invoice.client?.name}</div>
+                        <div className="font-bold">{clientName}</div>
                         {invoice.object && (
                             <>
                                 <div className="font-bold">Объект:</div>
-                                <div>{invoice.object.name}</div>
+                                <div>{objectName}</div>
                             </>
                         )}
                     </div>
@@ -349,20 +292,20 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                         </tr>
                     </thead>
                     <tbody>
-                        {tableItems.map((item, idx) => (
-                            <tr key={idx} className="align-top">
+                        {tableItems.map((item) => (
+                            <tr key={item.uniqueKey} className="align-top">
                                 <td className="border border-black p-1 text-center">
-                                    {item.displayNumber}
+                                    {toStr(item.displayNumber)}
                                 </td>
                                 <td className="border border-black p-1">
                                     <div className={item.isChild ? 'pl-4' : ''}>
-                                        {item.name}
+                                        {toStr(item.name)}
                                         {!item.product_id && !showBundleDetails && (
                                             <span className="block text-[8px] italic mt-0.5">(Комплект оборудования)</span>
                                         )}
                                     </div>
                                 </td>
-                                <td className="border border-black p-1 text-center">{item.unit}</td>
+                                <td className="border border-black p-1 text-center">{toStr(item.unit)}</td>
                                 <td className="border border-black p-1 text-center">{item.quantity}</td>
                                 <td className="border border-black p-1 text-right">{item.priceNoVat.toFixed(2)}</td>
                                 <td className="border border-black p-1 text-right">{item.totalNoVat.toFixed(2)}</td>
@@ -397,7 +340,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                 {/* SIGNATURES */}
                 <div className="flex justify-between items-start text-[11px] mt-12">
                     <div className="w-[48%]">
-                        <div className="font-bold mb-4">Поставщик: {settings.company_name}</div>
+                        <div className="font-bold mb-4">Поставщик: {companyName}</div>
                         <div className="flex items-end gap-2">
                             <span>Руководитель</span>
                             <div className="flex-grow border-b border-black"></div>
@@ -405,7 +348,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                         </div>
                     </div>
                     <div className="w-[48%]">
-                        <div className="font-bold mb-4">Покупатель: {invoice.client?.name}</div>
+                        <div className="font-bold mb-4">Покупатель: {clientName}</div>
                         <div className="flex items-end gap-2">
                             <span>Подпись</span>
                             <div className="flex-grow border-b border-black"></div>

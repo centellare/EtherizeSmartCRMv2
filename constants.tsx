@@ -2,37 +2,52 @@
 import { TableSchema } from './types';
 
 // Migration SQL to be executed by user
-export const MIGRATION_SQL_V5 = `
--- SmartHome CRM v5.0: Исправление связей истории
+export const MIGRATION_SQL_V6 = `
+-- SmartHome CRM v6.0: Исправление структуры для КП и Счетов
+-- Добавляем поддержку вложенности (комплектов) и исправляем типы
 
 BEGIN;
 
--- 1. Добавляем внешний ключ к таблице истории, если его нет
+-- 1. Исправление cp_items (Позиции КП)
+-- Добавляем parent_id если его нет
 DO $$ 
 BEGIN 
-  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'object_history_profile_id_fkey') THEN 
-    ALTER TABLE "public"."object_history" 
-    ADD CONSTRAINT "object_history_profile_id_fkey" 
-    FOREIGN KEY ("profile_id") 
-    REFERENCES "public"."profiles"("id"); 
-  END IF; 
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='cp_items' AND column_name='parent_id') THEN 
+    ALTER TABLE "public"."cp_items" ADD COLUMN "parent_id" uuid REFERENCES "public"."cp_items"("id") ON DELETE CASCADE;
+  END IF;
 END $$;
 
--- 2. Убеждаемся, что RLS включен (повтор V4 на всякий случай)
-ALTER TABLE "public"."object_history" ENABLE ROW LEVEL SECURITY;
+-- Убеждаемся, что цены numeric
+ALTER TABLE "public"."cp_items" 
+  ALTER COLUMN "final_price_byn" TYPE numeric USING final_price_byn::numeric,
+  ALTER COLUMN "price_at_moment" TYPE numeric USING price_at_moment::numeric,
+  ALTER COLUMN "quantity" TYPE numeric USING quantity::numeric;
 
--- 3. Политики доступа
-DROP POLICY IF EXISTS "Enable read access for authenticated users" ON "public"."object_history";
-CREATE POLICY "Enable read access for authenticated users" ON "public"."object_history" FOR SELECT TO authenticated USING (true);
 
-DROP POLICY IF EXISTS "Enable insert for users based on user_id" ON "public"."object_history";
-CREATE POLICY "Enable insert for users based on user_id" ON "public"."object_history" FOR INSERT TO authenticated WITH CHECK (auth.uid() = profile_id);
+-- 2. Исправление invoice_items (Позиции Счета)
+-- Добавляем parent_id если его нет
+DO $$ 
+BEGIN 
+  IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='invoice_items' AND column_name='parent_id') THEN 
+    ALTER TABLE "public"."invoice_items" ADD COLUMN "parent_id" uuid REFERENCES "public"."invoice_items"("id") ON DELETE CASCADE;
+  END IF;
+END $$;
+
+-- Убеждаемся, что цены numeric
+ALTER TABLE "public"."invoice_items" 
+  ALTER COLUMN "price" TYPE numeric USING price::numeric,
+  ALTER COLUMN "total" TYPE numeric USING total::numeric,
+  ALTER COLUMN "quantity" TYPE numeric USING quantity::numeric;
+
+-- 3. Очистка "битых" записей (где ссылка на продукт есть, но продукта нет)
+-- Опционально, но полезно для целостности
+DELETE FROM "public"."cp_items" WHERE product_id IS NOT NULL AND product_id NOT IN (SELECT id FROM "public"."products");
+DELETE FROM "public"."invoice_items" WHERE product_id IS NOT NULL AND product_id NOT IN (SELECT id FROM "public"."products");
 
 COMMIT;
 `;
 
-// Keep V4 for reference or legacy, but UI will point to V5
-export const MIGRATION_SQL_V4 = MIGRATION_SQL_V5;
+export const MIGRATION_SQL_V5 = MIGRATION_SQL_V6; // Point latest to V6
 
 export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
   {
@@ -87,10 +102,10 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
 ];
 
 export const SUPABASE_SETUP_GUIDE = `
-### ВАЖНО: Обновление базы данных (Версия 5.0)
+### ВАЖНО: Обновление базы данных (Версия 6.0)
 1. Скопируйте SQL-скрипт ниже.
 2. Откройте SQL Editor в Supabase.
 3. Выполните скрипт.
    
-Это исправит отображение заметок в хронологии и настроит права доступа.
+Это исправит структуру таблиц для корректной работы КП и Счетов (вложенность, типы данных).
 `;

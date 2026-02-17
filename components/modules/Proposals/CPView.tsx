@@ -14,19 +14,7 @@ interface CPViewProps {
 const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }) => {
   const [data, setData] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
-  const [companySettings, setCompanySettings] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [creatingInvoice, setCreatingInvoice] = useState(false);
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   
-  // View Options
-  const [showBundleDetails, setShowBundleDetails] = useState(false);
-
-  const [selectObjectModalOpen, setSelectObjectModalOpen] = useState(false);
-  const [availableObjects, setAvailableObjects] = useState<any[]>([]);
-  const [selectedObjectId, setSelectedObjectId] = useState<string>('');
-
-  // Default hardcoded settings
   const defaultSettings = {
       company_name: 'ООО "РАЦИО ДОМУС"',
       requisites: 'Адрес: БЕЛАРУСЬ, Г. МИНСК, УЛ. Ф.СКОРИНЫ, ДОМ 14, ОФ. 117, 220076\nУНП: 193736741',
@@ -34,31 +22,142 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
       logo_url: ''
   };
 
+  const [companySettings, setCompanySettings] = useState<any>(defaultSettings);
+  const [loading, setLoading] = useState(true);
+  const [creatingInvoice, setCreatingInvoice] = useState(false);
+  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  
+  const [showBundleDetails, setShowBundleDetails] = useState(false);
+  const [selectObjectModalOpen, setSelectObjectModalOpen] = useState(false);
+  const [availableObjects, setAvailableObjects] = useState<any[]>([]);
+  const [selectedObjectId, setSelectedObjectId] = useState<string>('');
+
+  // 1. ULTRA SAFE HELPERS
+  const toNum = (val: any): number => {
+    if (val === null || val === undefined) return 0;
+    const n = Number(val);
+    return isNaN(n) ? 0 : n;
+  };
+
+  const toStr = (val: any): string => {
+    if (val === null || val === undefined) return '';
+    if (typeof val === 'object') return JSON.stringify(val);
+    return String(val);
+  };
+
+  // --- HOOKS MUST BE BEFORE ANY RETURN ---
+
   useEffect(() => {
+    let mounted = true;
     const fetchCP = async () => {
       setLoading(true);
-      const { data: cp } = await supabase.from('commercial_proposals').select('*, client:clients(name, requisites), object:objects(name, address), creator:profiles(full_name)').eq('id', proposalId).single();
-      const { data: cpItems } = await supabase.from('cp_items').select('*').eq('cp_id', proposalId).order('id'); // Ensure consistent order
-      const { data: settings } = await supabase.from('company_settings').select('*').limit(1).maybeSingle();
+      try {
+        const { data: cp, error: cpError } = await supabase.from('commercial_proposals').select('*, client:clients(name, requisites), object:objects(name, address), creator:profiles(full_name)').eq('id', proposalId).single();
+        if (cpError) throw cpError;
 
-      setData(cp);
-      setItems(cpItems || []);
-      
-      if (settings) {
-          setCompanySettings({
-              company_name: settings.company_name || defaultSettings.company_name,
-              requisites: settings.requisites || defaultSettings.requisites,
-              bank_details: settings.bank_details || defaultSettings.bank_details,
-              logo_url: (settings as any).logo_url || ''
-          });
-      } else {
-          setCompanySettings(defaultSettings);
+        const { data: cpItems, error: itemsError } = await supabase.from('cp_items').select('*').eq('cp_id', proposalId).order('id'); 
+        if (itemsError) throw itemsError;
+
+        const { data: settings } = await supabase.from('company_settings').select('*').limit(1).maybeSingle();
+
+        if (mounted) {
+            setData(cp);
+            setItems(cpItems || []);
+            
+            if (settings) {
+                setCompanySettings({
+                    company_name: settings.company_name || defaultSettings.company_name,
+                    requisites: settings.requisites || defaultSettings.requisites,
+                    bank_details: settings.bank_details || defaultSettings.bank_details,
+                    logo_url: (settings as any).logo_url || ''
+                });
+            }
+        }
+      } catch (e) {
+        console.error("Error loading CP:", e);
+      } finally {
+        if (mounted) setLoading(false);
       }
-      
-      setLoading(false);
     };
     fetchCP();
+    return () => { mounted = false; };
   }, [proposalId]);
+
+  // MOVED UP: Calculations inside useMemo must be unconditional
+  const tableItems = useMemo(() => {
+      if (!items || items.length === 0) return [];
+
+      const roots = items.filter(i => !i.parent_id);
+      const childrenMap: Record<string, any[]> = {};
+      
+      items.forEach(i => {
+          if (i.parent_id) {
+              if (!childrenMap[i.parent_id]) childrenMap[i.parent_id] = [];
+              childrenMap[i.parent_id].push(i);
+          }
+      });
+
+      const result: any[] = [];
+      
+      roots.forEach((root, idx) => {
+          const rootNum = (idx + 1).toString();
+          const rPrice = toNum(root.final_price_byn);
+          const rQty = toNum(root.quantity);
+          const totalWithVat = rPrice * rQty;
+          
+          result.push({
+              id: root.id,
+              uniqueKey: `root-${root.id}-${idx}`,
+              snapshot_name: root.snapshot_name,
+              snapshot_unit: root.snapshot_unit,
+              product_id: root.product_id,
+              displayNumber: rootNum,
+              safePrice: rPrice,
+              safeTotal: totalWithVat,
+              quantity: rQty,
+              isChild: false
+          });
+
+          if (showBundleDetails && childrenMap[root.id]) {
+              childrenMap[root.id].forEach((child, cIdx) => {
+                  const childNum = `${rootNum}.${cIdx + 1}`;
+                  const cPrice = toNum(child.final_price_byn);
+                  const cQty = toNum(child.quantity);
+                  const childTotalWithVat = cPrice * cQty;
+                  result.push({
+                      id: child.id,
+                      uniqueKey: `child-${child.id}-${cIdx}`,
+                      snapshot_name: child.snapshot_name,
+                      snapshot_unit: child.snapshot_unit,
+                      product_id: child.product_id,
+                      displayNumber: childNum,
+                      safePrice: cPrice,
+                      safeTotal: childTotalWithVat,
+                      quantity: cQty,
+                      isChild: true
+                  });
+              });
+          }
+      });
+
+      return result;
+  }, [items, showBundleDetails]);
+
+  const totalSum = data ? toNum(data.total_amount_byn) : 0;
+  const hasVat = data?.has_vat ?? false;
+
+  const totalVatSum = useMemo(() => {
+      const rootItemsForCalc = items.filter(i => !i.parent_id);
+      return rootItemsForCalc.reduce((acc, i) => {
+          const price = toNum(i.final_price_byn);
+          const qty = toNum(i.quantity);
+          const totalWithVat = price * qty;
+          const totalNoVat = hasVat ? totalWithVat / 1.2 : totalWithVat;
+          return acc + (totalWithVat - totalNoVat);
+      }, 0);
+  }, [items, hasVat]);
+
+  // --- ACTIONS ---
 
   const initiateCreateInvoice = async () => {
       if (!data?.client_id) return;
@@ -78,12 +177,11 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
     setSelectObjectModalOpen(false);
     setCreatingInvoice(true);
     try {
-        // 1. Create Invoice Header
         const { data: inv, error: invError } = await supabase.from('invoices').insert([{
             cp_id: proposalId,
             client_id: data.client_id,
             object_id: selectedObjectId || null,
-            total_amount: data.total_amount_byn,
+            total_amount: toNum(data.total_amount_byn),
             has_vat: data.has_vat,
             created_by: data.created_by,
             status: 'draft'
@@ -91,21 +189,22 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
 
         if (invError) throw invError;
 
-        // 2. Prepare Items with Hierarchy
         const roots = items.filter(i => !i.parent_id);
         const children = items.filter(i => i.parent_id);
         const cpIdToInvId: Record<string, string> = {};
 
-        // Insert Roots First
         for (const root of roots) {
+            const finalPrice = toNum(root.final_price_byn);
+            const qty = toNum(root.quantity);
+
             const { data: insertedRoot, error: rootError } = await supabase.from('invoice_items').insert({
                 invoice_id: inv.id,
                 product_id: root.product_id,
                 name: root.snapshot_name || 'Товар',
-                quantity: root.quantity,
+                quantity: qty,
                 unit: root.snapshot_unit || 'шт',
-                price: root.final_price_byn,
-                total: root.final_price_byn * root.quantity,
+                price: finalPrice,
+                total: finalPrice * qty,
                 parent_id: null
             }).select('id').single();
 
@@ -113,25 +212,25 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
             cpIdToInvId[root.id] = insertedRoot.id;
         }
 
-        // Insert Children
         if (children.length > 0) {
-            const childPayloads = children.map(child => ({
-                invoice_id: inv.id,
-                product_id: child.product_id,
-                name: child.snapshot_name || 'Товар',
-                quantity: child.quantity,
-                unit: child.snapshot_unit || 'шт',
-                price: child.final_price_byn,
-                total: child.final_price_byn * child.quantity,
-                // Map the parent ID to the newly created invoice item ID
-                parent_id: child.parent_id ? cpIdToInvId[child.parent_id] : null
-            }));
-            
+            const childPayloads = children.map(child => {
+                const finalPrice = toNum(child.final_price_byn);
+                const qty = toNum(child.quantity);
+                return {
+                    invoice_id: inv.id,
+                    product_id: child.product_id,
+                    name: child.snapshot_name || 'Товар',
+                    quantity: qty,
+                    unit: child.snapshot_unit || 'шт',
+                    price: finalPrice,
+                    total: finalPrice * qty,
+                    parent_id: child.parent_id ? cpIdToInvId[child.parent_id] : null
+                };
+            });
             const { error: childError } = await supabase.from('invoice_items').insert(childPayloads);
             if (childError) throw childError;
         }
 
-        // 3. Create Expected Transaction
         if (selectedObjectId) {
             const plannedDate = new Date();
             plannedDate.setDate(plannedDate.getDate() + 3);
@@ -139,8 +238,8 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
                 object_id: selectedObjectId,
                 invoice_id: inv.id,
                 type: 'income',
-                amount: data.total_amount_byn,
-                planned_amount: data.total_amount_byn,
+                amount: toNum(data.total_amount_byn),
+                planned_amount: toNum(data.total_amount_byn),
                 planned_date: plannedDate.toISOString(),
                 category: 'Оплата по счету',
                 description: `Счет №${inv.number} (из КП).`,
@@ -168,12 +267,12 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
                         <script src="https://cdn.tailwindcss.com"></script>
                         <style>
                             @media print { 
-                                @page { margin: 0; size: A4; } /* Hide headers */
+                                @page { margin: 0; size: A4; }
                                 body { margin: 0; -webkit-print-color-adjust: exact; }
                                 #cp-printable-area {
                                     margin: 0;
                                     width: 100%;
-                                    padding: 15mm 20mm !important; /* Simulate margins */
+                                    padding: 15mm 20mm !important;
                                     box-shadow: none !important;
                                 }
                             }
@@ -190,64 +289,27 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
       }
   };
 
+  // --- RENDERING ---
+
   if (loading) return <div className="p-10 text-center">Загрузка...</div>;
   if (!data) return <div className="p-10 text-center">КП не найдено</div>;
 
-  const vatRate = data.has_vat ? 20 : 0;
+  // Safe strings
+  const clientName = toStr(data.client?.name);
+  const clientReqs = toStr(data.client?.requisites);
+  const objectAddr = toStr(data.object?.address);
+  const displayAddress = objectAddr || clientReqs || '—';
+  
+  const companyName = toStr(companySettings?.company_name);
+  const companyReqs = toStr(companySettings?.requisites);
+  const companyBank = toStr(companySettings?.bank_details);
+  const creatorName = toStr(data.creator?.full_name);
 
-  // 1. Calculate VAT from ROOT items only (to match the Total Amount correctly without double counting children)
-  const rootItemsForCalc = items.filter(i => !i.parent_id);
-  const totalVatSum = rootItemsForCalc.reduce((acc, i) => {
-      const totalWithVat = i.final_price_byn * i.quantity;
-      const totalNoVat = data.has_vat ? totalWithVat / 1.2 : totalWithVat;
-      return acc + (totalWithVat - totalNoVat);
-  }, 0);
-
-  // 2. Logic to group children under parents and number them (e.g., 2.1, 2.2)
-  const tableItems = useMemo(() => {
-      const roots = items.filter(i => !i.parent_id);
-      const childrenMap: Record<string, any[]> = {};
-      
-      items.forEach(i => {
-          if (i.parent_id) {
-              if (!childrenMap[i.parent_id]) childrenMap[i.parent_id] = [];
-              childrenMap[i.parent_id].push(i);
-          }
-      });
-
-      const result: any[] = [];
-      
-      roots.forEach((root, idx) => {
-          const rootNum = (idx + 1).toString();
-          const priceWithVat = root.final_price_byn;
-          const totalWithVat = root.final_price_byn * root.quantity;
-          
-          result.push({
-              ...root,
-              displayNumber: rootNum,
-              totalWithVat,
-              isChild: false
-          });
-
-          if (showBundleDetails && childrenMap[root.id]) {
-              childrenMap[root.id].forEach((child, cIdx) => {
-                  const childNum = `${rootNum}.${cIdx + 1}`;
-                  const childTotalWithVat = child.final_price_byn * child.quantity;
-                  result.push({
-                      ...child,
-                      displayNumber: childNum,
-                      totalWithVat: childTotalWithVat,
-                      isChild: true
-                  });
-              });
-          }
-      });
-
-      return result;
-  }, [items, showBundleDetails]);
-
-  const totalSum = data.total_amount_byn || 0;
-  const displayAddress = data.object?.address || data.client?.requisites || '—';
+  // Safe Options for Select
+  const objectOptions = [
+      {value:'', label: availableObjects.length === 0 ? 'Нет объектов' : 'Выберите объект...'}, 
+      ...availableObjects.map(o => ({value: String(o.id), label: String(o.name || 'Без названия')}))
+  ];
 
   return (
     <div className="h-full flex flex-col bg-slate-50">
@@ -271,7 +333,12 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
               <div className="bg-white rounded-[24px] p-6 w-full max-w-md shadow-xl">
                   <h3 className="text-lg font-bold mb-4">Привязать к объекту</h3>
-                  <Select label="Объект" value={selectedObjectId} onChange={(e:any) => setSelectedObjectId(e.target.value)} options={[{value:'', label: availableObjects.length === 0 ? 'Нет объектов' : 'Выберите объект...'}, ...availableObjects.map(o => ({value:o.id, label:o.name}))]} />
+                  <Select 
+                    label="Объект" 
+                    value={selectedObjectId} 
+                    onChange={(e:any) => setSelectedObjectId(e.target.value)} 
+                    options={objectOptions} 
+                  />
                   <div className="flex gap-2 mt-4">
                       <Button className="flex-1" onClick={handleCreateInvoice}>Создать счет</Button>
                       <Button variant="ghost" className="flex-1" onClick={() => setSelectObjectModalOpen(false)}>Отмена</Button>
@@ -285,9 +352,8 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
           
           {/* HEADER */}
           <div className="flex justify-between items-start mb-8">
-              {/* LOGO */}
               <div className="w-[40%]">
-                  {companySettings.logo_url ? (
+                  {companySettings?.logo_url ? (
                       <img src={companySettings.logo_url} alt="Logo" className="max-h-[80px] max-w-full object-contain" />
                   ) : (
                       <div className="border-2 border-blue-800 text-blue-800 font-bold text-2xl p-2 inline-block">
@@ -296,11 +362,10 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
                       </div>
                   )}
               </div>
-              {/* REQUISITES - RIGHT ALIGNED */}
               <div className="w-[55%] text-right text-[10px] leading-relaxed">
-                  <h2 className="font-bold text-sm uppercase mb-2">{companySettings.company_name}</h2>
-                  <p className="whitespace-pre-wrap">{companySettings.requisites}</p>
-                  <p className="mt-1">{companySettings.bank_details}</p>
+                  <h2 className="font-bold text-sm uppercase mb-2">{companyName}</h2>
+                  <p className="whitespace-pre-wrap">{companyReqs}</p>
+                  <p className="mt-1">{companyBank}</p>
               </div>
           </div>
 
@@ -309,15 +374,15 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
           {/* TITLE */}
           <div className="text-center mb-8">
               <h1 className="text-xl font-bold uppercase">Коммерческое предложение</h1>
-              <p className="text-sm font-bold">№ {data.number} от {formatDate(data.created_at)}</p>
-              {data.title && <p className="text-xs italic mt-2">"{data.title}"</p>}
+              <p className="text-sm font-bold">№ {toStr(data.number)} от {formatDate(data.created_at)}</p>
+              {data.title && <p className="text-xs italic mt-2">"{toStr(data.title)}"</p>}
           </div>
 
           {/* CUSTOMER */}
           <div className="mb-6 text-[12px]">
               <div className="grid grid-cols-[120px_1fr] gap-2">
                   <div className="font-bold">Заказчик:</div>
-                  <div className="font-bold">{data.client?.name}</div>
+                  <div className="font-bold">{clientName}</div>
                   
                   <div className="font-bold">Адрес:</div>
                   <div className="whitespace-pre-wrap">{displayAddress}</div>
@@ -337,23 +402,23 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
                   </tr>
               </thead>
               <tbody>
-                  {tableItems.map((item, idx) => (
-                      <tr key={idx} className="align-top">
+                  {tableItems.map((item) => (
+                      <tr key={item.uniqueKey} className="align-top">
                           <td className="border border-black p-1 text-center">
-                              {item.displayNumber}
+                              {toStr(item.displayNumber)}
                           </td>
                           <td className="border border-black p-1">
                               <div className={item.isChild ? 'pl-4' : ''}>
-                                  {item.snapshot_name}
+                                  {toStr(item.snapshot_name)}
                                   {!item.product_id && !showBundleDetails && (
                                       <span className="block text-[8px] italic mt-0.5">(Комплект оборудования)</span>
                                   )}
                               </div>
                           </td>
-                          <td className="border border-black p-1 text-center">{item.snapshot_unit}</td>
+                          <td className="border border-black p-1 text-center">{toStr(item.snapshot_unit)}</td>
                           <td className="border border-black p-1 text-center">{item.quantity}</td>
-                          <td className="border border-black p-1 text-right">{item.final_price_byn.toFixed(2)}</td>
-                          <td className="border border-black p-1 text-right">{item.totalWithVat.toFixed(2)}</td>
+                          <td className="border border-black p-1 text-right">{item.safePrice.toFixed(2)}</td>
+                          <td className="border border-black p-1 text-right">{item.safeTotal.toFixed(2)}</td>
                       </tr>
                   ))}
               </tbody>
@@ -367,8 +432,8 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
           </div>
 
           <div className="text-[11px] mb-8">
-              <p className="font-bold">Всего к оплате: {totalSum.toFixed(2)} ({sumInWords(totalSum)})</p>
-              {data.has_vat && <p className="font-bold mt-1">В том числе НДС (20%): {totalVatSum.toFixed(2)}</p>}
+              <p className="font-bold">Всего к оплате: {totalSum.toFixed(2)} ({String(sumInWords(totalSum))})</p>
+              {hasVat && <p className="font-bold mt-1">В том числе НДС (20%): {totalVatSum.toFixed(2)}</p>}
           </div>
 
           {/* SIGNATURES */}
@@ -376,7 +441,7 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
               <div className="w-[45%]">
                   <div className="mb-8">Менеджер проекта:</div>
                   <div className="border-b border-black mb-2"></div>
-                  <div className="text-[10px]">{data.creator?.full_name}</div>
+                  <div className="text-[10px]">{creatorName}</div>
               </div>
           </div>
 
