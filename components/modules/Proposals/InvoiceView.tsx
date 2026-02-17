@@ -147,9 +147,108 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
   const handleStatusChange = async (newStatus: string) => {
       setStatusLoading(true);
       try {
-          await supabase.from('invoices').update({ status: newStatus }).eq('id', invoiceId);
+          // 1. Update Invoice Status
+          const { error: updateError } = await supabase.from('invoices').update({ status: newStatus }).eq('id', invoiceId);
+          if (updateError) throw updateError;
+
+          // 2. Logic for Reservation & Deficit (Only when moving from Draft -> Sent/Paid)
           if ((newStatus === 'sent' || newStatus === 'paid') && invoice.status === 'draft') {
-              setToast({ message: 'Статус счета обновлен (авто-резерв)', type: 'success' });
+              
+              // A. Get invoice items (products only, flatten hierarchy)
+              const { data: invItems } = await supabase
+                  .from('invoice_items')
+                  .select('product_id, quantity')
+                  .eq('invoice_id', invoiceId)
+                  .not('product_id', 'is', null);
+              
+              if (invItems && invItems.length > 0) {
+                  // Group invoice requirements
+                  const requirements: Record<string, number> = {};
+                  invItems.forEach(i => {
+                      if (i.product_id) requirements[i.product_id] = (requirements[i.product_id] || 0) + i.quantity;
+                  });
+
+                  // B. Get Stock
+                  const productIds = Object.keys(requirements);
+                  const { data: stockItems } = await supabase
+                      .from('inventory_items')
+                      .select('id, product_id, quantity, purchase_price, catalog_id, serial_number, assigned_to_id')
+                      .in('product_id', productIds)
+                      .eq('status', 'in_stock')
+                      .gt('quantity', 0)
+                      .order('created_at', { ascending: true }); // FIFOish
+
+                  // C. Process Reservation
+                  const supplyItems: { product_id: string, quantity_needed: number }[] = [];
+                  let availableStock = stockItems ? [...stockItems] : [];
+
+                  for (const prodId of productIds) {
+                      let needed = requirements[prodId];
+                      
+                      // Find matching stock for this product
+                      const matchingStock = availableStock.filter(s => s.product_id === prodId);
+                      
+                      for (const item of matchingStock) {
+                          if (needed <= 0.0001) break;
+                          
+                          const take = Math.min(item.quantity, needed);
+                          
+                          // DB Update: Reserve
+                          if (Math.abs(take - item.quantity) < 0.0001) {
+                              // Take whole item
+                              await supabase.from('inventory_items').update({
+                                  status: 'reserved',
+                                  reserved_for_invoice_id: invoiceId
+                              }).eq('id', item.id);
+                              item.quantity = 0; // Mark consumed locally
+                          } else {
+                              // Split item
+                              // 1. Update current to remaining
+                              await supabase.from('inventory_items').update({
+                                  quantity: item.quantity - take
+                              }).eq('id', item.id);
+                              
+                              // 2. Create new reserved item
+                              await supabase.from('inventory_items').insert({
+                                  product_id: prodId,
+                                  quantity: take,
+                                  status: 'reserved',
+                                  reserved_for_invoice_id: invoiceId,
+                                  purchase_price: item.purchase_price,
+                                  catalog_id: item.catalog_id,
+                                  assigned_to_id: item.assigned_to_id,
+                                  serial_number: null // Reset serial on split as we don't know which one
+                              });
+                              item.quantity -= take;
+                          }
+                          needed -= take;
+                      }
+
+                      if (needed > 0.0001) {
+                          supplyItems.push({ product_id: prodId, quantity_needed: needed });
+                      }
+                  }
+
+                  // D. Create Supply Order if deficit
+                  if (supplyItems.length > 0) {
+                      const { data: so } = await supabase.from('supply_orders').insert({
+                          invoice_id: invoiceId,
+                          status: 'pending',
+                          created_by: invoice.created_by
+                      }).select('id').single();
+
+                      if (so) {
+                          const soItems = supplyItems.map(si => ({
+                              supply_order_id: so.id,
+                              product_id: si.product_id,
+                              quantity_needed: si.quantity_needed,
+                              status: 'pending'
+                          }));
+                          await supabase.from('supply_order_items').insert(soItems);
+                      }
+                  }
+              }
+              setToast({ message: 'Счет проведен. Товар зарезервирован, дефицит добавлен в заказ.', type: 'success' });
           } else {
               setToast({ message: 'Статус счета обновлен', type: 'success' });
           }
