@@ -89,15 +89,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
     try {
       let taskId = formData.id;
       
-      // Fix for ambiguity: If deadline is set, ensure it's not null.
-      // If the DB has duplicate functions (date vs timestamp), this might still fail if null is sent.
-      // The best fix is DB cleanup, but let's send strictly formatted data.
       const payloadCommon = {
           p_object_id: formData.object_id,
           p_title: formData.title,
           p_assigned_to: formData.assigned_to,
-          p_start_date: formData.start_date,
-          p_deadline: formData.deadline || null,
+          p_start_date: formData.start_date ? new Date(formData.start_date).toISOString() : new Date().toISOString(),
+          p_deadline: formData.deadline ? new Date(formData.deadline).toISOString() : null,
           p_comment: formData.comment,
           p_doc_link: formData.doc_link || null,
           p_doc_name: formData.doc_name || null,
@@ -109,8 +106,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
           object_id: formData.object_id,
           title: formData.title,
           assigned_to: formData.assigned_to,
-          start_date: formData.start_date,
-          deadline: formData.deadline || null,
+          start_date: payloadCommon.p_start_date,
+          deadline: payloadCommon.p_deadline,
           comment: formData.comment,
           doc_link: formData.doc_link,
           doc_name: formData.doc_name,
@@ -120,20 +117,14 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
 
         if (error) throw error;
       } else {
-        const { id, checklist, ...insertData } = formData;
-        
-        // Use RPC for safe creation (inherits stage automatically)
-        const { error } = await supabase.rpc('create_task_safe', payloadCommon);
+        // Use NEW V2 function to avoid ambiguity
+        const { error } = await supabase.rpc('create_task_v2', payloadCommon);
 
         if (error) {
-            // Handle ambiguous function error gracefully
-            if (error.message?.includes('Could not choose the best candidate function')) {
-                throw new Error('Ошибка базы данных (ambiguous function). Пожалуйста, выполните скрипт исправления в разделе "База данных".');
-            }
             throw error;
         }
 
-        // Retrieve the ID of the task we just created to add checklist items
+        // Retrieve the ID of the task we just created
         const { data: lastTask } = await supabase
           .from('tasks')
           .select('id')
