@@ -1499,6 +1499,20 @@ export type Database = {
             }
             Returns: undefined
           }
+      create_task_v2: {
+        Args: {
+          p_object_id: string
+          p_title: string
+          p_assigned_to: string
+          p_start_date: string
+          p_deadline: string | null
+          p_comment: string
+          p_doc_link: string | null
+          p_doc_name: string | null
+          p_user_id: string
+        }
+        Returns: string
+      }
       finalize_project: {
         Args: { p_object_id: string; p_user_id: string }
         Returns: undefined
