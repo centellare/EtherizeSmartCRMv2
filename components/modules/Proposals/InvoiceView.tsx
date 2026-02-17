@@ -165,7 +165,11 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                   // Group invoice requirements
                   const requirements: Record<string, number> = {};
                   invItems.forEach(i => {
-                      if (i.product_id) requirements[i.product_id] = (requirements[i.product_id] || 0) + i.quantity;
+                      if (i.product_id) {
+                          // Fix TS error: ensure quantity is treated as number (default 0 if null)
+                          const qty = i.quantity || 0;
+                          requirements[i.product_id] = (requirements[i.product_id] || 0) + qty;
+                      }
                   });
 
                   // B. Get Stock
@@ -191,10 +195,12 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                       for (const item of matchingStock) {
                           if (needed <= 0.0001) break;
                           
-                          const take = Math.min(item.quantity, needed);
+                          // Fix TS error: explicitly handle potential null quantity
+                          const currentQty = item.quantity || 0;
+                          const take = Math.min(currentQty, needed);
                           
                           // DB Update: Reserve
-                          if (Math.abs(take - item.quantity) < 0.0001) {
+                          if (Math.abs(take - currentQty) < 0.0001) {
                               // Take whole item
                               await supabase.from('inventory_items').update({
                                   status: 'reserved',
@@ -204,8 +210,9 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                           } else {
                               // Split item
                               // 1. Update current to remaining
+                              const remaining = currentQty - take;
                               await supabase.from('inventory_items').update({
-                                  quantity: item.quantity - take
+                                  quantity: remaining
                               }).eq('id', item.id);
                               
                               // 2. Create new reserved item
@@ -219,7 +226,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                                   assigned_to_id: item.assigned_to_id,
                                   serial_number: null // Reset serial on split as we don't know which one
                               });
-                              item.quantity -= take;
+                              item.quantity = remaining;
                           }
                           needed -= take;
                       }
