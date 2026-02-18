@@ -21,17 +21,17 @@ const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
       <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-[24px] border border-indigo-200 shadow-sm">
         <h3 className="text-lg font-bold text-indigo-900 mb-2 flex items-center gap-2">
           <span className="material-icons-round text-indigo-600">medical_services</span>
-          Полное оздоровление базы данных (v6.2)
+          Полное оздоровление базы данных (v6.4)
         </h3>
         <div className="text-sm text-indigo-800 mb-4 leading-relaxed bg-white/50 p-4 rounded-xl border border-indigo-100">
           <p className="font-bold mb-2">Этот скрипт выполняет следующие действия (БЕЗ удаления данных):</p>
           <ul className="list-disc list-inside space-y-1 ml-1">
-            <li>Исправляет ошибку <code>generated column dependency</code> при смене типов.</li>
+            <li>Исправляет ошибки прав доступа (RLS) для <b>всех</b> таблиц, включая платежи.</li>
+            <li>Исправляет ошибку <code>generated column dependency</code>.</li>
             <li>Удаляет конфликтующие функции и дубликаты.</li>
-            <li>Сбрасывает и заново настраивает права доступа (RLS).</li>
-            <li>Исправляет типы данных (числа, цены) для корректных расчетов.</li>
+            <li>Исправляет типы данных (числа, цены).</li>
           </ul>
-          <p className="mt-3 text-emerald-700 font-bold">Рекомендуется выполнить, если возникают ошибки SQL при миграции.</p>
+          <p className="mt-3 text-emerald-700 font-bold">Рекомендуется выполнить, если возникают ошибки "row-level security" при создании платежей или КП.</p>
         </div>
         
         <div className="relative group">

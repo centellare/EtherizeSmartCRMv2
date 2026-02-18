@@ -43,10 +43,10 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
   };
 
   return (
-    <div className="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm">
-      <div className="overflow-x-auto min-h-[400px]">
-        <table className="w-full text-left min-w-[1100px]">
-          <thead className="bg-slate-50 border-b">
+    <div className="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm flex flex-col">
+      <div className="overflow-x-auto overflow-y-auto max-h-[600px] scrollbar-hide">
+        <table className="w-full text-left min-w-[1100px] relative">
+          <thead className="bg-slate-50 border-b sticky top-0 z-10 shadow-sm">
             <tr>
               <th className="p-4 w-10"></th>
               <th className="p-5 text-xs font-medium text-slate-500">Тип / Создано</th>

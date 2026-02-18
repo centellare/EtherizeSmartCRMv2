@@ -54,13 +54,13 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
 ];
 
 export const MIGRATION_SQL_V6 = `
--- SmartHome CRM: FULL LOGIC RESET v6.2 (Dependency Fix)
--- Исправлена ошибка "cannot alter type of a column used by a generated column"
+-- SmartHome CRM: FULL LOGIC RESET v6.5 (Dashboard User Creation Fix)
+-- Исправлена ошибка создания пользователей через админку Supabase.
 
 BEGIN;
 
 --------------------------------------------------------------------------------
--- 1. SMART CLEANUP (Динамическое удаление дубликатов)
+-- 1. SMART CLEANUP
 --------------------------------------------------------------------------------
 
 -- 1.1 Удаляем политики (RLS)
@@ -103,13 +103,11 @@ BEGIN
 END $$;
 
 --------------------------------------------------------------------------------
--- 2. DATA TYPE FIXES (Исправление типов колонок)
+-- 2. DATA TYPE FIXES
 --------------------------------------------------------------------------------
 
--- ВАЖНО: Удаляем зависимые колонки перед сменой типа, чтобы избежать ошибки 0A000
 ALTER TABLE public.products DROP COLUMN IF EXISTS markup_percent;
 
--- Приводим денежные и количественные поля к numeric
 ALTER TABLE public.transactions ALTER COLUMN amount TYPE numeric USING amount::numeric;
 ALTER TABLE public.transactions ALTER COLUMN fact_amount TYPE numeric USING fact_amount::numeric;
 ALTER TABLE public.transactions ALTER COLUMN planned_amount TYPE numeric USING planned_amount::numeric;
@@ -129,10 +127,10 @@ ALTER TABLE public.cp_items ALTER COLUMN price_at_moment TYPE numeric USING pric
 ALTER TABLE public.cp_items ALTER COLUMN final_price_byn TYPE numeric USING final_price_byn::numeric;
 ALTER TABLE public.cp_items ALTER COLUMN quantity TYPE numeric USING quantity::numeric;
 
--- Восстанавливаем markup_percent как обычную колонку (не generated), чтобы её можно было менять
+ALTER TABLE public.transaction_payments ALTER COLUMN amount TYPE numeric USING amount::numeric;
+
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS markup_percent numeric DEFAULT 0;
 
--- Пересчитываем markup_percent на основе текущих цен (чтобы данные не пропали)
 UPDATE public.products 
 SET markup_percent = CASE 
     WHEN base_price > 0 THEN ROUND(((retail_price - base_price) / base_price) * 100, 2)
@@ -140,10 +138,9 @@ SET markup_percent = CASE
 END;
 
 --------------------------------------------------------------------------------
--- 3. CORE FUNCTIONS (Бизнес-логика)
+-- 3. CORE FUNCTIONS
 --------------------------------------------------------------------------------
 
--- Вспомогательная функция для получения роли текущего пользователя
 CREATE OR REPLACE FUNCTION public.get_my_role()
 RETURNS text AS $$
 DECLARE
@@ -154,7 +151,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 3.1 Безопасное создание задачи (RPC)
 CREATE OR REPLACE FUNCTION public.create_task_safe(
     p_object_id uuid,
     p_title text,
@@ -171,7 +167,6 @@ DECLARE
     v_task_id uuid;
     v_stage text;
 BEGIN
-    -- Определяем текущий этап объекта
     SELECT current_stage INTO v_stage FROM public.objects WHERE id = p_object_id;
 
     INSERT INTO public.tasks (
@@ -186,7 +181,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 3.2 Переход этапа
 CREATE OR REPLACE FUNCTION public.transition_object_stage(
     p_object_id uuid,
     p_next_stage text,
@@ -200,19 +194,16 @@ DECLARE
 BEGIN
     SELECT current_stage INTO v_current_stage FROM public.objects WHERE id = p_object_id;
 
-    -- 1. Закрываем текущий этап
     UPDATE public.object_stages 
     SET status = 'completed', completed_at = now() 
     WHERE object_id = p_object_id AND stage_name = v_current_stage AND status = 'active';
 
-    -- 2. Создаем новый этап
     INSERT INTO public.object_stages (
         object_id, stage_name, status, started_at, responsible_id, deadline
     ) VALUES (
         p_object_id, p_next_stage, 'active', now(), p_responsible_id, p_deadline
     );
 
-    -- 3. Обновляем объект
     UPDATE public.objects 
     SET current_stage = p_next_stage, 
         responsible_id = p_responsible_id,
@@ -221,13 +212,11 @@ BEGIN
         updated_by = p_user_id
     WHERE id = p_object_id;
 
-    -- 4. Пишем историю
     INSERT INTO public.object_history (object_id, profile_id, action_text)
     VALUES (p_object_id, p_user_id, 'Переход на этап: ' || p_next_stage);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 3.3 Откат этапа
 CREATE OR REPLACE FUNCTION public.rollback_object_stage(
     p_object_id uuid,
     p_target_stage text,
@@ -241,12 +230,10 @@ DECLARE
 BEGIN
     SELECT current_stage INTO v_current_stage FROM public.objects WHERE id = p_object_id;
 
-    -- Помечаем текущий как отмененный/откаченный
     UPDATE public.object_stages 
     SET status = 'rolled_back', completed_at = now()
     WHERE object_id = p_object_id AND stage_name = v_current_stage AND status = 'active';
 
-    -- Активируем целевой (старый) этап заново или создаем запись о возврате
     INSERT INTO public.object_stages (
         object_id, stage_name, status, started_at, responsible_id
     ) VALUES (
@@ -267,7 +254,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 3.4 Восстановление этапа (прыжок вперед после отката)
 CREATE OR REPLACE FUNCTION public.restore_object_stage(
     p_object_id uuid,
     p_user_id uuid
@@ -282,12 +268,10 @@ BEGIN
         RAISE EXCEPTION 'Нет информации для восстановления этапа';
     END IF;
 
-    -- Закрываем текущий "исправленный" этап
     UPDATE public.object_stages 
     SET status = 'completed', completed_at = now()
     WHERE object_id = p_object_id AND status = 'active';
 
-    -- Восстанавливаем тот, откуда пришли
     INSERT INTO public.object_stages (
         object_id, stage_name, status, started_at
     ) VALUES (
@@ -307,7 +291,6 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 3.5 Завершение проекта
 CREATE OR REPLACE FUNCTION public.finalize_project(
     p_object_id uuid,
     p_user_id uuid
@@ -329,12 +312,18 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 3.6 Auth Trigger (New User)
+-- UPDATED TRIGGER: Handles missing metadata gracefully
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS trigger AS $$
 BEGIN
   INSERT INTO public.profiles (id, full_name, email, role)
-  VALUES (new.id, new.raw_user_meta_data->>'full_name', new.email, 'specialist')
+  VALUES (
+    new.id, 
+    -- Если имя не передано (создание через админку Supabase), используем email или заглушку
+    COALESCE(new.raw_user_meta_data->>'full_name', new.email, 'New User'), 
+    new.email, 
+    'specialist'
+  )
   ON CONFLICT (id) DO NOTHING;
   RETURN new;
 END;
@@ -345,58 +334,60 @@ CREATE TRIGGER on_auth_user_created
   FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
 
 --------------------------------------------------------------------------------
--- 4. RLS POLICIES (Права доступа)
+-- 4. RLS POLICIES
 --------------------------------------------------------------------------------
 
--- Включаем RLS на всех таблицах
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.objects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transaction_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.commercial_proposals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cp_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.invoice_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.supply_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.supply_order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.company_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.document_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.price_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.client_connections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.object_history ENABLE ROW LEVEL SECURITY;
 
 -- 4.1 PROFILES
--- Читать могут все (для списков сотрудников)
 CREATE POLICY "Profiles viewable by everyone" ON public.profiles FOR SELECT USING (true);
--- Обновлять только админ или сам пользователь
 CREATE POLICY "Profiles update own or admin" ON public.profiles FOR UPDATE USING (
   auth.uid() = id OR get_my_role() IN ('admin', 'director')
 );
 
 -- 4.2 OBJECTS
--- Видят: Админы, Директора, Менеджеры (все). Специалисты (только где ответственны или есть задачи).
 CREATE POLICY "Objects view" ON public.objects FOR SELECT USING (
   get_my_role() IN ('admin', 'director', 'manager', 'storekeeper') OR 
   responsible_id = auth.uid() OR 
   EXISTS (SELECT 1 FROM tasks WHERE object_id = objects.id AND assigned_to = auth.uid())
 );
--- Создают/Редактируют: Админы, Директора, Менеджеры.
 CREATE POLICY "Objects edit" ON public.objects FOR ALL USING (
   get_my_role() IN ('admin', 'director', 'manager')
 );
 
 -- 4.3 TASKS
--- Видят: Руководство (все). Специалисты (свои или созданные ими).
 CREATE POLICY "Tasks view" ON public.tasks FOR SELECT USING (
   get_my_role() IN ('admin', 'director', 'manager') OR 
   assigned_to = auth.uid() OR created_by = auth.uid()
 );
--- Редактируют: Руководство. Специалисты (свои).
 CREATE POLICY "Tasks edit" ON public.tasks FOR ALL USING (
   get_my_role() IN ('admin', 'director', 'manager') OR 
   assigned_to = auth.uid() OR created_by = auth.uid()
 );
 
 -- 4.4 TRANSACTIONS (Finances)
--- Видят: Руководство, Снабжение. Специалисты (только свои запросы).
 CREATE POLICY "Trans view" ON public.transactions FOR SELECT USING (
   get_my_role() IN ('admin', 'director', 'manager', 'storekeeper') OR created_by = auth.uid()
 );
--- Управляют: Руководство, Снабжение. Специалисты (только insert/update своих pending).
 CREATE POLICY "Trans admin" ON public.transactions FOR ALL USING (
   get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
 );
@@ -404,22 +395,99 @@ CREATE POLICY "Trans specialist" ON public.transactions FOR INSERT WITH CHECK (
   get_my_role() = 'specialist'
 );
 
--- 4.5 INVENTORY & PRODUCTS
--- Читать могут все.
+-- 4.5 TRANSACTION PAYMENTS (FIXED)
+CREATE POLICY "Payments manage" ON public.transaction_payments FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
+);
+CREATE POLICY "Payments view" ON public.transaction_payments FOR SELECT USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper') OR 
+  EXISTS (SELECT 1 FROM transactions t WHERE t.id = transaction_id AND t.created_by = auth.uid())
+);
+
+-- 4.6 INVENTORY & PRODUCTS
 CREATE POLICY "Inventory view" ON public.inventory_items FOR SELECT USING (true);
 CREATE POLICY "Products view" ON public.products FOR SELECT USING (true);
--- Управлять складом: Админ, Директор, Кладовщик.
 CREATE POLICY "Inventory manage" ON public.inventory_items FOR ALL USING (
-  get_my_role() IN ('admin', 'director', 'storekeeper')
+  get_my_role() IN ('admin', 'director', 'storekeeper', 'manager')
 );
 CREATE POLICY "Products manage" ON public.products FOR ALL USING (
   get_my_role() IN ('admin', 'director', 'storekeeper', 'manager')
 );
 
--- 4.6 CLIENTS
+-- 4.7 CLIENTS
 CREATE POLICY "Clients view" ON public.clients FOR SELECT USING (true);
 CREATE POLICY "Clients manage" ON public.clients FOR ALL USING (
   get_my_role() IN ('admin', 'director', 'manager')
+);
+
+-- 4.8 COMMERCIAL PROPOSALS (КП) & ITEMS
+CREATE POLICY "CP view" ON public.commercial_proposals FOR SELECT USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper') OR created_by = auth.uid()
+);
+CREATE POLICY "CP manage" ON public.commercial_proposals FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
+);
+
+CREATE POLICY "CP Items view" ON public.cp_items FOR SELECT USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
+);
+CREATE POLICY "CP Items manage" ON public.cp_items FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
+);
+
+-- 4.9 INVOICES (Счета) & ITEMS
+CREATE POLICY "Invoices view" ON public.invoices FOR SELECT USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
+);
+CREATE POLICY "Invoices manage" ON public.invoices FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
+);
+
+CREATE POLICY "Inv Items view" ON public.invoice_items FOR SELECT USING (true);
+CREATE POLICY "Inv Items manage" ON public.invoice_items FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
+);
+
+-- 4.10 SUPPLY ORDERS (Снабжение)
+CREATE POLICY "Supply view" ON public.supply_orders FOR SELECT USING (true);
+CREATE POLICY "Supply manage" ON public.supply_orders FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'storekeeper', 'manager')
+);
+
+CREATE POLICY "Supply Items view" ON public.supply_order_items FOR SELECT USING (true);
+CREATE POLICY "Supply Items manage" ON public.supply_order_items FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'storekeeper', 'manager')
+);
+
+-- 4.11 SETTINGS & TEMPLATES
+CREATE POLICY "Settings view" ON public.company_settings FOR SELECT USING (true);
+CREATE POLICY "Settings manage" ON public.company_settings FOR ALL USING (
+  get_my_role() IN ('admin', 'director')
+);
+
+CREATE POLICY "Templates view" ON public.document_templates FOR SELECT USING (true);
+CREATE POLICY "Templates manage" ON public.document_templates FOR ALL USING (
+  get_my_role() IN ('admin', 'director')
+);
+
+CREATE POLICY "Rules view" ON public.price_rules FOR SELECT USING (true);
+CREATE POLICY "Rules manage" ON public.price_rules FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'storekeeper')
+);
+
+-- 4.12 UTILS (Connections, Notifications, History)
+CREATE POLICY "Conn view" ON public.client_connections FOR SELECT USING (true);
+CREATE POLICY "Conn manage" ON public.client_connections FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'manager')
+);
+
+CREATE POLICY "Notif view own" ON public.notifications FOR SELECT USING (profile_id = auth.uid());
+CREATE POLICY "Notif update own" ON public.notifications FOR UPDATE USING (profile_id = auth.uid());
+CREATE POLICY "Notif insert system" ON public.notifications FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "History view" ON public.object_history FOR SELECT USING (true);
+CREATE POLICY "History manage" ON public.object_history FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper') OR profile_id = auth.uid()
 );
 
 COMMIT;
@@ -427,10 +495,10 @@ COMMIT;
 
 export const MIGRATION_SQL_V5 = MIGRATION_SQL_V6;
 export const SUPABASE_SETUP_GUIDE = `
-### ВАЖНО: Полный сброс логики (v6.2 - Generated Columns Fix)
+### ВАЖНО: Полный сброс логики (v6.5)
 1. Скопируйте SQL-скрипт обновления.
 2. Откройте SQL Editor в Supabase.
 3. Выполните скрипт.
    
-Это исправит ошибку "cannot alter type of a column used by a generated column".
+Это исправит создание пользователей через дашборд и ошибки RLS.
 `;

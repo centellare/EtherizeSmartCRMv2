@@ -1,6 +1,6 @@
 
--- SmartHome CRM: FULL LOGIC RESET v6.2 (Dependency Fix)
--- Исправлена ошибка "cannot alter type of a column used by a generated column"
+-- SmartHome CRM: FULL LOGIC RESET v6.3 (Comprehensive RLS Fix)
+-- Исправлены права доступа для КП, Счетов, Настроек и Снабжения.
 
 BEGIN;
 
@@ -301,47 +301,50 @@ ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.inventory_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.products ENABLE ROW LEVEL SECURITY;
+-- IMPORTANT: Enable RLS on new tables
 ALTER TABLE public.commercial_proposals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.cp_items ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.invoice_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.supply_orders ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.supply_order_items ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.company_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.document_templates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.price_rules ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.client_connections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.object_history ENABLE ROW LEVEL SECURITY;
 
 -- 4.1 PROFILES
--- Читать могут все (для списков сотрудников)
 CREATE POLICY "Profiles viewable by everyone" ON public.profiles FOR SELECT USING (true);
--- Обновлять только админ или сам пользователь
 CREATE POLICY "Profiles update own or admin" ON public.profiles FOR UPDATE USING (
   auth.uid() = id OR get_my_role() IN ('admin', 'director')
 );
 
 -- 4.2 OBJECTS
--- Видят: Админы, Директора, Менеджеры (все). Специалисты (только где ответственны или есть задачи).
 CREATE POLICY "Objects view" ON public.objects FOR SELECT USING (
   get_my_role() IN ('admin', 'director', 'manager', 'storekeeper') OR 
   responsible_id = auth.uid() OR 
   EXISTS (SELECT 1 FROM tasks WHERE object_id = objects.id AND assigned_to = auth.uid())
 );
--- Создают/Редактируют: Админы, Директора, Менеджеры.
 CREATE POLICY "Objects edit" ON public.objects FOR ALL USING (
   get_my_role() IN ('admin', 'director', 'manager')
 );
 
 -- 4.3 TASKS
--- Видят: Руководство (все). Специалисты (свои или созданные ими).
 CREATE POLICY "Tasks view" ON public.tasks FOR SELECT USING (
   get_my_role() IN ('admin', 'director', 'manager') OR 
   assigned_to = auth.uid() OR created_by = auth.uid()
 );
--- Редактируют: Руководство. Специалисты (свои).
 CREATE POLICY "Tasks edit" ON public.tasks FOR ALL USING (
   get_my_role() IN ('admin', 'director', 'manager') OR 
   assigned_to = auth.uid() OR created_by = auth.uid()
 );
 
 -- 4.4 TRANSACTIONS (Finances)
--- Видят: Руководство, Снабжение. Специалисты (только свои запросы).
 CREATE POLICY "Trans view" ON public.transactions FOR SELECT USING (
   get_my_role() IN ('admin', 'director', 'manager', 'storekeeper') OR created_by = auth.uid()
 );
--- Управляют: Руководство, Снабжение. Специалисты (только insert/update своих pending).
 CREATE POLICY "Trans admin" ON public.transactions FOR ALL USING (
   get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
 );
@@ -350,12 +353,10 @@ CREATE POLICY "Trans specialist" ON public.transactions FOR INSERT WITH CHECK (
 );
 
 -- 4.5 INVENTORY & PRODUCTS
--- Читать могут все.
 CREATE POLICY "Inventory view" ON public.inventory_items FOR SELECT USING (true);
 CREATE POLICY "Products view" ON public.products FOR SELECT USING (true);
--- Управлять складом: Админ, Директор, Кладовщик.
 CREATE POLICY "Inventory manage" ON public.inventory_items FOR ALL USING (
-  get_my_role() IN ('admin', 'director', 'storekeeper')
+  get_my_role() IN ('admin', 'director', 'storekeeper', 'manager')
 );
 CREATE POLICY "Products manage" ON public.products FOR ALL USING (
   get_my_role() IN ('admin', 'director', 'storekeeper', 'manager')
@@ -365,6 +366,76 @@ CREATE POLICY "Products manage" ON public.products FOR ALL USING (
 CREATE POLICY "Clients view" ON public.clients FOR SELECT USING (true);
 CREATE POLICY "Clients manage" ON public.clients FOR ALL USING (
   get_my_role() IN ('admin', 'director', 'manager')
+);
+
+-- 4.7 COMMERCIAL PROPOSALS (КП) & ITEMS
+CREATE POLICY "CP view" ON public.commercial_proposals FOR SELECT USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper') OR created_by = auth.uid()
+);
+CREATE POLICY "CP manage" ON public.commercial_proposals FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
+);
+
+CREATE POLICY "CP Items view" ON public.cp_items FOR SELECT USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
+);
+CREATE POLICY "CP Items manage" ON public.cp_items FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
+);
+
+-- 4.8 INVOICES (Счета) & ITEMS
+CREATE POLICY "Invoices view" ON public.invoices FOR SELECT USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
+);
+CREATE POLICY "Invoices manage" ON public.invoices FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
+);
+
+CREATE POLICY "Inv Items view" ON public.invoice_items FOR SELECT USING (true);
+CREATE POLICY "Inv Items manage" ON public.invoice_items FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper')
+);
+
+-- 4.9 SUPPLY ORDERS (Снабжение)
+CREATE POLICY "Supply view" ON public.supply_orders FOR SELECT USING (true);
+CREATE POLICY "Supply manage" ON public.supply_orders FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'storekeeper', 'manager')
+);
+
+CREATE POLICY "Supply Items view" ON public.supply_order_items FOR SELECT USING (true);
+CREATE POLICY "Supply Items manage" ON public.supply_order_items FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'storekeeper', 'manager')
+);
+
+-- 4.10 SETTINGS & TEMPLATES
+CREATE POLICY "Settings view" ON public.company_settings FOR SELECT USING (true);
+CREATE POLICY "Settings manage" ON public.company_settings FOR ALL USING (
+  get_my_role() IN ('admin', 'director')
+);
+
+CREATE POLICY "Templates view" ON public.document_templates FOR SELECT USING (true);
+CREATE POLICY "Templates manage" ON public.document_templates FOR ALL USING (
+  get_my_role() IN ('admin', 'director')
+);
+
+CREATE POLICY "Rules view" ON public.price_rules FOR SELECT USING (true);
+CREATE POLICY "Rules manage" ON public.price_rules FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'storekeeper')
+);
+
+-- 4.11 UTILS (Connections, Notifications, History)
+CREATE POLICY "Conn view" ON public.client_connections FOR SELECT USING (true);
+CREATE POLICY "Conn manage" ON public.client_connections FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'manager')
+);
+
+CREATE POLICY "Notif view own" ON public.notifications FOR SELECT USING (profile_id = auth.uid());
+CREATE POLICY "Notif update own" ON public.notifications FOR UPDATE USING (profile_id = auth.uid());
+CREATE POLICY "Notif insert system" ON public.notifications FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "History view" ON public.object_history FOR SELECT USING (true);
+CREATE POLICY "History manage" ON public.object_history FOR ALL USING (
+  get_my_role() IN ('admin', 'director', 'manager', 'storekeeper') OR profile_id = auth.uid()
 );
 
 COMMIT;
