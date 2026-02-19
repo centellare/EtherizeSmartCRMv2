@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, measureQuery } from '../../lib/supabase';
 import { Modal, ConfirmModal, Toast, Button, Drawer } from '../ui';
 import { Task } from '../../types';
@@ -25,102 +26,135 @@ interface TasksProps {
 }
 
 const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskId }) => {
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TaskTab>('active');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
-  const [loading, setLoading] = useState(true);
-  const [tasks, setTasks] = useState<Task[]>([]);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   
   // Временной фильтр для активных задач
   const [activeRange, setActiveRange] = useState({ start: '', end: '' });
 
   // Состояния для архива
-  const [archiveTasks, setArchiveTasks] = useState<Task[]>([]);
   const [archivePage, setArchivePage] = useState(0);
-  const [archiveTotal, setArchiveTotal] = useState(0);
   const [archiveDates, setArchiveDates] = useState({
     start: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
     end: getMinskISODate()
   });
-
-  const [staff, setStaff] = useState<any[]>([]);
-  const [objects, setObjects] = useState<any[]>([]);
   
   // Modals state
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'details' | 'completion' | 'none'>('none');
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
 
-  const isFetching = useRef(false);
-
   const isAdmin = profile?.role === 'admin' || profile?.role === 'director';
   const isManager = profile?.role === 'manager';
   const isSpecialist = profile?.role === 'specialist';
 
-  // --- DATA FETCHING ---
+  // --- QUERIES ---
 
-  const fetchSingleTask = async (id: string) => {
-    const { data } = await supabase
-      .from('tasks')
-      .select('*, checklist:task_checklists(*), questions:task_questions(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)')
-      .eq('id', id)
-      .single();
-    
-    // Cast null object_id to string | null explicitly if needed, but updated Task type handles this
-    return data as unknown as Task;
-  };
+  // 1. Staff
+  const { data: staff = [] } = useQuery({
+    queryKey: ['staff'],
+    queryFn: async () => {
+      const { data } = await supabase.from('profiles').select('id, full_name, role').is('deleted_at', null);
+      return data || [];
+    },
+    staleTime: 1000 * 60 * 5 // 5 minutes
+  });
 
-  const fetchData = useCallback(async (silent = false) => {
-    if (!profile?.id || isFetching.current) return;
-    
-    isFetching.current = true;
-    const isInitial = tasks.length === 0 && !silent;
-    if (isInitial) setLoading(true);
-    
-    try {
-      let tasksQuery = supabase.from('tasks')
+  // 2. Objects
+  const { data: objects = [] } = useQuery({
+    queryKey: ['objects'],
+    queryFn: async () => {
+      const { data } = await supabase.from('objects').select('id, name, current_stage').is('is_deleted', false);
+      return data || [];
+    },
+    staleTime: 1000 * 60 * 5
+  });
+
+  // 3. Active Tasks
+  const { data: activeTasks = [], isLoading: isActiveLoading } = useQuery({
+    queryKey: ['tasks', 'active', { userId: profile?.id, filterMode }],
+    queryFn: async () => {
+      let query = supabase.from('tasks')
         .select('*, checklist:task_checklists(*), questions:task_questions(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)')
         .is('is_deleted', false)
         .eq('status', 'pending');
 
-      // Update: Specialists can view ALL tasks, filtering only done via FilterMode toggles
       if (filterMode === 'mine') {
-        tasksQuery = tasksQuery.eq('assigned_to', profile.id);
+        query = query.eq('assigned_to', profile.id);
       } else if (filterMode === 'created') {
-        tasksQuery = tasksQuery.eq('created_by', profile.id);
+        query = query.eq('created_by', profile.id);
       }
 
-      const [activeResult, staffResult, objectsResult] = await Promise.all([
-        measureQuery(tasksQuery.order('deadline', { ascending: true })),
-        supabase.from('profiles').select('id, full_name, role').is('deleted_at', null),
-        supabase.from('objects').select('id, name, current_stage').is('is_deleted', false)
-      ]);
+      const { data } = await measureQuery(query.order('deadline', { ascending: true }));
+      return (data || []) as unknown as Task[];
+    },
+    enabled: !!profile?.id
+  });
 
-      if (!activeResult.cancelled && activeResult.data) {
-        // Explicit cast because Supabase types might be inferred loosely
-        setTasks(activeResult.data as unknown as Task[]);
+  // 4. Archive Tasks
+  const { data: archiveData, isLoading: isArchiveLoading } = useQuery({
+    queryKey: ['tasks', 'archive', { userId: profile?.id, filterMode, page: archivePage, dates: archiveDates }],
+    queryFn: async () => {
+      let query = supabase.from('tasks')
+        .select('*, checklist:task_checklists(*), questions:task_questions(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)', { count: 'exact' })
+        .is('is_deleted', false)
+        .eq('status', 'completed')
+        .gte('completed_at', `${archiveDates.start}T00:00:00`)
+        .lte('completed_at', `${archiveDates.end}T23:59:59`);
+
+      if (filterMode === 'mine') {
+        query = query.eq('assigned_to', profile.id);
+      } else if (filterMode === 'created') {
+        query = query.eq('created_by', profile.id);
       }
-      if (staffResult.data) setStaff(staffResult.data);
-      if (objectsResult.data) setObjects(objectsResult.data);
-    } catch (err) {
-      console.error('Fetch tasks error:', err);
-    } finally {
-      isFetching.current = false;
-      setLoading(false);
-    }
-  }, [profile?.id, tasks.length, filterMode]);
 
-  useEffect(() => { fetchData(); }, [fetchData, activeTab, filterMode, activeRange]);
+      const { data, count } = await query
+        .order('completed_at', { ascending: false })
+        .range(archivePage * PAGE_SIZE, (archivePage + 1) * PAGE_SIZE - 1);
+      
+      return { tasks: (data || []) as unknown as Task[], total: count || 0 };
+    },
+    enabled: !!profile?.id && activeTab === 'archive',
+    placeholderData: (previousData) => previousData // Keep previous data while fetching new page
+  });
 
-  // Deep Linking: Open specific task
+  const archiveTasks = archiveData?.tasks || [];
+  const archiveTotal = archiveData?.total || 0;
+
+  // --- REALTIME ---
+  useEffect(() => {
+    const channel = supabase.channel('tasks_rq_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_checklists' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_questions' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      })
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
+
+  // --- DEEP LINKING ---
   useEffect(() => {
     const handleInitialTask = async () => {
       if (initialTaskId) {
-        // Проверяем в уже загруженных
-        let found = tasks.find(t => t.id === initialTaskId);
-        // Если нет, пробуем загрузить отдельно (может быть в архиве или у другого юзера)
+        // Check in active tasks first
+        let found = activeTasks.find(t => t.id === initialTaskId);
+        
+        // If not found, try fetching directly
         if (!found) {
-          found = await fetchSingleTask(initialTaskId);
+          const { data } = await supabase
+            .from('tasks')
+            .select('*, checklist:task_checklists(*), questions:task_questions(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)')
+            .eq('id', initialTaskId)
+            .single();
+          if (data) found = data as unknown as Task;
         }
         
         if (found) {
@@ -129,106 +163,13 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
         }
       }
     };
-    handleInitialTask();
-  }, [initialTaskId, tasks]);
-
-  const fetchArchive = useCallback(async (page = 0) => {
-    if (!profile?.id) return;
-    
-    const isInitial = archiveTasks.length === 0;
-    if (isInitial) setLoading(true);
-
-    try {
-      let query = supabase.from('tasks')
-        .select('*, checklist:task_checklists(*), questions:task_questions(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)', { count: 'exact' })
-        .is('is_deleted', false)
-        .eq('status', 'completed')
-        .gte('completed_at', `${archiveDates.start}T00:00:00`)
-        .lte('completed_at', `${archiveDates.end}T23:59:59`);
-
-      // Archive also respects filter mode but allows viewing all if mode is all
-      if (filterMode === 'mine') {
-        query = query.eq('assigned_to', profile.id);
-      } else if (filterMode === 'created') {
-        query = query.eq('created_by', profile.id);
-      }
-
-      const { data, count, error } = await query
-        .order('completed_at', { ascending: false })
-        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
-
-      if (!error) {
-        setArchiveTasks((data || []) as unknown as Task[]);
-        setArchiveTotal(count || 0);
-        setArchivePage(page);
-      }
-    } catch (err) {
-      console.error('Archive fetch error:', err);
-    } finally {
-      setLoading(false);
+    if (initialTaskId && !isActiveLoading) {
+        handleInitialTask();
     }
-  }, [profile?.id, archiveDates, filterMode]);
-
-  useEffect(() => {
-    if (activeTab === 'archive') {
-      fetchArchive(0);
-    }
-  }, [activeTab, fetchArchive, archiveDates, filterMode]);
-
-  // Realtime Logic
-  useEffect(() => {
-    const channel = supabase.channel('tasks_smart_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, async (payload) => {
-        if (payload.eventType === 'INSERT') {
-          // Cast payload.new safely
-          const newItem = payload.new as any;
-          if (newItem.status === 'pending' && !newItem.is_deleted) {
-             const newTask = await fetchSingleTask(newItem.id);
-             if (newTask) setTasks(prev => [newTask, ...prev]);
-          }
-        } else if (payload.eventType === 'UPDATE') {
-          const newItem = payload.new as any;
-          if (newItem.is_deleted || newItem.status === 'completed') {
-             setTasks(prev => prev.filter(t => t.id !== newItem.id));
-          } else {
-             const updatedTask = await fetchSingleTask(newItem.id);
-             if (updatedTask) setTasks(prev => prev.map(t => t.id === updatedTask.id ? updatedTask : t));
-          }
-        } else if (payload.eventType === 'DELETE') {
-           setTasks(prev => prev.filter(t => t.id !== payload.old.id));
-        }
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_checklists' }, async (payload) => {
-        const newRecord = payload.new as any;
-        const oldRecord = payload.old as any;
-        const taskId = newRecord.task_id || oldRecord.task_id;
-        
-        if (taskId) {
-           const updatedTask = await fetchSingleTask(taskId);
-           if (updatedTask && updatedTask.status === 'pending') {
-             setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
-           }
-        }
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_questions' }, async (payload) => {
-        const newRecord = payload.new as any;
-        const oldRecord = payload.old as any;
-        const taskId = newRecord.task_id || oldRecord.task_id;
-        
-        if (taskId) {
-           const updatedTask = await fetchSingleTask(taskId);
-           if (updatedTask && updatedTask.status === 'pending') {
-             setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
-           }
-        }
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [fetchData]);
+  }, [initialTaskId, activeTasks, isActiveLoading]);
 
   // --- FILTER LOGIC ---
-  const baseVisibleTasks = useMemo(() => tasks, [tasks]);
+  const baseVisibleTasks = useMemo(() => activeTasks, [activeTasks]);
 
   const overdueCount = useMemo(() => {
     const todayStr = getMinskISODate();
@@ -277,15 +218,14 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
 
   const teamWorkload = useMemo(() => {
     return staff.map(member => {
-      let memberTasks = tasks.filter((t: Task) => t.assigned_to === member.id);
+      let memberTasks = activeTasks.filter((t: Task) => t.assigned_to === member.id);
       return { ...member, tasks: memberTasks };
     }).filter(m => m.tasks.length > 0 || m.role === 'specialist' || m.role === 'manager');
-  }, [staff, tasks]);
+  }, [staff, activeTasks]);
 
   // --- ACTIONS ---
   const handleDeleteConfirm = async () => {
     if (!deleteConfirm.id) return;
-    setLoading(true);
     try {
       const { error } = await supabase.from('tasks').update({ 
         is_deleted: true, 
@@ -296,10 +236,10 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
         setToast({ message: 'Задача удалена', type: 'success' });
         setModalMode('none');
         setDeleteConfirm({ open: false, id: null });
-        await fetchData(true);
+        queryClient.invalidateQueries({ queryKey: ['tasks'] });
       }
-    } finally {
-      setLoading(false);
+    } catch (e) {
+        console.error(e);
     }
   };
 
@@ -310,9 +250,11 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
     }
   };
 
+  const loading = isActiveLoading || (activeTab === 'archive' && isArchiveLoading);
+
   const showBlockingLoader = loading && (
     (activeTab === 'archive' && archiveTasks.length === 0) || 
-    (activeTab !== 'archive' && activeTab !== 'team' && tasks.length === 0) ||
+    (activeTab !== 'archive' && activeTab !== 'team' && activeTasks.length === 0) ||
     (activeTab === 'team' && staff.length === 0)
   );
 
@@ -332,7 +274,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
         setArchiveDates={setArchiveDates}
         activeRange={activeRange}
         setActiveRange={setActiveRange}
-        onRefresh={() => activeTab === 'archive' ? fetchArchive(0) : fetchData()}
+        onRefresh={() => queryClient.invalidateQueries({ queryKey: ['tasks'] })}
       />
 
       {showBlockingLoader ? (
@@ -353,7 +295,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
             archiveTotal={archiveTotal}
             currentUserId={profile.id}
             isAdmin={isAdmin}
-            onPageChange={fetchArchive}
+            onPageChange={setArchivePage}
             onTaskClick={(t) => { setSelectedTask(t); setModalMode('details'); }}
             onNavigateToObject={onNavigateToObject}
             onRequestComplete={(t) => { setSelectedTask(t); setModalMode('completion'); }}
@@ -372,7 +314,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
             onSuccess={() => {
                 handleCloseModal(); 
                 setToast({message: 'Успешно сохранено', type: 'success'}); 
-                fetchData(true);
+                queryClient.invalidateQueries({ queryKey: ['tasks'] });
             }}
         />
       </Modal>
@@ -408,7 +350,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
             onSuccess={() => {
                 handleCloseModal();
                 setToast({message: 'Задача завершена', type: 'success'});
-                fetchData(true);
+                queryClient.invalidateQueries({ queryKey: ['tasks'] });
             }} 
         />
       </Modal>

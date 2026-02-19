@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../ui';
 import CPGenerator from './CPGenerator';
 import CPView from './CPView';
@@ -10,6 +11,7 @@ import InvoiceView from './InvoiceView';
 import InvoiceList from './InvoiceList';
 
 const Proposals: React.FC<{ profile: any }> = ({ profile }) => {
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'proposals' | 'invoices' | 'prices' | 'forms'>('proposals');
   const [mode, setMode] = useState<'list' | 'create' | 'edit' | 'view_cp' | 'view_invoice'>('list');
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -104,7 +106,11 @@ const Proposals: React.FC<{ profile: any }> = ({ profile }) => {
                   <CPGenerator 
                     profile={profile} 
                     proposalId={mode === 'edit' ? selectedId : null}
-                    onSuccess={() => { setSelectedId(null); setMode('list'); }} 
+                    onSuccess={() => { 
+                      setSelectedId(null); 
+                      setMode('list'); 
+                      queryClient.invalidateQueries({ queryKey: ['proposals'] });
+                    }} 
                     onCancel={() => { setSelectedId(null); setMode('list'); }} 
                   />
                 </div>

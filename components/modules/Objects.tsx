@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { Button, Input, Modal, Select, ConfirmModal, Toast } from '../ui';
 import ObjectWorkflow from './ObjectWorkflow';
@@ -22,10 +23,7 @@ interface ObjectsProps {
 }
 
 const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStageId, initialClientId, onClearInitialId }) => {
-  const [objects, setObjects] = useState<any[]>([]);
-  const [clients, setClients] = useState<any[]>([]);
-  const [staff, setStaff] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [selectedObjectId, setSelectedObjectId] = useState<string | null>(initialObjectId || null);
   
   // Modals
@@ -43,64 +41,45 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
   // Update: Managers allowed to create objects
   const canCreate = profile?.role === 'admin' || profile?.role === 'director' || profile?.role === 'manager';
 
-  const fetchSingleObject = async (id: string) => {
-    const { data } = await supabase
-      .from('objects')
-      .select('*, client:clients(name), responsible:profiles!responsible_id(full_name)')
-      .eq('id', id)
-      .single();
-    return data;
-  };
+  // --- QUERIES ---
 
-  const fetchData = useCallback(async (silent = false) => {
-    if (!profile?.id) return;
-    
-    const isInitial = objects.length === 0 && !silent;
-    if (isInitial) setLoading(true);
+  const { data: objects = [], isLoading: isObjectsLoading } = useQuery({
+    queryKey: ['objects'],
+    queryFn: async () => {
+      const { data } = await supabase.from('objects').select('*, client:clients(name), responsible:profiles!responsible_id(full_name)').is('is_deleted', false).order('created_at', { ascending: false });
+      return data || [];
+    },
+    enabled: !!profile?.id
+  });
 
-    try {
-      const { data: objectsData } = await supabase.from('objects').select('*, client:clients(name), responsible:profiles!responsible_id(full_name)').is('is_deleted', false).order('created_at', { ascending: false });
-      if (objectsData) setObjects(objectsData);
-      
-      const [{ data: cData }, { data: sData }] = await Promise.all([
-        supabase.from('clients').select('id, name, manager_id').is('deleted_at', null).order('name'),
-        supabase.from('profiles').select('id, full_name, role').is('deleted_at', null).order('full_name')
-      ]);
-      if (cData) setClients(cData);
-      if (sData) setStaff(sData);
-    } catch (err) {
-      console.error('Objects fetch error:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, [profile?.id, objects.length]);
+  const { data: clients = [] } = useQuery({
+    queryKey: ['clients_list'],
+    queryFn: async () => {
+      const { data } = await supabase.from('clients').select('id, name, manager_id').is('deleted_at', null).order('name');
+      return data || [];
+    },
+    staleTime: 1000 * 60 * 5
+  });
 
+  const { data: staff = [] } = useQuery({
+    queryKey: ['staff'],
+    queryFn: async () => {
+      const { data } = await supabase.from('profiles').select('id, full_name, role').is('deleted_at', null).order('full_name');
+      return data || [];
+    },
+    staleTime: 1000 * 60 * 5
+  });
+
+  // --- REALTIME ---
   useEffect(() => {
-    fetchData();
-    const channel = supabase.channel('objects_smart_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'objects' }, async (payload) => {
-        if (payload.eventType === 'INSERT') {
-          const newObj = await fetchSingleObject(payload.new.id);
-          if (newObj && !newObj.is_deleted) {
-            setObjects(prev => [newObj, ...prev]);
-          }
-        } else if (payload.eventType === 'UPDATE') {
-           if (payload.new.is_deleted) {
-             setObjects(prev => prev.filter(o => o.id !== payload.new.id));
-           } else {
-             const updatedObj = await fetchSingleObject(payload.new.id);
-             if (updatedObj) {
-               setObjects(prev => prev.map(o => o.id === updatedObj.id ? updatedObj : o));
-             }
-           }
-        } else if (payload.eventType === 'DELETE') {
-           setObjects(prev => prev.filter(o => o.id !== payload.old.id));
-        }
+    const channel = supabase.channel('objects_rq_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'objects' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['objects'] });
       })
       .subscribe();
       
     return () => { supabase.removeChannel(channel); };
-  }, [fetchData]);
+  }, [queryClient]);
 
   useEffect(() => { 
       if (initialObjectId) setSelectedObjectId(initialObjectId); 
@@ -116,7 +95,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
 
   const handleDeleteConfirm = async () => {
     if (!deleteConfirm.id) return;
-    setLoading(true);
+    // setLoading(true);
     const now = new Date().toISOString();
     try {
       await supabase.from('objects').update({ is_deleted: true, deleted_at: now, updated_by: profile.id }).eq('id', deleteConfirm.id);
@@ -124,12 +103,13 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
       await supabase.from('transactions').update({ deleted_at: now }).eq('object_id', deleteConfirm.id);
       setToast({ message: 'Объект и связанные данные перенесены в корзину', type: 'success' });
       setDeleteConfirm({ open: false, id: null }); 
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
     } catch (err) { setToast({ message: 'Ошибка при удалении', type: 'error' }); }
-    setLoading(false);
+    // setLoading(false);
   };
 
   const filteredObjects = useMemo(() => {
-    return objects.filter(o => {
+    return objects.filter((o: any) => {
       const matchesSearch = o.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                            (o.address && o.address.toLowerCase().includes(searchQuery.toLowerCase())) || 
                            (o.client && o.client.name.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -147,7 +127,9 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
   };
 
   if (selectedObjectId) {
-    const selectedObject = objects.find(o => o.id === selectedObjectId);
+    const selectedObject = objects.find((o: any) => o.id === selectedObjectId);
+    // If object not found in list (e.g. deleted or not loaded yet), we might need to fetch it individually or just return null
+    // But since we have full list, if it's not there, it's likely invalid or deleted.
     if (selectedObject) return <ObjectWorkflow object={selectedObject} profile={profile} initialStageId={initialStageId} onBack={() => { setSelectedObjectId(null); if (onClearInitialId) onClearInitialId(); }} />;
   }
 
@@ -159,7 +141,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
         <div>
           <h2 className="text-3xl font-medium text-[#1c1b1f] flex items-center gap-3">
             Объекты
-            {loading && objects.length > 0 && (
+            {isObjectsLoading && objects.length > 0 && (
               <div className="flex items-center gap-1 text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded-full animate-pulse">
                 <span className="material-icons-round text-sm">sync</span>
                 ОБНОВЛЕНИЕ...
@@ -192,14 +174,14 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
             onChange={(e: any) => setResponsibleFilter(e.target.value)}
             options={[
               { value: 'all', label: 'Все ответственные' },
-              ...staff.map(s => ({ value: s.id, label: s.full_name }))
+              ...staff.map((s: any) => ({ value: s.id, label: s.full_name }))
             ]}
             icon="support_agent"
           />
         </div>
       </div>
 
-      {loading && objects.length === 0 ? (
+      {isObjectsLoading && objects.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20">
           <div className="w-8 h-8 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Загрузка объектов...</p>
@@ -232,12 +214,12 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
             onSuccess={() => {
                 handleCloseModal();
                 setToast({ message: modalMode === 'edit' ? 'Объект обновлен' : 'Объект создан', type: 'success' });
-                fetchData(true);
+                queryClient.invalidateQueries({ queryKey: ['objects'] });
             }}
         />
       </Modal>
 
-      <ConfirmModal isOpen={deleteConfirm.open} onClose={() => setDeleteConfirm({ open: false, id: null })} onConfirm={handleDeleteConfirm} title="Удаление" message="Объект и все связанные задачи/финансы будут перемещены в корзину." confirmVariant="danger" loading={loading} />
+      <ConfirmModal isOpen={deleteConfirm.open} onClose={() => setDeleteConfirm({ open: false, id: null })} onConfirm={handleDeleteConfirm} title="Удаление" message="Объект и все связанные задачи/финансы будут перемещены в корзину." confirmVariant="danger" loading={false} />
     </div>
   );
 };

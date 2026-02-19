@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { Button, Toast } from '../../ui';
 import InventoryList from './InventoryList';
@@ -22,14 +23,9 @@ export interface CartItem {
 type Tab = 'stock' | 'nomenclature' | 'warranty' | 'orders';
 
 const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>('stock');
-  const [loading, setLoading] = useState(false);
   
-  const [products, setProducts] = useState<Product[]>([]);
-  const [items, setItems] = useState<InventoryItem[]>([]);
-  const [objects, setObjects] = useState<any[]>([]);
-  const [pendingOrdersCount, setPendingOrdersCount] = useState(0);
-
   // Cart State
   const [cart, setCart] = useState<CartItem[]>([]);
 
@@ -38,37 +34,58 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
-  const fetchData = async () => {
-    // We always fetch pending orders count to update the badge
-    const { count } = await supabase.from('supply_orders').select('*', { count: 'exact', head: true }).neq('status', 'received');
-    setPendingOrdersCount(count || 0);
+  // --- QUERIES ---
 
-    if (activeTab === 'orders') return; // SupplyOrders fetches its own data
-    
-    setLoading(true);
-    try {
-      const [prodRes, itemsRes, objRes] = await Promise.all([
-        supabase.from('products').select('*').eq('is_archived', false).order('name'),
-        supabase.from('inventory_items')
-          .select('*, product:products(*), object:objects(id, name), invoice:invoices(number)')
-          .is('deleted_at', null)
-          .order('created_at', { ascending: false }),
-        supabase.from('objects').select('id, name').is('is_deleted', false).order('name')
-      ]);
+  const { data: pendingOrdersCount = 0 } = useQuery({
+    queryKey: ['supply_orders_count'],
+    queryFn: async () => {
+      const { count } = await supabase.from('supply_orders').select('*', { count: 'exact', head: true }).neq('status', 'received');
+      return count || 0;
+    },
+    // Refetch often as orders change frequently
+    refetchInterval: 30000 
+  });
 
-      if (prodRes.data) setProducts(prodRes.data as unknown as Product[]);
-      if (itemsRes.data) {
-          setItems(itemsRes.data as unknown as InventoryItem[]);
-      }
-      if (objRes.data) setObjects(objRes.data);
-    } catch (e) {
-      console.error(e);
-      setToast({ message: 'Ошибка загрузки данных', type: 'error' });
-    }
-    setLoading(false);
-  };
+  const { data: products = [] } = useQuery({
+    queryKey: ['products'],
+    queryFn: async () => {
+      const { data } = await supabase.from('products').select('*').eq('is_archived', false).order('name');
+      return (data as unknown as Product[]) || [];
+    },
+    enabled: activeTab !== 'orders'
+  });
 
-  useEffect(() => { fetchData(); }, [activeTab]);
+  const { data: items = [], isLoading: isItemsLoading } = useQuery({
+    queryKey: ['inventory_items'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('inventory_items')
+        .select('*, product:products(*), object:objects(id, name), invoice:invoices(number)')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false });
+      return (data as unknown as InventoryItem[]) || [];
+    },
+    enabled: activeTab !== 'orders'
+  });
+
+  const { data: objects = [] } = useQuery({
+    queryKey: ['objects_list'],
+    queryFn: async () => {
+      const { data } = await supabase.from('objects').select('id, name').is('is_deleted', false).order('name');
+      return data || [];
+    },
+    enabled: activeTab !== 'orders'
+  });
+
+  // Realtime subscription for inventory items
+  useEffect(() => {
+    const channel = supabase.channel('inventory_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_items' }, () => {
+        queryClient.invalidateQueries({ queryKey: ['inventory_items'] });
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [queryClient]);
 
   const addToCart = (item: InventoryItem) => {
     if (cart.find(c => c.id === item.id)) {
@@ -99,7 +116,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
   };
 
   const handleDeleteItem = async (id: string) => {
-    setItems(prev => prev.filter(i => i.id !== id));
+    // Optimistic update handled by invalidation, but we can also set toast
     try {
         await supabase.from('inventory_items').update({ deleted_at: new Date().toISOString() }).eq('id', id);
         
@@ -110,10 +127,10 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
             comment: `Перемещено в корзину пользователем ${profile.full_name || 'System'}`
         }]);
         setToast({ message: 'Единица товара перемещена в корзину', type: 'success' });
+        queryClient.invalidateQueries({ queryKey: ['inventory_items'] });
     } catch (e) {
         console.error(e);
         setToast({ message: 'Ошибка при удалении', type: 'error' });
-        fetchData();
     }
   };
 
@@ -124,7 +141,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
   };
 
   const handleSuccess = (keepOpen = false) => {
-    fetchData(); 
+    queryClient.invalidateQueries({ queryKey: ['inventory_items'] });
     if (!keepOpen) {
         setIsModalOpen(false);
         if (modalMode === 'deploy_item' && cart.length > 0) setCart([]);
@@ -172,7 +189,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
         <InventoryList 
           activeTab={activeTab} 
           items={items} 
-          loading={loading} 
+          loading={isItemsLoading} 
           profile={profile}
           cart={cart}
           onAddToCart={addToCart}

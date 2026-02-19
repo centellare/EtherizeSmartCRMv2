@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { Badge, Input, Select, ConfirmModal, Toast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
@@ -10,26 +11,23 @@ interface InvoiceListProps {
 }
 
 const InvoiceList: React.FC<InvoiceListProps> = ({ onView, onViewCP }) => {
-  const [list, setList] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  // --- QUERIES ---
 
-  const fetchData = async () => {
-    setLoading(true);
-    // Fetch invoices with client and related CP info
-    const { data } = await supabase
-      .from('invoices')
-      .select('*, client:clients(name), commercial_proposal:commercial_proposals(id, number)')
-      .order('created_at', { ascending: false });
-    setList(data || []);
-    setLoading(false);
-  };
+  const { data: list = [], isLoading: loading } = useQuery({
+    queryKey: ['invoices'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('invoices')
+        .select('*, client:clients(name), commercial_proposal:commercial_proposals(id, number)')
+        .order('created_at', { ascending: false });
+      return data || [];
+    }
+  });
 
   const filteredList = useMemo(() => {
     return list.filter(item => {
@@ -44,7 +42,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({ onView, onViewCP }) => {
 
   const handleDelete = async () => {
       if (!deleteConfirm.id) return;
-      setLoading(true);
+      // setLoading(true);
       try {
           // 1. Delete associated transactions (Cascade manually)
           // Find transactions linked to this invoice
@@ -66,12 +64,12 @@ const InvoiceList: React.FC<InvoiceListProps> = ({ onView, onViewCP }) => {
           if (error) throw error;
           
           setToast({ message: 'Счет удален', type: 'success' });
-          fetchData();
+          queryClient.invalidateQueries({ queryKey: ['invoices'] });
       } catch (e: any) {
           console.error(e);
           setToast({ message: 'Ошибка: ' + e.message, type: 'error' });
       } finally {
-          setLoading(false);
+          // setLoading(false);
           setDeleteConfirm({ open: false, id: null });
       }
   };
@@ -120,7 +118,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({ onView, onViewCP }) => {
                         <td className="p-4">
                             {inv.commercial_proposal ? (
                                 <button 
-                                    onClick={(e) => { e.stopPropagation(); onViewCP(inv.commercial_proposal.id); }}
+                                    onClick={(e) => { e.stopPropagation(); if (inv.commercial_proposal) onViewCP(inv.commercial_proposal.id); }}
                                     className="text-xs font-bold text-blue-600 bg-blue-50 px-2 py-1 rounded hover:bg-blue-100 transition-colors"
                                 >
                                     КП №{inv.commercial_proposal.number}
@@ -153,7 +151,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({ onView, onViewCP }) => {
         title="Удаление счета"
         message="Вы уверены? Счет будет удален безвозвратно вместе со связанными транзакциями."
         confirmVariant="danger"
-        loading={loading}
+        loading={false}
       />
     </div>
   );

@@ -12,10 +12,11 @@ interface TaskDetailsProps {
   onDelete: () => void;
   onClose: () => void;
   onNavigateToObject: (objId: string, stageId?: string) => void;
+  hideObjectLink?: boolean;
 }
 
 export const TaskDetails: React.FC<TaskDetailsProps> = ({ 
-  task, profile, isAdmin, onEdit, onDelete, onClose, onNavigateToObject 
+  task, profile, isAdmin, onEdit, onDelete, onClose, onNavigateToObject, hideObjectLink 
 }) => {
   // Local state for optimistic checklist updates
   const [checklist, setChecklist] = useState(task?.checklist || []);
@@ -268,7 +269,7 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
                 </Button>
             )}
 
-            {task.object_id && (
+            {task.object_id && !hideObjectLink && (
                 <Button 
                 onClick={() => { 
                     onNavigateToObject(task.object_id, task.stage_id); 

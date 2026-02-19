@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { Badge, Button, Modal, Input, Select, ConfirmModal } from '../ui';
 
@@ -15,9 +16,7 @@ const ROLES = [
 type UserRole = 'admin' | 'director' | 'manager' | 'specialist' | 'storekeeper';
 
 const Team: React.FC<{ profile: any }> = ({ profile }) => {
-  const [members, setMembers] = useState<any[]>([]);
-  const [tasks, setTasks] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   
   // Search & Filter
   const [search, setSearch] = useState('');
@@ -38,32 +37,31 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'director';
 
-  const fetchData = async () => {
-    setLoading(true);
-    try {
-      // Получаем профили
-      const { data: profilesData } = await supabase
+  // --- QUERIES ---
+
+  const { data: members = [], isLoading: isMembersLoading } = useQuery({
+    queryKey: ['team'],
+    queryFn: async () => {
+      const { data } = await supabase
         .from('profiles')
         .select('*')
         .is('deleted_at', null)
         .order('full_name');
-      
-      // Получаем активные задачи для статистики
-      const { data: tasksData } = await supabase
+      return data || [];
+    }
+  });
+
+  const { data: tasks = [] } = useQuery({
+    queryKey: ['team_tasks_stats'],
+    queryFn: async () => {
+      const { data } = await supabase
         .from('tasks')
         .select('assigned_to, status, deadline')
         .is('is_deleted', false)
         .eq('status', 'pending');
-
-      setMembers(profilesData || []);
-      setTasks(tasksData || []);
-    } catch (err) {
-      console.error(err);
+      return data || [];
     }
-    setLoading(false);
-  };
-
-  useEffect(() => { fetchData(); }, []);
+  });
 
   const filteredMembers = useMemo(() => {
     return members.filter(m => {
@@ -95,7 +93,7 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
+    // setLoading(true);
     
     // Explicit casting to match Supabase types for Role
     const payload = {
@@ -111,7 +109,7 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
       
       if (!error) {
         setIsEditModalOpen(false);
-        fetchData();
+        queryClient.invalidateQueries({ queryKey: ['team'] });
       }
     } else {
       // Create
@@ -123,25 +121,24 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
       
       if (!error) {
         setIsEditModalOpen(false);
-        fetchData();
+        queryClient.invalidateQueries({ queryKey: ['team'] });
       }
     }
-    setLoading(false);
+    // setLoading(false);
   };
 
-  // ... (rest of the component remains similar but inside the closure)
   const handleDelete = async () => {
     if (!selectedMember) return;
-    setLoading(true);
+    // setLoading(true);
     const { error } = await supabase.from('profiles').update({ 
       deleted_at: new Date().toISOString() 
     }).eq('id', selectedMember.id);
     
     if (!error) {
       setIsDeleteModalOpen(false);
-      fetchData();
+      queryClient.invalidateQueries({ queryKey: ['team'] });
     }
-    setLoading(false);
+    // setLoading(false);
   };
 
   const getUserInitials = (name: string) => {
@@ -328,7 +325,7 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
           />
           
           <div className="pt-4">
-            <Button type="submit" className="w-full h-14" loading={loading} icon="save">
+            <Button type="submit" className="w-full h-14" loading={false} icon="save">
               {selectedMember ? 'Сохранить изменения' : 'Создать профиль'}
             </Button>
           </div>
@@ -347,7 +344,7 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
         title="Увольнение сотрудника" 
         message={`Вы уверены, что хотите уволить сотрудника ${selectedMember?.full_name}? Доступ в систему будет закрыт, но история задач сохранится.`} 
         confirmLabel="Да, уволить"
-        loading={loading}
+        loading={false}
       />
     </div>
   );

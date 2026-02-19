@@ -54,8 +54,8 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
 ];
 
 export const MIGRATION_SQL_V6 = `
--- SmartHome CRM: FULL LOGIC RESET v6.5 (Dashboard User Creation Fix)
--- Исправлена ошибка создания пользователей через админку Supabase.
+-- SmartHome CRM: FULL LOGIC RESET v6.6 (Task Checklists & Questions RLS Fix)
+-- Исправлены права доступа для чек-листов и вопросов в задачах.
 
 BEGIN;
 
@@ -340,6 +340,8 @@ CREATE TRIGGER on_auth_user_created
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.objects ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.task_checklists ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.task_questions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transactions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.transaction_payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.clients ENABLE ROW LEVEL SECURITY;
@@ -382,6 +384,75 @@ CREATE POLICY "Tasks view" ON public.tasks FOR SELECT USING (
 CREATE POLICY "Tasks edit" ON public.tasks FOR ALL USING (
   get_my_role() IN ('admin', 'director', 'manager') OR 
   assigned_to = auth.uid() OR created_by = auth.uid()
+);
+
+-- 4.3.1 TASK CHECKLISTS & QUESTIONS
+CREATE POLICY "Checklists view" ON public.task_checklists FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM public.tasks 
+    WHERE tasks.id = task_checklists.task_id 
+    AND (
+      get_my_role() IN ('admin', 'director', 'manager') OR 
+      tasks.assigned_to = auth.uid() OR 
+      tasks.created_by = auth.uid()
+    )
+  )
+);
+
+CREATE POLICY "Checklists manage" ON public.task_checklists FOR ALL USING (
+  EXISTS (
+    SELECT 1 FROM public.tasks 
+    WHERE tasks.id = task_checklists.task_id 
+    AND (
+      get_my_role() IN ('admin', 'director', 'manager') OR 
+      tasks.assigned_to = auth.uid() OR 
+      tasks.created_by = auth.uid()
+    )
+  )
+) WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.tasks 
+    WHERE tasks.id = task_checklists.task_id 
+    AND (
+      get_my_role() IN ('admin', 'director', 'manager') OR 
+      tasks.assigned_to = auth.uid() OR 
+      tasks.created_by = auth.uid()
+    )
+  )
+);
+
+CREATE POLICY "Questions view" ON public.task_questions FOR SELECT USING (
+  EXISTS (
+    SELECT 1 FROM public.tasks 
+    WHERE tasks.id = task_questions.task_id 
+    AND (
+      get_my_role() IN ('admin', 'director', 'manager') OR 
+      tasks.assigned_to = auth.uid() OR 
+      tasks.created_by = auth.uid()
+    )
+  )
+);
+
+CREATE POLICY "Questions manage" ON public.task_questions FOR ALL USING (
+  EXISTS (
+    SELECT 1 FROM public.tasks 
+    WHERE tasks.id = task_questions.task_id 
+    AND (
+      get_my_role() IN ('admin', 'director', 'manager') OR 
+      tasks.assigned_to = auth.uid() OR 
+      tasks.created_by = auth.uid()
+    )
+  )
+) WITH CHECK (
+  EXISTS (
+    SELECT 1 FROM public.tasks 
+    WHERE tasks.id = task_questions.task_id 
+    AND (
+      get_my_role() IN ('admin', 'director', 'manager') OR 
+      tasks.assigned_to = auth.uid() OR 
+      tasks.created_by = auth.uid()
+    )
+  )
 );
 
 -- 4.4 TRANSACTIONS (Finances)
@@ -495,7 +566,7 @@ COMMIT;
 
 export const MIGRATION_SQL_V5 = MIGRATION_SQL_V6;
 export const SUPABASE_SETUP_GUIDE = `
-### ВАЖНО: Полный сброс логики (v6.5)
+### ВАЖНО: Полный сброс логики (v6.6)
 1. Скопируйте SQL-скрипт обновления.
 2. Откройте SQL Editor в Supabase.
 3. Выполните скрипт.

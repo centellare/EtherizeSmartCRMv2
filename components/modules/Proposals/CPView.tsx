@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { Button, Toast, Select } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
@@ -12,6 +13,7 @@ interface CPViewProps {
 }
 
 const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }) => {
+  const queryClient = useQueryClient();
   const [data, setData] = useState<any>(null);
   const [items, setItems] = useState<any[]>([]);
   
@@ -248,6 +250,9 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
             }]);
         }
         setToast({ message: `Счет №${inv.number} создан.`, type: 'success' });
+        
+        queryClient.invalidateQueries({ queryKey: ['invoices'] });
+        
         if (onInvoiceCreated) onInvoiceCreated(inv.id);
     } catch (e: any) {
         setToast({ message: 'Ошибка: ' + e.message, type: 'error' });

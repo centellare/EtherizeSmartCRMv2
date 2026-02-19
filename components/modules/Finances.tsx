@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, measureQuery } from '../../lib/supabase';
 import { Button, Input, Modal, ConfirmModal, Toast, Select } from '../ui';
 import { Transaction } from '../../types';
@@ -14,10 +15,8 @@ import { TransactionDetails } from './Finances/modals/TransactionDetails';
 import { Analytics } from './Finances/Analytics';
 
 const Finances: React.FC<{ profile: any }> = ({ profile }) => {
+  const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'journal' | 'analytics'>('journal');
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [objects, setObjects] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   
   // Date Helpers for Defaults
@@ -59,11 +58,22 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const canApprove = isAdmin || isDirector || isManager || isStorekeeper;
   const canEditDelete = isAdmin || isDirector || isStorekeeper;
 
-  const fetchData = useCallback(async (silent = false) => {
-    if (!profile?.id) return;
-    if (!silent) setLoading(true);
-    
-    try {
+  // --- QUERIES ---
+
+  // 1. Objects
+  const { data: objects = [] } = useQuery({
+    queryKey: ['objects'],
+    queryFn: async () => {
+      const { data } = await supabase.from('objects').select('id, name, client:clients(name)').is('is_deleted', false).order('name');
+      return data || [];
+    },
+    staleTime: 1000 * 60 * 5
+  });
+
+  // 2. Transactions
+  const { data: transactions = [], isLoading } = useQuery({
+    queryKey: ['transactions', { userId: profile?.id, role: profile?.role }],
+    queryFn: async () => {
       let query = supabase
         .from('transactions')
         .select(`
@@ -85,34 +95,26 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       const result = await measureQuery(query.order('created_at', { ascending: false }));
       
       if (result.data) {
-        const mappedTrans = result.data.map((t: any) => ({
+        return result.data.map((t: any) => ({
           ...t,
           payments: (t.payments || []).sort((a: any, b: any) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()),
           created_by_name: t.creator?.full_name || 'Система',
           processor_name: t.processor?.full_name || null
-        }));
-        setTransactions(mappedTrans);
+        })) as Transaction[];
       }
+      return [];
+    },
+    enabled: !!profile?.id
+  });
 
-      const { data: objData } = await supabase.from('objects').select('id, name, client:clients(name)').is('is_deleted', false).order('name');
-      if (objData) setObjects(objData);
-    } catch (error) { 
-      console.error('Finance fetch error:', error); 
-    } finally {
-      setLoading(false);
-    }
-  }, [profile?.id, isSpecialist]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
-
-  // Realtime Logic
+  // --- REALTIME ---
   useEffect(() => {
-    const channel = supabase.channel('finances_main_sync')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => fetchData(true))
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'transaction_payments' }, () => fetchData(true))
+    const channel = supabase.channel('finances_rq_sync')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transactions' }, () => queryClient.invalidateQueries({ queryKey: ['transactions'] }))
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transaction_payments' }, () => queryClient.invalidateQueries({ queryKey: ['transactions'] }))
       .subscribe();
     return () => { supabase.removeChannel(channel); };
-  }, [fetchData]);
+  }, [queryClient]);
 
   // --- CALCULATIONS ---
 
@@ -272,19 +274,19 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   // Actions
   const handleDeleteTransaction = async () => {
     if (!confirmConfig.id) return;
-    setLoading(true);
+    // setLoading(true); // Handled by mutation or just wait
     const { error } = await supabase.from('transactions').update({ deleted_at: new Date().toISOString() }).eq('id', confirmConfig.id);
     if (!error) {
         setToast({ message: 'Запись удалена', type: 'success' });
         setConfirmConfig({ ...confirmConfig, open: false });
         setModalMode('none');
-        fetchData(true);
+        queryClient.invalidateQueries({ queryKey: ['transactions'] });
     }
-    setLoading(false);
+    // setLoading(false);
   };
 
   const handleDeletePayment = async (id: string) => {
-    setLoading(true);
+    // setLoading(true);
     const { data: payment } = await supabase.from('transaction_payments').select('amount, transaction_id').eq('id', id).single();
     const { error } = await supabase.from('transaction_payments').delete().eq('id', id);
     if (!error && payment) {
@@ -296,33 +298,33 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         }
         setToast({ message: 'Платеж удален', type: 'success' });
         setModalMode('none');
-        fetchData(true);
+        queryClient.invalidateQueries({ queryKey: ['transactions'] });
     }
-    setLoading(false);
+    // setLoading(false);
   };
 
   const handleApprove = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTransaction) return;
     const amount = parseFloat(approvalAmount);
-    setLoading(true);
+    // setLoading(true);
     await supabase.from('transactions').update({ status: 'approved', amount: amount, processed_by: profile.id, processed_at: new Date().toISOString() }).eq('id', selectedTransaction.id);
     setModalMode('none');
-    fetchData(true);
-    setLoading(false);
+    queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    // setLoading(false);
   };
 
   const handleSimpleAction = async (action: 'reject' | 'finalize') => {
       if (!confirmConfig.data) return;
-      setLoading(true);
+      // setLoading(true);
       if (action === 'reject') {
           await supabase.from('transactions').update({ status: 'rejected', processed_by: profile.id, processed_at: new Date().toISOString() }).eq('id', confirmConfig.data.id);
       } else {
           await supabase.from('transactions').update({ status: 'approved', amount: confirmConfig.data.fact_amount || 0 }).eq('id', confirmConfig.data.id);
       }
       setConfirmConfig({ ...confirmConfig, open: false });
-      fetchData(true);
-      setLoading(false);
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      // setLoading(false);
   };
 
   const handleResetDates = () => { setStartDate(''); setEndDate(''); };
@@ -457,7 +459,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
             initialData={selectedTransaction}
             objects={objects}
             profile={profile}
-            onSuccess={() => { setModalMode('none'); setToast({message: 'Успешно сохранено', type: 'success'}); fetchData(true); }}
+            onSuccess={() => { setModalMode('none'); setToast({message: 'Успешно сохранено', type: 'success'}); queryClient.invalidateQueries({ queryKey: ['transactions'] }); }}
         />
       </Modal>
 
@@ -466,7 +468,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
             transaction={selectedTransaction}
             payment={modalMode === 'edit_payment' ? selectedPayment : null}
             profile={profile}
-            onSuccess={() => { setModalMode('none'); setToast({message: 'Платеж сохранен', type: 'success'}); fetchData(true); }}
+            onSuccess={() => { setModalMode('none'); setToast({message: 'Платеж сохранен', type: 'success'}); queryClient.invalidateQueries({ queryKey: ['transactions'] }); }}
             onDelete={canEditDelete ? handleDeletePayment : undefined}
         />
       </Modal>
@@ -485,7 +487,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         <form onSubmit={handleApprove} className="space-y-4">
             <p className="text-sm text-slate-500">Запрошено: <b>{formatCurrency(selectedTransaction?.requested_amount || selectedTransaction?.amount)}</b></p>
             <Input label="Сумма к утверждению" type="number" step="0.01" required value={approvalAmount} onChange={(e:any) => setApprovalAmount(e.target.value)} icon="payments" />
-            <Button type="submit" className="w-full h-12" loading={loading} icon="check">Утвердить сумму</Button>
+            <Button type="submit" className="w-full h-12" loading={isLoading} icon="check">Утвердить сумму</Button>
         </form>
       </Modal>
 
@@ -497,7 +499,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
         title={confirmConfig.type === 'delete_transaction' ? "Удаление записи" : confirmConfig.type === 'reject_expense' ? "Отклонить заявку" : "Финализировать"} 
         message="Вы уверены? Это действие нельзя отменить."
         confirmVariant={confirmConfig.type === 'finalize_income' ? 'primary' : 'danger'} 
-        loading={loading} 
+        loading={isLoading} 
       />
     </div>
   );

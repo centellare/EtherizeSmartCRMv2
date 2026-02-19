@@ -112,21 +112,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
     try {
       let taskId = formData.id;
       
-      // Fix for ambiguity: If deadline is set, ensure it's not null.
-      // If the DB has duplicate functions (date vs timestamp), this might still fail if null is sent.
-      // The best fix is DB cleanup, but let's send strictly formatted data.
-      const payloadCommon = {
-          p_object_id: formData.object_id,
-          p_title: formData.title,
-          p_assigned_to: formData.assigned_to,
-          p_start_date: formData.start_date,
-          p_deadline: formData.deadline || null,
-          p_comment: formData.comment,
-          p_doc_link: formData.doc_link || null,
-          p_doc_name: formData.doc_name || null,
-          p_user_id: profile.id
-      };
-
       if (mode === 'edit') {
         const { error } = await supabase.from('tasks').update({
           object_id: formData.object_id,
@@ -143,30 +128,28 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
 
         if (error) throw error;
       } else {
-        const { id, checklist, ...insertData } = formData;
+        const { id, checklist, questions, ...insertData } = formData;
         
-        // Use RPC for safe creation (inherits stage automatically)
-        const { error } = await supabase.rpc('create_task_safe', payloadCommon);
+        // Find current stage from objects list
+        const selectedObject = objects.find(o => o.id === formData.object_id);
+        const currentStage = selectedObject?.current_stage || null;
 
-        if (error) {
-            // Handle ambiguous function error gracefully
-            if (error.message?.includes('Could not choose the best candidate function')) {
-                throw new Error('Ошибка базы данных (ambiguous function). Пожалуйста, выполните скрипт исправления в разделе "База данных".');
-            }
-            throw error;
-        }
+        const { data: newTask, error } = await supabase.from('tasks').insert([{
+            object_id: formData.object_id,
+            title: formData.title,
+            assigned_to: formData.assigned_to,
+            start_date: formData.start_date,
+            deadline: formData.deadline || null,
+            comment: formData.comment,
+            doc_link: formData.doc_link || null,
+            doc_name: formData.doc_name || null,
+            created_by: profile.id,
+            stage_id: currentStage,
+            status: 'pending'
+        }]).select('id').single();
 
-        // Retrieve the ID of the task we just created to add checklist items
-        const { data: lastTask } = await supabase
-          .from('tasks')
-          .select('id')
-          .eq('object_id', formData.object_id)
-          .eq('created_by', profile.id)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .single();
-        
-        if (lastTask) taskId = lastTask.id;
+        if (error) throw error;
+        if (newTask) taskId = newTask.id;
       }
 
       if (taskId) {

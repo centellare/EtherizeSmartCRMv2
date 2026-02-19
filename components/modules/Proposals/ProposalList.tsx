@@ -1,5 +1,6 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { Badge, Input, Select, ConfirmModal, Toast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
@@ -11,8 +12,7 @@ interface ProposalListProps {
 }
 
 const ProposalList: React.FC<ProposalListProps> = ({ onView, onEdit, onViewInvoice }) => {
-  const [list, setList] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   
   // Filters
@@ -22,23 +22,22 @@ const ProposalList: React.FC<ProposalListProps> = ({ onView, onEdit, onViewInvoi
   // Delete State
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
 
-  const fetchData = async () => {
-    setLoading(true);
-    const { data } = await supabase
-      .from('commercial_proposals')
-      .select('*, client:clients(name), creator:profiles(full_name), invoices(id, number, status)')
-      .order('created_at', { ascending: false });
-    setList(data || []);
-    setLoading(false);
-  };
+  // --- QUERIES ---
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const { data: list = [], isLoading } = useQuery({
+    queryKey: ['proposals'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('commercial_proposals')
+        .select('*, client:clients(name), creator:profiles(full_name), invoices(id, number, status)')
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false });
+      return data || [];
+    }
+  });
 
   const handleDelete = async () => {
     if (!deleteConfirm.id) return;
-    setLoading(true);
     try {
       // 1. Delete items first (manual cascade if not set in DB)
       await supabase.from('cp_items').delete().eq('cp_id', deleteConfirm.id);
@@ -48,24 +47,19 @@ const ProposalList: React.FC<ProposalListProps> = ({ onView, onEdit, onViewInvoi
       
       if (error) throw error;
       
-      // Optimistic update: remove from UI immediately
-      setList(prev => prev.filter(item => item.id !== deleteConfirm.id));
-      
       setToast({ message: 'КП удалено', type: 'success' });
       
-      // Background refresh to ensure sync
-      fetchData();
+      queryClient.invalidateQueries({ queryKey: ['proposals'] });
     } catch (e: any) {
       console.error(e);
       setToast({ message: 'Ошибка удаления: ' + e.message, type: 'error' });
     } finally {
-      setLoading(false);
       setDeleteConfirm({ open: false, id: null });
     }
   };
 
   const filteredList = useMemo(() => {
-    return list.filter(item => {
+    return list.filter((item: any) => {
       // Search Filter
       const searchLower = searchQuery.toLowerCase();
       const matchSearch = 
@@ -93,7 +87,7 @@ const ProposalList: React.FC<ProposalListProps> = ({ onView, onEdit, onViewInvoi
     });
   }, [list, searchQuery, dateFilter]);
 
-  if (loading && list.length === 0) return <div className="p-10 text-center"><div className="w-8 h-8 border-4 border-blue-600 rounded-full animate-spin mx-auto"></div></div>;
+  if (isLoading && list.length === 0) return <div className="p-10 text-center"><div className="w-8 h-8 border-4 border-blue-600 rounded-full animate-spin mx-auto"></div></div>;
 
   return (
     <div className="space-y-6">
@@ -131,7 +125,7 @@ const ProposalList: React.FC<ProposalListProps> = ({ onView, onEdit, onViewInvoi
         {filteredList.length === 0 && (
           <div className="col-span-full py-20 text-center text-slate-400">Список пуст</div>
         )}
-        {filteredList.map(cp => {
+        {filteredList.map((cp: any) => {
           const linkedInvoice = cp.invoices && cp.invoices.length > 0 ? cp.invoices[0] : null;
 
           return (
@@ -207,7 +201,7 @@ const ProposalList: React.FC<ProposalListProps> = ({ onView, onEdit, onViewInvoi
         title="Удаление КП"
         message="Вы уверены? КП и все его позиции будут удалены безвозвратно."
         confirmVariant="danger"
-        loading={loading}
+        loading={false}
       />
     </div>
   );

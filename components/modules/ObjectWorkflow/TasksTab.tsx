@@ -4,6 +4,7 @@ import { supabase } from '../../../lib/supabase';
 import { Button, Modal, Input, Select, ConfirmModal, Badge } from '../../ui';
 import { formatDate, getMinskISODate } from '../../../lib/dateUtils';
 import { TaskModal } from '../Tasks/modals/TaskModal';
+import { TaskDetails } from '../Tasks/modals/TaskDetails';
 
 const STAGES = [
   { id: 'negotiation', label: 'Переговоры' },
@@ -58,34 +59,54 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   
   const [closeForm, setCloseForm] = useState({ comment: '', link: '', doc_name: '' });
   const [checklists, setChecklists] = useState<Record<string, any[]>>({});
+  const [questions, setQuestions] = useState<Record<string, any[]>>({});
 
   useEffect(() => {
-    const fetchChecklists = async () => {
+    const fetchChecklistsAndQuestions = async () => {
       const taskIds = allTasks.filter(t => t.object_id === object.id && t.stage_id === viewedStageId).map(t => t.id);
       if (taskIds.length === 0) return;
 
-      const { data } = await supabase
+      const { data: chkData } = await supabase
         .from('task_checklists')
         .select('*')
         .in('task_id', taskIds)
         .order('created_at', { ascending: true });
 
-      if (data) {
-        const grouped = data.reduce((acc, item) => {
+      if (chkData) {
+        const groupedChk = chkData.reduce((acc: any, item: any) => {
           if (!acc[item.task_id]) acc[item.task_id] = [];
           acc[item.task_id].push(item);
           return acc;
         }, {} as Record<string, any[]>);
-        setChecklists(grouped);
+        setChecklists(groupedChk);
+      }
+
+      const { data: qData } = await supabase
+        .from('task_questions')
+        .select('*')
+        .in('task_id', taskIds)
+        .order('created_at', { ascending: true });
+
+      if (qData) {
+        const groupedQ = qData.reduce((acc: any, item: any) => {
+          if (!acc[item.task_id]) acc[item.task_id] = [];
+          acc[item.task_id].push(item);
+          return acc;
+        }, {} as Record<string, any[]>);
+        setQuestions(groupedQ);
       }
     };
-    fetchChecklists();
+    fetchChecklistsAndQuestions();
   }, [allTasks, viewedStageId, object.id]);
 
   const filteredTasks = useMemo(() => {
     return allTasks.filter(t => t.object_id === object.id && t.stage_id === viewedStageId)
-      .map(t => ({ ...t, checklist: checklists[t.id] || [] }));
-  }, [allTasks, viewedStageId, object.id, checklists]);
+      .map(t => ({ 
+        ...t, 
+        checklist: checklists[t.id] || [], 
+        questions: questions[t.id] || [] 
+      }));
+  }, [allTasks, viewedStageId, object.id, checklists, questions]);
 
   const isViewingHistory = viewedStageId !== object.current_stage;
   const isAdmin = profile.role === 'admin' || profile.role === 'director';
@@ -105,32 +126,17 @@ export const TasksTab: React.FC<TasksTabProps> = ({
     setIsTaskModalOpen(true);
   };
 
-  const handleOpenEditModal = (task: any, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleOpenEditModal = (task: any, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setSelectedTask(task);
     setIsEditMode(true);
     setIsTaskModalOpen(true);
   };
 
-  const toggleChecklistItem = async (itemId: string, currentStatus: boolean) => {
-    const isExecutor = selectedTask?.assigned_to === profile.id;
-    if (!isExecutor && !isAdmin) return;
 
-    const updatedChecklist = selectedTask.checklist.map((item: any) => 
-      item.id === itemId ? { ...item, is_completed: !currentStatus } : item
-    );
-    setSelectedTask({ ...selectedTask, checklist: updatedChecklist });
-    
-    await supabase.from('task_checklists').update({ is_completed: !currentStatus }).eq('id', itemId);
-    
-    setChecklists(prev => ({
-      ...prev,
-      [selectedTask.id]: updatedChecklist
-    }));
-  };
 
-  const handleDeleteInit = (task: any, e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleDeleteInit = (task: any, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     setDeleteConfirm({ open: true, id: task.id });
   };
 
@@ -319,59 +325,16 @@ export const TasksTab: React.FC<TasksTabProps> = ({
       {/* Task Details Modal */}
       <Modal isOpen={isTaskDetailsModalOpen} onClose={() => setIsTaskDetailsModalOpen(false)} title="Карточка задачи">
         {selectedTask && (
-          <div className="space-y-6">
-            <h4 className="text-xl font-bold">{selectedTask.title}</h4>
-            <div className="grid grid-cols-2 gap-4 py-4 border-y border-slate-100">
-               <div><p className="text-[10px] font-bold text-slate-400 uppercase">Исполнитель</p><p className="text-sm font-medium">{selectedTask.executor?.full_name}</p></div>
-               <div><p className="text-[10px] font-bold text-slate-400 uppercase">Срок</p><p className="text-sm font-medium">{selectedTask.deadline ? formatDate(selectedTask.deadline) : 'Бессрочно'}</p></div>
-            </div>
-
-            {selectedTask.checklist && selectedTask.checklist.length > 0 && (
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-100">
-                 <p className="text-[10px] font-bold text-slate-400 uppercase mb-3">Чек-лист выполнения</p>
-                 <div className="space-y-3">
-                    {selectedTask.checklist.map((item: any) => {
-                      const canToggle = selectedTask.assigned_to === profile.id || isAdmin;
-                      return (
-                        <div key={item.id} className="flex items-start gap-3">
-                          <button type="button" disabled={!canToggle} onClick={() => toggleChecklistItem(item.id, item.is_completed)} className={`w-5 h-5 rounded border flex items-center justify-center shrink-0 mt-0.5 ${item.is_completed ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-slate-300 bg-white'}`}>
-                            {item.is_completed && <span className="material-icons-round text-xs">check</span>}
-                          </button>
-                          <span className={`text-sm leading-tight ${item.is_completed ? 'text-slate-400 line-through' : 'text-slate-700 font-medium'}`}>{item.content}</span>
-                        </div>
-                      );
-                    })}
-                 </div>
-              </div>
-            )}
-
-            {(selectedTask.doc_link || selectedTask.completion_doc_link) && (
-              <div className="space-y-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Документация</p>
-                {selectedTask.doc_link && (
-                  <a href={selectedTask.doc_link} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-xl hover:border-blue-300 transition-colors">
-                    <span className="material-icons-round text-blue-500">description</span>
-                    <span className="text-xs font-medium text-slate-700 truncate">{selectedTask.doc_name || 'Исходный документ'}</span>
-                  </a>
-                )}
-                {selectedTask.completion_doc_link && (
-                  <a href={selectedTask.completion_doc_link} target="_blank" rel="noreferrer" className="flex items-center gap-3 p-3 bg-emerald-50 border border-emerald-100 rounded-xl hover:border-emerald-300 transition-colors">
-                    <span className="material-icons-round text-emerald-600">verified</span>
-                    <span className="text-xs font-medium text-emerald-900 truncate">{selectedTask.completion_doc_name || 'Отчет о выполнении'}</span>
-                  </a>
-                )}
-              </div>
-            )}
-
-            {selectedTask.comment && (
-              <div className="p-4 bg-slate-50 rounded-xl">
-                <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">Описание</p>
-                <p className="text-sm text-slate-600 italic whitespace-pre-wrap leading-relaxed">{selectedTask.comment}</p>
-              </div>
-            )}
-            
-            <Button variant="tonal" className="w-full" onClick={() => setIsTaskDetailsModalOpen(false)}>Закрыть</Button>
-          </div>
+          <TaskDetails
+            task={selectedTask}
+            profile={profile}
+            isAdmin={isAdmin}
+            onEdit={() => { setIsTaskDetailsModalOpen(false); handleOpenEditModal(selectedTask); }}
+            onDelete={() => { setIsTaskDetailsModalOpen(false); handleDeleteInit(selectedTask); }}
+            onClose={() => setIsTaskDetailsModalOpen(false)}
+            onNavigateToObject={() => {}}
+            hideObjectLink={true}
+          />
         )}
       </Modal>
 

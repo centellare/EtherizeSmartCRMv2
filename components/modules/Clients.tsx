@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { Button, Input, Modal, ConfirmModal, Select, Toast, Drawer } from '../ui';
 import { Module } from '../../App';
@@ -20,9 +21,7 @@ interface ClientsProps {
 const Clients: React.FC<ClientsProps> = ({ 
   profile, setActiveModule, onNavigateToObject, onAddObject, initialClientId 
 }) => {
-  const [clients, setClients] = useState<any[]>([]);
-  const [staff, setStaff] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
 
   // Modals state
@@ -36,30 +35,37 @@ const Clients: React.FC<ClientsProps> = ({
 
   const canManage = profile?.role === 'admin' || profile?.role === 'director' || profile?.role === 'manager';
 
-  const fetchData = async () => {
-    if (!profile?.id) return;
-    setLoading(true);
-    const { data: clientsData } = await supabase
-      .from('clients')
-      .select('*, manager:profiles!fk_clients_manager(full_name), objects!fk_objects_client(id, name, is_deleted)')
-      .is('deleted_at', null)
-      .order('name');
-    setClients(clientsData || []);
-    
-    const { data: staffData } = await supabase
-      .from('profiles')
-      .select('id, full_name, role')
-      .is('deleted_at', null);
-    setStaff(staffData || []);
-    setLoading(false);
-  };
+  // --- QUERIES ---
 
-  useEffect(() => { fetchData(); }, [profile?.id]);
+  const { data: clients = [], isLoading: isClientsLoading } = useQuery({
+    queryKey: ['clients'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('clients')
+        .select('*, manager:profiles!fk_clients_manager(full_name), objects!fk_objects_client(id, name, is_deleted)')
+        .is('deleted_at', null)
+        .order('name');
+      return data || [];
+    },
+    enabled: !!profile?.id
+  });
+
+  const { data: staff = [] } = useQuery({
+    queryKey: ['staff'],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('id, full_name, role')
+        .is('deleted_at', null);
+      return data || [];
+    },
+    staleTime: 1000 * 60 * 5
+  });
 
   // Deep Linking: Open details if ID provided
   useEffect(() => {
     if (initialClientId && clients.length > 0) {
-      const target = clients.find(c => c.id === initialClientId);
+      const target = clients.find((c: any) => c.id === initialClientId);
       if (target) {
         setSelectedClient(target);
         setModalMode('details');
@@ -68,7 +74,7 @@ const Clients: React.FC<ClientsProps> = ({
   }, [initialClientId, clients]);
 
   const filteredClients = useMemo(() => {
-    return clients.filter(c => {
+    return clients.filter((c: any) => {
       const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
                            c.contact_person?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                            c.phone?.includes(searchQuery) || 
@@ -80,18 +86,18 @@ const Clients: React.FC<ClientsProps> = ({
 
   const handleDelete = async () => {
     if (!deleteModal.id) return;
-    setLoading(true);
+    // setLoading(true); // handled by mutation usually, but here we just wait
     const { error } = await supabase.from('clients').update({ deleted_at: new Date().toISOString() }).eq('id', deleteModal.id);
     
     if (!error) {
         setToast({ message: 'Клиент удален', type: 'success' });
         setDeleteModal({ open: false, id: null });
         setModalMode('none');
-        fetchData();
+        queryClient.invalidateQueries({ queryKey: ['clients'] });
     } else {
         setToast({ message: 'Ошибка при удалении', type: 'error' });
     }
-    setLoading(false);
+    // setLoading(false);
   };
 
   const handleCloseModal = () => {
@@ -137,14 +143,20 @@ const Clients: React.FC<ClientsProps> = ({
         </div>
       </div>
 
-      <ClientList 
-        clients={filteredClients}
-        canManage={canManage}
-        onView={(client) => { setSelectedClient(client); setModalMode('details'); }}
-        onEdit={(client) => { setSelectedClient(client); setModalMode('edit'); }}
-        onDelete={(id) => setDeleteModal({ open: true, id })}
-        onNavigateToObject={onNavigateToObject}
-      />
+      {isClientsLoading ? (
+        <div className="flex justify-center py-20">
+           <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+        </div>
+      ) : (
+        <ClientList 
+          clients={filteredClients}
+          canManage={canManage}
+          onView={(client) => { setSelectedClient(client); setModalMode('details'); }}
+          onEdit={(client) => { setSelectedClient(client); setModalMode('edit'); }}
+          onDelete={(id) => setDeleteModal({ open: true, id })}
+          onNavigateToObject={onNavigateToObject}
+        />
+      )}
 
       {/* --- MODALS --- */}
 
@@ -161,7 +173,7 @@ const Clients: React.FC<ClientsProps> = ({
             onSuccess={() => {
                 handleCloseModal();
                 setToast({ message: 'Успешно сохранено', type: 'success' });
-                fetchData();
+                queryClient.invalidateQueries({ queryKey: ['clients'] });
             }}
         />
       </Modal>
@@ -182,7 +194,7 @@ const Clients: React.FC<ClientsProps> = ({
         onConfirm={handleDelete}
         title="Удаление клиента"
         message="Вы уверены? Клиент будет перенесен в корзину."
-        loading={loading}
+        loading={false}
       />
     </div>
   );

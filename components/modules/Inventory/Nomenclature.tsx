@@ -1,13 +1,13 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { Button, Input, Modal, Toast, ProductImage, Badge } from '../../ui';
 import { Product } from '../../../types';
 import { ProductForm } from './modals/ProductForm';
 
 const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
   
   // Edit/Add
@@ -18,6 +18,7 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [importText, setImportText] = useState('');
   const [importPreview, setImportPreview] = useState<any[]>([]);
+  const [isImporting, setIsImporting] = useState(false);
   
   // Filters
   const [search, setSearch] = useState('');
@@ -28,14 +29,15 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
   // Storekeeper needs to manage product catalog
   const canEdit = profile?.role === 'admin' || profile?.role === 'director' || profile?.role === 'manager' || profile?.role === 'storekeeper';
 
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    const { data } = await supabase.from('products').select('*').eq('is_archived', false).order('category').order('name');
-    setProducts((data || []) as unknown as Product[]);
-    setLoading(false);
-  }, []);
+  // --- QUERIES ---
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const { data: products = [], isLoading: loading } = useQuery({
+    queryKey: ['products'],
+    queryFn: async () => {
+      const { data } = await supabase.from('products').select('*').eq('is_archived', false).order('category').order('name');
+      return (data || []) as unknown as Product[];
+    }
+  });
 
   // Группировка продуктов
   const groupedProducts = useMemo(() => {
@@ -69,7 +71,7 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
 
   const handleSuccess = () => {
       setIsModalOpen(false);
-      fetchData();
+      queryClient.invalidateQueries({ queryKey: ['products'] });
       setToast({ message: editingProduct ? 'Товар обновлен' : 'Товар создан', type: 'success' });
   };
 
@@ -116,7 +118,7 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
 
   const handleExecuteImport = async () => {
       if (importPreview.length === 0) return;
-      setLoading(true);
+      setIsImporting(true);
       try {
           const chunkSize = 50;
           for (let i = 0; i < importPreview.length; i += chunkSize) {
@@ -128,11 +130,11 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
           setIsImportModalOpen(false);
           setImportText('');
           setImportPreview([]);
-          fetchData();
+          queryClient.invalidateQueries({ queryKey: ['products'] });
       } catch (e: any) {
           setToast({ message: 'Ошибка импорта: ' + e.message, type: 'error' });
       } finally {
-          setLoading(false);
+          setIsImporting(false);
       }
   };
 
@@ -281,7 +283,7 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
                         </table>
                         {importPreview.length > 100 && <p className="text-center text-xs text-slate-400 p-2">...и еще {importPreview.length - 100}</p>}
                     </div>
-                    <Button onClick={handleExecuteImport} loading={loading} className="w-full">Импортировать в базу</Button>
+                    <Button onClick={handleExecuteImport} loading={isImporting} className="w-full">Импортировать в базу</Button>
                   </>
               )}
           </div>
