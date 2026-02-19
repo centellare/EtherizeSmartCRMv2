@@ -118,9 +118,9 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
   // These are for the Widgets display ONLY. They show stats for the selected period.
   const periodMetrics = useMemo(() => {
       const filteredByDate = transactions.filter(t => {
-          const dateStr = getMinskISODate(t.created_at);
-          const matchesStart = !startDate || dateStr >= startDate;
-          const matchesEnd = !endDate || dateStr <= endDate;
+          const targetDate = t.planned_date || getMinskISODate(t.created_at);
+          const matchesStart = !startDate || targetDate >= startDate;
+          const matchesEnd = !endDate || targetDate <= endDate;
           return matchesStart && matchesEnd;
       });
 
@@ -131,7 +131,11 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
       // Income Plan (Pending/Partial, NOT overdue or just generally pending in this period creation)
       // Usually "Plan" in a period view means "Plans created in this period" OR "Plans due in this period". 
       // Let's use created_at for consistency with list filter.
-      const incomePlanList = filteredByDate.filter(t => t.type === 'income' && t.status !== 'approved');
+      const incomePlanList = filteredByDate.filter(t => 
+          t.type === 'income' && 
+          t.status !== 'approved' &&
+          (t.amount - (t.fact_amount || 0)) > 0.01
+      );
       const incomePlanSum = incomePlanList.reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
 
       // Expense Fact
@@ -139,8 +143,15 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
       const expenseFactSum = expenseFactList.reduce((s, t) => s + t.amount, 0);
 
       // Expense Plan
-      const expensePlanList = filteredByDate.filter(t => t.type === 'expense' && t.status !== 'approved');
-      const expensePlanSum = expensePlanList.reduce((s, t) => s + (t.requested_amount || t.amount), 0);
+      const expensePlanList = filteredByDate.filter(t => 
+          t.type === 'expense' && 
+          t.status !== 'approved'
+      );
+      const expensePlanSum = expensePlanList.reduce((s, t) => {
+          const targetAmount = t.requested_amount || t.amount;
+          const done = t.fact_amount || 0;
+          return s + Math.max(0, targetAmount - done);
+      }, 0);
 
       return {
           incomeFactSum, incomeFactCount: incomeFactList.length,
@@ -158,14 +169,14 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
           // A. Debtor Widget Logic (Override everything)
           if (activeWidget === 'debtors') {
               return t.type === 'income' && 
-                     t.status !== 'approved' && 
+                     (t.status === 'pending' || t.status === 'partial') && 
                      t.planned_date && 
                      t.planned_date < todayStr;
           }
 
           // B. Date Filter (Base) - Applies to all other widgets and default view
-          const dateStr = getMinskISODate(t.created_at);
-          const matchesDate = (!startDate || dateStr >= startDate) && (!endDate || dateStr <= endDate);
+          const targetDate = t.planned_date || getMinskISODate(t.created_at);
+          const matchesDate = (!startDate || targetDate >= startDate) && (!endDate || targetDate <= endDate);
           if (!matchesDate) return false;
 
           // C. Doc Filter
@@ -176,9 +187,19 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
 
           // D. Widget Specific Filters
           if (activeWidget === 'income_fact') return t.type === 'income'; // We show all income rows, fact amount is highlighted in table
-          if (activeWidget === 'income_plan') return t.type === 'income' && t.status !== 'approved';
+          
+          if (activeWidget === 'income_plan') {
+              const remaining = t.amount - (t.fact_amount || 0);
+              return t.type === 'income' && t.status !== 'approved' && remaining > 0.01;
+          }
+          
           if (activeWidget === 'expense_fact') return t.type === 'expense' && t.status === 'approved';
-          if (activeWidget === 'expense_plan') return t.type === 'expense' && t.status !== 'approved';
+          
+          if (activeWidget === 'expense_plan') {
+               const target = t.requested_amount || t.amount;
+               const done = t.fact_amount || 0;
+               return t.type === 'expense' && t.status !== 'approved' && (target - done) > 0.01;
+          }
 
           // Default (Balance/All)
           return true;
@@ -291,7 +312,7 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
                     onClick={() => setActiveWidget(activeWidget === 'income_fact' ? null : 'income_fact')}
                 />
                 <FinanceWidget 
-                    label="План прихода" 
+                    label="Ожидаемый приход" 
                     value={formatBYN(periodMetrics.incomePlanSum)} 
                     count={periodMetrics.incomePlanCount}
                     color="text-blue-400" 
@@ -309,7 +330,7 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
                     onClick={() => setActiveWidget(activeWidget === 'expense_fact' ? null : 'expense_fact')}
                 />
                 <FinanceWidget 
-                    label="План затрат" 
+                    label="План затрат (Остаток)" 
                     value={formatBYN(periodMetrics.expensePlanSum)} 
                     count={periodMetrics.expensePlanCount}
                     color="text-amber-500" 
