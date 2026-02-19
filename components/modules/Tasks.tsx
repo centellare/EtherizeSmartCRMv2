@@ -62,7 +62,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
   const fetchSingleTask = async (id: string) => {
     const { data } = await supabase
       .from('tasks')
-      .select('*, checklist:task_checklists(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)')
+      .select('*, checklist:task_checklists(*), questions:task_questions(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)')
       .eq('id', id)
       .single();
     
@@ -79,7 +79,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
     
     try {
       let tasksQuery = supabase.from('tasks')
-        .select('*, checklist:task_checklists(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)')
+        .select('*, checklist:task_checklists(*), questions:task_questions(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)')
         .is('is_deleted', false)
         .eq('status', 'pending');
 
@@ -140,7 +140,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
 
     try {
       let query = supabase.from('tasks')
-        .select('*, checklist:task_checklists(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)', { count: 'exact' })
+        .select('*, checklist:task_checklists(*), questions:task_questions(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)', { count: 'exact' })
         .is('is_deleted', false)
         .eq('status', 'completed')
         .gte('completed_at', `${archiveDates.start}T00:00:00`)
@@ -199,6 +199,18 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'task_checklists' }, async (payload) => {
+        const newRecord = payload.new as any;
+        const oldRecord = payload.old as any;
+        const taskId = newRecord.task_id || oldRecord.task_id;
+        
+        if (taskId) {
+           const updatedTask = await fetchSingleTask(taskId);
+           if (updatedTask && updatedTask.status === 'pending') {
+             setTasks(prev => prev.map(t => t.id === taskId ? updatedTask : t));
+           }
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'task_questions' }, async (payload) => {
         const newRecord = payload.new as any;
         const oldRecord = payload.old as any;
         const taskId = newRecord.task_id || oldRecord.task_id;

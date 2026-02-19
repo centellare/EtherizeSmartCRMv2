@@ -19,12 +19,16 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
 }) => {
   // Local state for optimistic checklist updates
   const [checklist, setChecklist] = useState(task?.checklist || []);
+  const [questions, setQuestions] = useState(task?.questions || []);
   const [reopenLoading, setReopenLoading] = useState(false);
 
   // Sync state if task prop changes (important for Drawer persistence)
   useEffect(() => {
     if (task?.checklist) {
       setChecklist(task.checklist);
+    }
+    if (task?.questions) {
+      setQuestions(task.questions);
     }
   }, [task]);
 
@@ -39,6 +43,33 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
     ));
     
     await supabase.from('task_checklists').update({ is_completed: !currentStatus }).eq('id', itemId);
+  };
+
+  const saveAnswer = async (questionId: string, answer: string) => {
+    if (!task) return;
+    
+    // Optimistic update
+    setQuestions((prev: any[]) => prev.map((q: any) => 
+        q.id === questionId ? { ...q, answer, answered_at: new Date().toISOString(), answered_by: profile.id } : q
+    ));
+
+    await supabase.from('task_questions').update({ 
+        answer, 
+        answered_at: new Date().toISOString(),
+        answered_by: profile.id 
+    }).eq('id', questionId);
+  };
+
+  const copyQuestionsToClipboard = () => {
+    if (!questions.length) return;
+    
+    const text = questions.map((q: any, i: number) => 
+        `${i + 1}. Вопрос: ${q.question}\n   Ответ: ${q.answer || '—'}`
+    ).join('\n\n');
+    
+    navigator.clipboard.writeText(text).then(() => {
+        alert('Вопросы и ответы скопированы в буфер обмена');
+    });
   };
 
   const handleReopen = async () => {
@@ -122,6 +153,50 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
                         <span className={`text-sm leading-tight transition-all ${item.is_completed ? 'text-slate-400 line-through' : 'text-slate-700 font-medium'}`}>
                         {item.content}
                         </span>
+                    </div>
+                    );
+                })}
+                </div>
+            </div>
+        )}
+
+        {questions.length > 0 && (
+            <div className="bg-amber-50 p-5 rounded-[24px] border border-amber-100">
+                <div className="flex justify-between items-center mb-4">
+                    <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">Вопросы (Q&A)</p>
+                    <button onClick={copyQuestionsToClipboard} className="text-amber-600 hover:text-amber-800 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider">
+                        <span className="material-icons-round text-sm">content_copy</span>
+                        Копировать
+                    </button>
+                </div>
+                <div className="space-y-4">
+                {questions.map((item: any, idx: number) => {
+                    const canAnswer = task.assigned_to === profile.id || isAdmin;
+                    return (
+                    <div key={item.id} className="flex flex-col gap-2">
+                        <div className="flex gap-2">
+                            <span className="text-amber-400 font-bold text-sm">{idx + 1}.</span>
+                            <span className="text-sm font-medium text-slate-800">{item.question}</span>
+                        </div>
+                        <div className="pl-6">
+                            {canAnswer ? (
+                                <textarea
+                                    className="w-full bg-white border border-amber-200 rounded-xl p-2 text-sm outline-none focus:border-amber-500 min-h-[60px]"
+                                    placeholder="Введите ответ..."
+                                    value={item.answer || ''}
+                                    onChange={(e) => {
+                                        // Update local state immediately for typing
+                                        const val = e.target.value;
+                                        setQuestions((prev: any[]) => prev.map((q: any) => q.id === item.id ? { ...q, answer: val } : q));
+                                    }}
+                                    onBlur={(e) => saveAnswer(item.id, e.target.value)}
+                                />
+                            ) : (
+                                <p className={`text-sm ${item.answer ? 'text-slate-700' : 'text-slate-400 italic'}`}>
+                                    {item.answer || 'Ответ не предоставлен'}
+                                </p>
+                            )}
+                        </div>
                     </div>
                     );
                 })}

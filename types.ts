@@ -29,6 +29,17 @@ export interface TaskChecklistItem {
   created_at: string;
 }
 
+export interface TaskQuestion {
+  id: string;
+  task_id: string;
+  question: string;
+  answer?: string | null;
+  answered_at?: string | null;
+  answered_by?: string | null;
+  created_at: string;
+  created_by?: string | null;
+}
+
 export interface Task {
   id: string;
   object_id: string | null;
@@ -50,6 +61,7 @@ export interface Task {
   last_edited_at?: string | null;
   last_edited_by?: string | null;
   checklist?: TaskChecklistItem[];
+  questions?: TaskQuestion[];
   objects?: { name: string };
   creator?: { full_name: string };
   executor?: { full_name: string };

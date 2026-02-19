@@ -25,7 +25,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
     comment: '', 
     doc_link: '', 
     doc_name: '',
-    checklist: [] as { id?: string; content: string; is_completed?: boolean }[]
+    checklist: [] as { id?: string; content: string; is_completed?: boolean }[],
+    questions: [] as { id?: string; question: string; answer?: string }[]
   });
 
   useEffect(() => {
@@ -40,7 +41,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
         comment: initialData.comment || '',
         doc_link: initialData.doc_link || '',
         doc_name: initialData.doc_name || '',
-        checklist: initialData.checklist?.map((c: any) => ({ id: c.id, content: c.content, is_completed: c.is_completed })) || []
+        checklist: initialData.checklist?.map((c: any) => ({ id: c.id, content: c.content, is_completed: c.is_completed })) || [],
+        questions: initialData.questions?.map((q: any) => ({ id: q.id, question: q.question, answer: q.answer })) || []
       });
     } else {
       // Reset for create mode
@@ -54,7 +56,8 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
         comment: '', 
         doc_link: '', 
         doc_name: '', 
-        checklist: []
+        checklist: [],
+        questions: []
       });
     }
   }, [mode, initialData, objects]);
@@ -76,6 +79,26 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
     setFormData(prev => ({
       ...prev,
       checklist: prev.checklist.filter((_, i) => i !== index)
+    }));
+  };
+
+  const addQuestionItem = () => {
+    setFormData(prev => ({
+      ...prev,
+      questions: [...prev.questions, { question: '' }]
+    }));
+  };
+
+  const updateQuestionItem = (index: number, content: string) => {
+    const newList = [...formData.questions];
+    newList[index].question = content;
+    setFormData({ ...formData, questions: newList });
+  };
+
+  const removeQuestionItem = (index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      questions: prev.questions.filter((_, i) => i !== index)
     }));
   };
 
@@ -154,6 +177,13 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
           } else {
             await supabase.from('task_checklists').delete().eq('task_id', taskId);
           }
+
+          const currentQIds = formData.questions.filter(q => q.id).map(q => q.id);
+          if (currentQIds.length > 0) {
+            await supabase.from('task_questions').delete().eq('task_id', taskId).not('id', 'in', `(${currentQIds.join(',')})`);
+          } else {
+            await supabase.from('task_questions').delete().eq('task_id', taskId);
+          }
         }
 
         const itemsToUpsert = formData.checklist
@@ -168,6 +198,21 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
         if (itemsToUpsert.length > 0) {
           const { error: chkError } = await supabase.from('task_checklists').upsert(itemsToUpsert);
           if (chkError) throw chkError;
+        }
+
+        const questionsToUpsert = formData.questions
+          .filter(q => q.question.trim() !== '')
+          .map(q => ({
+            ...(q.id ? { id: q.id } : {}),
+            task_id: taskId,
+            question: q.question,
+            answer: q.answer || null,
+            created_by: profile.id
+          }));
+
+        if (questionsToUpsert.length > 0) {
+          const { error: qError } = await supabase.from('task_questions').upsert(questionsToUpsert);
+          if (qError) throw qError;
         }
       }
       onSuccess();
@@ -213,6 +258,30 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
                     placeholder={`Пункт ${idx + 1}`} 
                 />
                 <button type="button" onClick={() => removeChecklistItem(idx)} className="text-slate-300 hover:text-red-500 transition-colors">
+                    <span className="material-icons-round text-sm">remove_circle_outline</span>
+                </button>
+                </div>
+            ))}
+            </div>
+        </div>
+
+        <div className="space-y-3 bg-amber-50 p-4 rounded-2xl border border-amber-100">
+            <div className="flex justify-between items-center mb-1">
+            <p className="text-[10px] font-bold text-amber-500 uppercase tracking-widest">Вопросы (Q&A)</p>
+            <button type="button" onClick={addQuestionItem} className="w-6 h-6 rounded-full bg-amber-500 text-white flex items-center justify-center hover:bg-amber-600 transition-colors">
+                <span className="material-icons-round text-sm">add</span>
+            </button>
+            </div>
+            <div className="space-y-2">
+            {formData.questions.map((item, idx) => (
+                <div key={idx} className="flex gap-2 items-center">
+                <input 
+                    className="flex-grow bg-white border border-amber-200 rounded-xl px-3 py-1.5 text-sm outline-none focus:border-amber-500" 
+                    value={item.question} 
+                    onChange={(e) => updateQuestionItem(idx, e.target.value)} 
+                    placeholder={`Вопрос ${idx + 1}`} 
+                />
+                <button type="button" onClick={() => removeQuestionItem(idx)} className="text-amber-300 hover:text-red-500 transition-colors">
                     <span className="material-icons-round text-sm">remove_circle_outline</span>
                 </button>
                 </div>
