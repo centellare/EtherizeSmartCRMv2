@@ -152,27 +152,56 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
           // Object Filter
           if (selectedObjectId && t.object_id !== selectedObjectId) return false;
 
-          const dateStr = getMinskISODate(t.created_at);
-          const matchesStart = !startDate || dateStr >= startDate;
-          const matchesEnd = !endDate || dateStr <= endDate;
+          // Use planned_date or fact_date (via payment_date logic usually, but here we rely on transaction fields)
+          // If transaction is approved/partial, we might look at payments, but for simplicity let's use:
+          // - fact_date (if exists) or created_at for FACT
+          // - planned_date for PLAN
+          
+          // However, the request says "use date field". 
+          // Let's assume 'date' means:
+          // - For FACT: The date it happened (often created_at or a specific fact_date if we had one, but let's use created_at or planned_date if that's what user meant. 
+          //   Actually, usually 'planned_date' is the main date field for scheduling.
+          //   Let's use 'planned_date' as the primary filter for PLAN, and 'created_at' (or payment dates) for FACT?
+          //   User said: "use the date field (planned/actual event date)".
+          //   In our type we have 'planned_date'. We don't have a specific 'fact_date' column in the interface shown, but we have 'created_at'.
+          //   Let's use 'planned_date' if available, otherwise 'created_at'.
+          
+          const targetDate = t.planned_date || getMinskISODate(t.created_at);
+          const matchesStart = !startDate || targetDate >= startDate;
+          const matchesEnd = !endDate || targetDate <= endDate;
           return matchesStart && matchesEnd;
       });
 
-      // Income Fact
+      // Income Fact: Sum of fact_amount
       const incomeFactList = filteredByDate.filter(t => t.type === 'income');
       const incomeFactSum = incomeFactList.reduce((s, t) => s + (t.fact_amount || 0), 0);
 
-      // Income Plan
-      const incomePlanList = filteredByDate.filter(t => t.type === 'income' && t.status !== 'approved');
+      // Income Plan: Sum of (amount - fact_amount) where status is NOT approved (fully paid)
+      // Only include if there is debt remaining
+      const incomePlanList = filteredByDate.filter(t => 
+          t.type === 'income' && 
+          t.status !== 'approved' && 
+          (t.amount - (t.fact_amount || 0)) > 0.01
+      );
       const incomePlanSum = incomePlanList.reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
 
-      // Expense Fact
+      // Expense Fact: Sum of fact_amount (or amount if approved and no partial logic for expenses yet)
+      // For expenses, usually 'approved' means fully paid/done. 
+      // If we track partial expenses, we should use fact_amount. 
+      // Assuming 'approved' expense = fully paid = amount.
       const expenseFactList = filteredByDate.filter(t => t.type === 'expense' && t.status === 'approved');
       const expenseFactSum = expenseFactList.reduce((s, t) => s + t.amount, 0);
 
-      // Expense Plan
-      const expensePlanList = filteredByDate.filter(t => t.type === 'expense' && t.status !== 'approved');
-      const expensePlanSum = expensePlanList.reduce((s, t) => s + (t.requested_amount || t.amount), 0);
+      // Expense Plan: Sum of (requested_amount or amount) - fact_amount
+      const expensePlanList = filteredByDate.filter(t => 
+          t.type === 'expense' && 
+          t.status !== 'approved'
+      );
+      const expensePlanSum = expensePlanList.reduce((s, t) => {
+          const targetAmount = t.requested_amount || t.amount;
+          const done = t.fact_amount || 0;
+          return s + Math.max(0, targetAmount - done);
+      }, 0);
 
       return {
           incomeFactSum, incomeFactCount: incomeFactList.length,
@@ -213,16 +242,26 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
                  t.planned_date < todayStr;
       }
 
-      // B. Date Filter (Base)
-      const tDateStr = getMinskISODate(t.created_at);
-      const matchesDate = (!startDate || tDateStr >= startDate) && (!endDate || tDateStr <= endDate);
+      // B. Date Filter (Base) - CHANGED to use planned_date or created_at
+      const targetDate = t.planned_date || getMinskISODate(t.created_at);
+      const matchesDate = (!startDate || targetDate >= startDate) && (!endDate || targetDate <= endDate);
       if (!matchesDate) return false;
 
-      // C. Specific Widget Filters
+      // C. Specific Widget Filters - CHANGED to exclude fully paid items from PLAN
       if (activeWidget === 'income_fact') return t.type === 'income';
-      if (activeWidget === 'income_plan') return t.type === 'income' && t.status !== 'approved';
+      
+      if (activeWidget === 'income_plan') {
+          const remaining = t.amount - (t.fact_amount || 0);
+          return t.type === 'income' && t.status !== 'approved' && remaining > 0.01;
+      }
+      
       if (activeWidget === 'expense_fact') return t.type === 'expense' && t.status === 'approved';
-      if (activeWidget === 'expense_plan') return t.type === 'expense' && t.status !== 'approved';
+      
+      if (activeWidget === 'expense_plan') {
+           const target = t.requested_amount || t.amount;
+           const done = t.fact_amount || 0;
+           return t.type === 'expense' && t.status !== 'approved' && (target - done) > 0.01;
+      }
 
       return true;
     });

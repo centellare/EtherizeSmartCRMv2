@@ -100,7 +100,7 @@ export const StatsOverview: React.FC<StatsOverviewProps> = ({
                 onClick={() => setActiveWidget(activeWidget === 'income_fact' ? null : 'income_fact')}
             />
             <FinanceWidget 
-                label="План прихода" 
+                label="Ожидаемый приход" 
                 value={formatCurrency(periodMetrics.incomePlanSum)} 
                 count={periodMetrics.incomePlanCount}
                 color="text-blue-400" 
@@ -118,7 +118,7 @@ export const StatsOverview: React.FC<StatsOverviewProps> = ({
                 onClick={() => setActiveWidget(activeWidget === 'expense_fact' ? null : 'expense_fact')}
             />
             <FinanceWidget 
-                label="План затрат" 
+                label="План затрат (Остаток)" 
                 value={formatCurrency(periodMetrics.expensePlanSum)} 
                 count={periodMetrics.expensePlanCount}
                 color="text-amber-500" 
