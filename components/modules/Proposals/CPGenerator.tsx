@@ -437,7 +437,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
   };
 
   return (
-    <div className="flex flex-col h-full min-h-[500px] gap-4">
+    <div className="flex flex-col h-[calc(100vh-280px)] min-h-[600px] gap-4">
       
       {/* Top Controls */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap gap-4 items-end shrink-0 shadow-sm">
@@ -476,7 +476,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
                 </div>
             )}
           </div>
-          <div className="flex-grow overflow-y-auto scrollbar-hide">
+          <div className="flex-grow overflow-y-auto">
             {groupedCatalog.length === 0 ? (
                 <div className="p-10 text-center text-slate-400">Товары не найдены</div>
             ) : (
@@ -499,7 +499,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
                             </div>
                             
                             {isExpanded && (
-                                <div className="divide-y divide-slate-50 max-h-64 overflow-y-auto scrollbar-hide">
+                                <div className="divide-y divide-slate-50 max-h-64 overflow-y-auto">
                                     {items.map(p => {
                                         const stockQty = stockMap[p.id] || 0;
                                         return (
@@ -551,7 +551,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
             <Button variant="tonal" className="h-8 text-xs" icon="create_new_folder" onClick={addBundleHeader}>Добавить комплект</Button>
           </div>
           
-          <div className="flex-grow overflow-y-auto p-2 space-y-1 scrollbar-hide bg-white pb-20">
+          <div className="flex-grow overflow-y-auto p-2 space-y-1 bg-white">
             {cart.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full opacity-30">
                   <span className="material-icons-round text-6xl mb-2">playlist_add</span>
@@ -660,7 +660,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
             )}
           </div>
 
-          <div className="absolute bottom-0 left-0 w-full bg-slate-50 border-t border-slate-200 p-4 shadow-lg">
+          <div className="bg-slate-50 border-t border-slate-200 p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] shrink-0 sticky bottom-0 z-20">
             <div className="flex justify-between items-center mb-1">
               <span className="text-xs text-slate-500 font-bold uppercase">Итого</span>
               <span className="font-bold text-xl text-blue-600">{totals.total.toFixed(2)} BYN</span>

@@ -98,7 +98,7 @@ const Proposals: React.FC<{ profile: any }> = ({ profile }) => {
             {mode === 'list' && <ProposalList onView={handleViewCP} onEdit={handleEdit} onViewInvoice={handleViewInvoice} />}
             
             {(mode === 'create' || mode === 'edit') && (
-              <div className="bg-slate-50 rounded-[32px] p-2 h-full flex flex-col">
+              <div className="bg-slate-50 rounded-[32px] p-2 h-full min-h-0 flex flex-col overflow-hidden">
                 <div className="flex justify-between items-center px-4 py-2 shrink-0">
                   <h3 className="font-bold text-slate-700">{mode === 'edit' ? 'Редактирование КП' : 'Конструктор КП'}</h3>
                 </div>
