@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Input, Select, Button } from '../../../ui';
 import { InventoryItem } from '../../../../types';
@@ -12,6 +13,7 @@ interface ReplaceFormProps {
 }
 
 export const ReplaceForm: React.FC<ReplaceFormProps> = ({ selectedItem, items, profile, onSuccess }) => {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({ 
       new_item_id: '', 
@@ -23,27 +25,17 @@ export const ReplaceForm: React.FC<ReplaceFormProps> = ({ selectedItem, items, p
 
   if (!selectedItem) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.new_item_id) return;
-    
-    const qtyOld = parseFloat(formData.old_quantity);
-    const qtyNew = parseFloat(formData.new_quantity);
-    
-    if (isNaN(qtyOld) || qtyOld <= 0 || qtyOld > selectedItem.quantity) { alert('Некорректное кол-во к списанию'); return; }
-    if (isNaN(qtyNew) || qtyNew <= 0) { alert('Некорректное кол-во к установке'); return; }
+  const mutation = useMutation({
+    mutationFn: async () => {
+        const qtyOld = parseFloat(formData.old_quantity);
+        const qtyNew = parseFloat(formData.new_quantity);
+        const now = new Date();
 
-    setLoading(true);
-    const now = new Date();
+        const stockItem = items.find(i => i.id === formData.new_item_id);
+        if (!stockItem || stockItem.quantity < qtyNew) {
+            throw new Error('Недостаточно выбранного товара на складе!');
+        }
 
-    const stockItem = items.find(i => i.id === formData.new_item_id);
-    if (!stockItem || stockItem.quantity < qtyNew) {
-        alert('Недостаточно выбранного товара на складе!');
-        setLoading(false);
-        return;
-    }
-
-    try {
         // 1. Process OLD item (Scrap/Dismantle)
         if (qtyOld < selectedItem.quantity) {
             // Partial scrap
@@ -118,13 +110,28 @@ export const ReplaceForm: React.FC<ReplaceFormProps> = ({ selectedItem, items, p
                 comment: `Замена для ${selectedItem.catalog?.name} (S/N: ${selectedItem.serial_number || 'N/A'})`
             }]);
         }
-
-        onSuccess();
-    } catch (e) {
-        console.error(e);
-        alert('Ошибка при замене');
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory_items'] });
+      onSuccess();
+    },
+    onError: (error: any) => {
+      console.error(error);
+      alert('Ошибка при замене: ' + error.message);
     }
-    setLoading(false);
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.new_item_id) return;
+    
+    const qtyOld = parseFloat(formData.old_quantity);
+    const qtyNew = parseFloat(formData.new_quantity);
+    
+    if (isNaN(qtyOld) || qtyOld <= 0 || qtyOld > selectedItem.quantity) { alert('Некорректное кол-во к списанию'); return; }
+    if (isNaN(qtyNew) || qtyNew <= 0) { alert('Некорректное кол-во к установке'); return; }
+
+    mutation.mutate();
   };
 
   return (
@@ -224,7 +231,7 @@ export const ReplaceForm: React.FC<ReplaceFormProps> = ({ selectedItem, items, p
         <Button 
             type="submit" 
             className="w-full h-12 mt-4" 
-            loading={loading} 
+            loading={mutation.isPending} 
             disabled={!formData.new_item_id}
         >
             Выполнить замену

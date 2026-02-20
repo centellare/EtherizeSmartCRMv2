@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Input, Select } from '../../../ui';
 
@@ -16,7 +17,7 @@ interface ObjectFormProps {
 export const ObjectForm: React.FC<ObjectFormProps> = ({ 
   mode, initialData, clients, staff, profile, initialClientId, onSuccess 
 }) => {
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState({ 
     name: '', 
     address: '', 
@@ -46,12 +47,8 @@ export const ObjectForm: React.FC<ObjectFormProps> = ({
     }
   }, [mode, initialData, initialClientId, profile]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    const payload = { ...formData, updated_by: profile.id, updated_at: new Date().toISOString() };
-    
-    try {
+  const mutation = useMutation({
+    mutationFn: async (payload: any) => {
       let error;
       if (mode === 'edit' && initialData) {
         const res = await supabase.from('objects').update(payload).eq('id', initialData.id);
@@ -65,15 +62,21 @@ export const ObjectForm: React.FC<ObjectFormProps> = ({
         }]);
         error = res.error;
       }
-      
-      if (!error) {
-        onSuccess();
-      } else {
-        alert('Ошибка при сохранении: ' + error.message);
-      }
-    } finally {
-      setLoading(false);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['objects'] });
+      onSuccess();
+    },
+    onError: (error: any) => {
+      alert('Ошибка при сохранении: ' + error.message);
     }
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const payload = { ...formData, updated_by: profile.id, updated_at: new Date().toISOString() };
+    mutation.mutate(payload);
   };
 
   return (
@@ -104,7 +107,7 @@ export const ObjectForm: React.FC<ObjectFormProps> = ({
         />
       </div>
 
-      <Button type="submit" className="w-full h-14" loading={loading} icon="save">
+      <Button type="submit" className="w-full h-14" loading={mutation.isPending} icon="save">
         {mode === 'edit' ? 'Сохранить изменения' : 'Создать объект'}
       </Button>
     </form>

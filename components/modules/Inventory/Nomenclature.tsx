@@ -2,13 +2,13 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
-import { Button, Input, Modal, Toast, ProductImage, Badge } from '../../ui';
+import { Button, Input, Modal, useToast, ProductImage, Badge } from '../../ui';
 import { Product } from '../../../types';
 import { ProductForm } from './modals/ProductForm';
 
 const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
   const queryClient = useQueryClient();
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
   
   // Edit/Add
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -72,7 +72,7 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
   const handleSuccess = () => {
       setIsModalOpen(false);
       queryClient.invalidateQueries({ queryKey: ['products'] });
-      setToast({ message: editingProduct ? 'Товар обновлен' : 'Товар создан', type: 'success' });
+      toast.success(editingProduct ? 'Товар обновлен' : 'Товар создан');
   };
 
   // --- CSV PARSER ---
@@ -126,13 +126,13 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
               const { error } = await supabase.from('products').insert(chunk);
               if (error) throw error;
           }
-          setToast({ message: `Успешно импортировано ${importPreview.length} товаров`, type: 'success' });
+          toast.success(`Успешно импортировано ${importPreview.length} товаров`);
           setIsImportModalOpen(false);
           setImportText('');
           setImportPreview([]);
           queryClient.invalidateQueries({ queryKey: ['products'] });
       } catch (e: any) {
-          setToast({ message: 'Ошибка импорта: ' + e.message, type: 'error' });
+          toast.error('Ошибка импорта: ' + e.message);
       } finally {
           setIsImporting(false);
       }
@@ -140,8 +140,7 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
 
   return (
     <div className="space-y-6 h-full flex flex-col min-h-0">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
+      
       <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-4 shrink-0">
          <div className="flex justify-between items-center border-b border-slate-100 pb-4">
             <div>

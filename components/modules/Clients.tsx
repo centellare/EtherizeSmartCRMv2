@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
-import { Button, Input, Modal, ConfirmModal, Select, Toast, Drawer } from '../ui';
+import { Button, Input, Modal, ConfirmModal, Select, Drawer, useToast } from '../ui';
 import { Module } from '../../App';
 
 // Sub-components
@@ -22,7 +22,7 @@ const Clients: React.FC<ClientsProps> = ({
   profile, setActiveModule, onNavigateToObject, onAddObject, initialClientId 
 }) => {
   const queryClient = useQueryClient();
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
 
   // Modals state
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'details' | 'none'>('none');
@@ -90,12 +90,12 @@ const Clients: React.FC<ClientsProps> = ({
     const { error } = await supabase.from('clients').update({ deleted_at: new Date().toISOString() }).eq('id', deleteModal.id);
     
     if (!error) {
-        setToast({ message: 'Клиент удален', type: 'success' });
+        toast.success('Клиент удален');
         setDeleteModal({ open: false, id: null });
         setModalMode('none');
         queryClient.invalidateQueries({ queryKey: ['clients'] });
     } else {
-        setToast({ message: 'Ошибка при удалении', type: 'error' });
+        toast.error('Ошибка при удалении');
     }
     // setLoading(false);
   };
@@ -111,8 +111,7 @@ const Clients: React.FC<ClientsProps> = ({
 
   return (
     <div className="animate-in fade-in duration-500">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
+      
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
           <h2 className="text-3xl font-medium text-[#1c1b1f]">Клиенты</h2>
@@ -172,7 +171,7 @@ const Clients: React.FC<ClientsProps> = ({
             profile={profile}
             onSuccess={() => {
                 handleCloseModal();
-                setToast({ message: 'Успешно сохранено', type: 'success' });
+                toast.success('Успешно сохранено');
                 queryClient.invalidateQueries({ queryKey: ['clients'] });
             }}
         />

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Button, Input, Select, Toast, Badge, ProductImage, Drawer } from '../../ui';
+import { Button, Input, Select, Badge, ProductImage, Drawer, useToast } from '../../ui';
 import { Product } from '../../../types';
 
 interface CPGeneratorProps {
@@ -33,7 +33,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
   const [objects, setObjects] = useState<any[]>([]);
   const [stockMap, setStockMap] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
 
   // Settings
   const [title, setTitle] = useState('');
@@ -125,7 +125,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
             }
           }
         }
-      } catch (e: any) { setToast({ message: 'Ошибка: ' + e.message, type: 'error' }); }
+      } catch (e: any) { toast.error('Ошибка: ' + e.message); }
       setLoading(false);
     };
     init();
@@ -301,7 +301,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
           }
           return newCart;
       });
-      setToast({ message: 'Цена комплекта пересчитана', type: 'success' });
+      toast.success('Цена комплекта пересчитана');
   };
 
   const removeFromCart = (unique_id: string) => {
@@ -324,8 +324,8 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
   };
 
   const handleSave = async () => {
-    if (!linkedClient) { setToast({ message: 'Выберите объект с клиентом', type: 'error' }); return; }
-    if (cart.length === 0) { setToast({ message: 'Корзина пуста', type: 'error' }); return; }
+    if (!linkedClient) { toast.error('Выберите объект с клиентом'); return; }
+    if (cart.length === 0) { toast.error('Корзина пуста'); return; }
     setLoading(true);
     try {
       let cpId = proposalId;
@@ -398,9 +398,9 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
             if (childError) throw childError;
         }
       }
-      setToast({ message: 'КП успешно сохранено', type: 'success' });
+      toast.success('КП успешно сохранено');
       onSuccess();
-    } catch (e: any) { setToast({ message: 'Ошибка: ' + e.message, type: 'error' }); }
+    } catch (e: any) { toast.error('Ошибка: ' + e.message); }
     setLoading(false);
   };
 
@@ -438,7 +438,6 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
 
   return (
     <div className="flex flex-col h-full min-h-[500px] gap-4">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       {/* Top Controls */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-wrap gap-4 items-end shrink-0 shadow-sm">

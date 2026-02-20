@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Button, Modal, Input, Select, ConfirmModal, Badge } from '../../ui';
+import { Button, Modal, Input, Select, ConfirmModal, Badge, useToast } from '../../ui';
 import { formatDate, getMinskISODate } from '../../../lib/dateUtils';
 import { TaskModal } from '../Tasks/modals/TaskModal';
 import { TaskDetails } from '../Tasks/modals/TaskDetails';
@@ -55,7 +55,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
   const [selectedTask, setSelectedTask] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
   
   const [closeForm, setCloseForm] = useState({ comment: '', link: '', doc_name: '' });
   const [checklists, setChecklists] = useState<Record<string, any[]>>({});
@@ -178,11 +178,12 @@ export const TasksTab: React.FC<TasksTabProps> = ({
         setIsTaskCloseModalOpen(false);
         setIsTaskDetailsModalOpen(false);
         setCloseForm({ comment: '', link: '', doc_name: '' });
+        toast.success('Задача завершена');
         await refreshData();
     } catch (e: any) {
         console.error(e);
         // Show the error in UI instead of silent failure
-        alert(e.message || 'Ошибка при завершении задачи');
+        toast.error(e.message || 'Ошибка при завершении задачи');
     } finally {
         setLoading(false);
     }
@@ -317,6 +318,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
             objects={[object]} // Pass current object as single item array to auto-select
             onSuccess={() => {
                 setIsTaskModalOpen(false);
+                toast.success('Задача сохранена');
                 refreshData();
             }}
         />

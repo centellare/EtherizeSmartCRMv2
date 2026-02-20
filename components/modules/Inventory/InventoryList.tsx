@@ -1,5 +1,6 @@
 
 import React, { useState, useMemo } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { InventoryItem } from '../../../types';
 import { CartItem } from './index';
 import { Badge, Input, Button, ConfirmModal, ProductImage } from '../../ui';
@@ -28,6 +29,7 @@ const InventoryList: React.FC<InventoryListProps> = ({
   cart, onAddToCart, onRemoveFromCart, onBulkDeploy,
   onDeploy, onReplace, onReturn, onEdit, onDeleteItem
 }) => {
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [selectedDrawerItem, setSelectedDrawerItem] = useState<InventoryItem | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
@@ -45,12 +47,21 @@ const InventoryList: React.FC<InventoryListProps> = ({
   // Update: Director has full rights too
   const canManage = isAdmin || isStorekeeper || isDirector;
 
-  const handleUnreserve = async (itemId: string) => {
+  const unreserveMutation = useMutation({
+    mutationFn: async (itemId: string) => {
+        await supabase.from('inventory_items').update({ status: 'in_stock', reserved_for_invoice_id: null }).eq('id', itemId);
+    },
+    onSuccess: () => {
+        queryClient.invalidateQueries({ queryKey: ['inventory_items'] });
+    },
+    onError: (error: any) => {
+        alert('Ошибка: ' + error.message);
+    }
+  });
+
+  const handleUnreserve = (itemId: string) => {
       if(!window.confirm('Снять резерв с товара? Он станет доступен для использования.')) return;
-      try {
-          await supabase.from('inventory_items').update({ status: 'in_stock', reserved_for_invoice_id: null }).eq('id', itemId);
-          window.location.reload(); 
-      } catch (e: any) { alert('Ошибка: ' + e.message); }
+      unreserveMutation.mutate(itemId);
   };
 
   const filteredItems = useMemo(() => {

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Button, Input, Modal, Toast, Badge, ProductImage } from '../../ui';
+import { Button, Input, Modal, useToast, Badge, ProductImage } from '../../ui';
 import { Product, PriceRule } from '../../../types';
 import { ProductForm } from '../Inventory/modals/ProductForm';
 
@@ -11,7 +11,7 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
   const [globalMarkup, setGlobalMarkup] = useState(15);
   const [loading, setLoading] = useState(false);
   const [calculating, setCalculating] = useState(false);
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
   
   // Edit
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -46,7 +46,7 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
 
     } catch (e: any) {
         console.error(e);
-        setToast({ message: 'Ошибка загрузки данных', type: 'error' });
+        toast.error('Ошибка загрузки данных');
     }
     setLoading(false);
   }, []);
@@ -205,13 +205,12 @@ const PriceManager: React.FC<{ profile: any }> = ({ profile }) => {
   const handleSuccess = () => {
       setIsModalOpen(false);
       fetchData();
-      setToast({ message: 'Прайс обновлен', type: 'success' });
+      toast.success('Прайс обновлен');
   };
 
   return (
     <div className="space-y-6 h-full flex flex-col min-h-0">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
+      
       <div className="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm space-y-4 shrink-0">
          <div className="flex flex-col md:flex-row justify-between items-start md:items-center border-b border-slate-100 pb-4 gap-4">
             <div>

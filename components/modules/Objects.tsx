@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
-import { Button, Input, Modal, Select, ConfirmModal, Toast } from '../ui';
+import { Button, Input, Modal, Select, ConfirmModal, useToast } from '../ui';
 import ObjectWorkflow from './ObjectWorkflow';
 
 // Sub-components
@@ -35,8 +35,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [responsibleFilter, setResponsibleFilter] = useState('all');
-
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
   
   // Update: Managers allowed to create objects
   const canCreate = profile?.role === 'admin' || profile?.role === 'director' || profile?.role === 'manager';
@@ -49,7 +48,9 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
       const { data } = await supabase.from('objects').select('*, client:clients(name), responsible:profiles!responsible_id(full_name)').is('is_deleted', false).order('created_at', { ascending: false });
       return data || [];
     },
-    enabled: !!profile?.id
+    enabled: !!profile?.id,
+    refetchInterval: 5000, // Poll every 5 seconds
+    staleTime: 1000
   });
 
   const { data: clients = [] } = useQuery({
@@ -101,10 +102,10 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
       await supabase.from('objects').update({ is_deleted: true, deleted_at: now, updated_by: profile.id }).eq('id', deleteConfirm.id);
       await supabase.from('tasks').update({ is_deleted: true, deleted_at: now }).eq('object_id', deleteConfirm.id);
       await supabase.from('transactions').update({ deleted_at: now }).eq('object_id', deleteConfirm.id);
-      setToast({ message: 'Объект и связанные данные перенесены в корзину', type: 'success' });
+      toast.success('Объект и связанные данные перенесены в корзину');
       setDeleteConfirm({ open: false, id: null }); 
       queryClient.invalidateQueries({ queryKey: ['objects'] });
-    } catch (err) { setToast({ message: 'Ошибка при удалении', type: 'error' }); }
+    } catch (err) { toast.error('Ошибка при удалении'); }
     // setLoading(false);
   };
 
@@ -135,7 +136,6 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
 
   return (
     <div className="animate-in fade-in duration-500">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
@@ -213,7 +213,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
             initialClientId={initialClientId}
             onSuccess={() => {
                 handleCloseModal();
-                setToast({ message: modalMode === 'edit' ? 'Объект обновлен' : 'Объект создан', type: 'success' });
+                toast.success(modalMode === 'edit' ? 'Объект обновлен' : 'Объект создан');
                 queryClient.invalidateQueries({ queryKey: ['objects'] });
             }}
         />

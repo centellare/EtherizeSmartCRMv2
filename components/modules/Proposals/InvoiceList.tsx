@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
-import { Badge, Input, Select, ConfirmModal, Toast } from '../../ui';
+import { Badge, Input, Select, ConfirmModal, useToast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
 
 interface InvoiceListProps {
@@ -14,7 +14,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({ onView, onViewCP }) => {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
 
   // --- QUERIES ---
 
@@ -63,11 +63,11 @@ const InvoiceList: React.FC<InvoiceListProps> = ({ onView, onViewCP }) => {
           const { error } = await supabase.from('invoices').delete().eq('id', deleteConfirm.id);
           if (error) throw error;
           
-          setToast({ message: 'Счет удален', type: 'success' });
+          toast.success('Счет удален');
           queryClient.invalidateQueries({ queryKey: ['invoices'] });
       } catch (e: any) {
           console.error(e);
-          setToast({ message: 'Ошибка: ' + e.message, type: 'error' });
+          toast.error('Ошибка: ' + e.message);
       } finally {
           // setLoading(false);
           setDeleteConfirm({ open: false, id: null });
@@ -78,8 +78,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({ onView, onViewCP }) => {
 
   return (
     <div className="space-y-6 h-full flex flex-col">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
+      
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm shrink-0">
         <Input 
             placeholder="Поиск по номеру счета, клиенту или номеру КП..." 

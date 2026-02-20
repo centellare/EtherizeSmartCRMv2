@@ -1,7 +1,7 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Button, Modal, Input, Badge, Select, ConfirmModal, Toast } from '../../ui';
+import { Button, Modal, Input, Badge, Select, ConfirmModal, useToast } from '../../ui';
 import { Transaction } from '../../../types';
 import { formatDate, getMinskISODate } from '../../../lib/dateUtils';
 import { TransactionForm } from '../Finances/modals/TransactionForm';
@@ -69,7 +69,7 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
   const [isFinalizeConfirmOpen, setIsFinalizeConfirmOpen] = useState(false);
   const [isRejectConfirmOpen, setIsRejectConfirmOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null; type: 'transaction' | 'payment' }>({ open: false, id: null, type: 'transaction' });
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
   
   // Filters
   const [startDate, setStartDate] = useState('');
@@ -240,7 +240,6 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-       {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
        
        {/* Header & Main Actions */}
        <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
@@ -376,7 +375,7 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
             initialData={selectedTrans}
             objects={[object]} // Pass current object to form
             profile={profile}
-            onSuccess={() => { setIsModalOpen(false); refreshData(); setToast({message: 'Успешно сохранено', type: 'success'}); }}
+            onSuccess={() => { setIsModalOpen(false); refreshData(); toast.success('Успешно сохранено'); }}
           />
        </Modal>
 
@@ -385,7 +384,7 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
             transaction={selectedTrans}
             payment={isEditMode ? selectedPayment : null}
             profile={profile}
-            onSuccess={() => { setIsPaymentModalOpen(false); setIsPaymentDetailsModalOpen(false); setIsEditMode(false); refreshData(); setToast({message: 'Платеж сохранен', type: 'success'}); }}
+            onSuccess={() => { setIsPaymentModalOpen(false); setIsPaymentDetailsModalOpen(false); setIsEditMode(false); refreshData(); toast.success('Платеж сохранен'); }}
           />
        </Modal>
 

@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Select, Input } from '../../../ui';
 import { formatDate } from '../../../../lib/dateUtils';
@@ -11,6 +12,7 @@ interface DeployInvoiceFormProps {
 }
 
 export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, onSuccess, onClose }) => {
+  const queryClient = useQueryClient();
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [invoices, setInvoices] = useState<any[]>([]);
@@ -100,109 +102,116 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
     }
   };
 
-  const handleShip = async () => {
-      if (!targetObject) { alert('Объект не найден'); return; }
-      setLoading(true);
-      try {
-          for (const item of invoiceItems) {
-              const qtyToShip = shippingMap[item.product_id] || 0;
-              if (qtyToShip <= 0) continue;
+  const mutation = useMutation({
+    mutationFn: async () => {
+        if (!targetObject) throw new Error('Объект не найден');
+        
+        for (const item of invoiceItems) {
+            const qtyToShip = shippingMap[item.product_id] || 0;
+            if (qtyToShip <= 0) continue;
 
-              let remainingToShip = qtyToShip;
+            let remainingToShip = qtyToShip;
 
-              // 1. Reserved
-              const { data: reservedItems } = await supabase.from('inventory_items')
-                  .select('id, quantity, serial_number')
+            // 1. Reserved
+            const { data: reservedItems } = await supabase.from('inventory_items')
+                .select('id, quantity, serial_number')
+                .eq('product_id', item.product_id)
+                .eq('status', 'reserved')
+                .eq('reserved_for_invoice_id', selectedInvoiceId)
+                .is('deleted_at', null);
+            
+            if (reservedItems) {
+                for (const rItem of reservedItems) {
+                    if (remainingToShip <= 0) break;
+                    const rQty = rItem.quantity || 0;
+                    const take = Math.min(rQty, remainingToShip);
+                    
+                    if (take === rQty) {
+                        await supabase.from('inventory_items').update({
+                            status: 'deployed',
+                            current_object_id: targetObject.id,
+                            reserved_for_invoice_id: null,
+                            assigned_to_id: profile.id
+                        }).eq('id', rItem.id);
+                    } else {
+                        await supabase.from('inventory_items').update({ quantity: rQty - take }).eq('id', rItem.id);
+                        await supabase.from('inventory_items').insert({
+                            product_id: item.product_id,
+                            quantity: take,
+                            status: 'deployed',
+                            current_object_id: targetObject.id,
+                            assigned_to_id: profile.id
+                        });
+                    }
+                    await supabase.from('inventory_history').insert({
+                        item_id: rItem.id, 
+                        action_type: 'deploy',
+                        to_object_id: targetObject.id,
+                        created_by: profile.id,
+                        comment: `Отгрузка по счету (Резерв).`
+                    });
+                    remainingToShip -= take;
+                }
+            }
+
+            // 2. Free
+            if (remainingToShip > 0) {
+                const { data: freeItems } = await supabase.from('inventory_items')
+                  .select('id, quantity')
                   .eq('product_id', item.product_id)
-                  .eq('status', 'reserved')
-                  .eq('reserved_for_invoice_id', selectedInvoiceId)
+                  .eq('status', 'in_stock')
                   .is('deleted_at', null);
-              
-              if (reservedItems) {
-                  for (const rItem of reservedItems) {
-                      if (remainingToShip <= 0) break;
-                      const rQty = rItem.quantity || 0;
-                      const take = Math.min(rQty, remainingToShip);
-                      
-                      if (take === rQty) {
-                          await supabase.from('inventory_items').update({
-                              status: 'deployed',
-                              current_object_id: targetObject.id,
-                              reserved_for_invoice_id: null,
-                              assigned_to_id: profile.id
-                          }).eq('id', rItem.id);
-                      } else {
-                          await supabase.from('inventory_items').update({ quantity: rQty - take }).eq('id', rItem.id);
-                          await supabase.from('inventory_items').insert({
-                              product_id: item.product_id,
-                              quantity: take,
-                              status: 'deployed',
-                              current_object_id: targetObject.id,
-                              assigned_to_id: profile.id
-                          });
-                      }
-                      await supabase.from('inventory_history').insert({
-                          item_id: rItem.id, 
+                
+                if (freeItems) {
+                    for (const fItem of freeItems) {
+                        if (remainingToShip <= 0) break;
+                        const fQty = fItem.quantity || 0;
+                        const take = Math.min(fQty, remainingToShip);
+                        
+                        if (take === fQty) {
+                            await supabase.from('inventory_items').update({
+                                status: 'deployed',
+                                current_object_id: targetObject.id,
+                                assigned_to_id: profile.id
+                            }).eq('id', fItem.id);
+                        } else {
+                            await supabase.from('inventory_items').update({ quantity: fQty - take }).eq('id', fItem.id);
+                            await supabase.from('inventory_items').insert({
+                                product_id: item.product_id,
+                                quantity: take,
+                                status: 'deployed',
+                                current_object_id: targetObject.id,
+                                assigned_to_id: profile.id
+                            });
+                        }
+                        await supabase.from('inventory_history').insert({
+                          item_id: fItem.id,
                           action_type: 'deploy',
                           to_object_id: targetObject.id,
                           created_by: profile.id,
-                          comment: `Отгрузка по счету (Резерв).`
+                          comment: `Отгрузка по счету (Свободный).`
                       });
-                      remainingToShip -= take;
-                  }
-              }
+                        remainingToShip -= take;
+                    }
+                }
+            }
+        }
+        // @ts-ignore
+        await supabase.from('invoices').update({ shipping_status: 'partial' }).eq('id', selectedInvoiceId);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory_items'] });
+      onSuccess();
+    },
+    onError: (error: any) => {
+      console.error(error);
+      alert('Ошибка: ' + error.message);
+    }
+  });
 
-              // 2. Free
-              if (remainingToShip > 0) {
-                  const { data: freeItems } = await supabase.from('inventory_items')
-                    .select('id, quantity')
-                    .eq('product_id', item.product_id)
-                    .eq('status', 'in_stock')
-                    .is('deleted_at', null);
-                  
-                  if (freeItems) {
-                      for (const fItem of freeItems) {
-                          if (remainingToShip <= 0) break;
-                          const fQty = fItem.quantity || 0;
-                          const take = Math.min(fQty, remainingToShip);
-                          
-                          if (take === fQty) {
-                              await supabase.from('inventory_items').update({
-                                  status: 'deployed',
-                                  current_object_id: targetObject.id,
-                                  assigned_to_id: profile.id
-                              }).eq('id', fItem.id);
-                          } else {
-                              await supabase.from('inventory_items').update({ quantity: fQty - take }).eq('id', fItem.id);
-                              await supabase.from('inventory_items').insert({
-                                  product_id: item.product_id,
-                                  quantity: take,
-                                  status: 'deployed',
-                                  current_object_id: targetObject.id,
-                                  assigned_to_id: profile.id
-                              });
-                          }
-                          await supabase.from('inventory_history').insert({
-                            item_id: fItem.id,
-                            action_type: 'deploy',
-                            to_object_id: targetObject.id,
-                            created_by: profile.id,
-                            comment: `Отгрузка по счету (Свободный).`
-                        });
-                          remainingToShip -= take;
-                      }
-                  }
-              }
-          }
-          // @ts-ignore
-          await supabase.from('invoices').update({ shipping_status: 'partial' }).eq('id', selectedInvoiceId);
-          onSuccess();
-      } catch (e: any) {
-          console.error(e);
-          alert('Ошибка: ' + e.message);
-      } finally {
-          setLoading(false);
-      }
+  const handleShip = () => {
+      if (!targetObject) { alert('Объект не найден'); return; }
+      mutation.mutate();
   };
 
   if (step === 1) {
@@ -270,7 +279,7 @@ export const DeployInvoiceForm: React.FC<DeployInvoiceFormProps> = ({ profile, o
               </table>
           </div>
 
-          <Button onClick={handleShip} loading={loading} disabled={!targetObject} className="w-full h-12" icon="local_shipping">Выполнить отгрузку</Button>
+          <Button onClick={handleShip} loading={mutation.isPending} disabled={!targetObject} className="w-full h-12" icon="local_shipping">Выполнить отгрузку</Button>
       </div>
   );
 };

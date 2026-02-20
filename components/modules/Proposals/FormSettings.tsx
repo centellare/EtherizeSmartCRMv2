@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Button, Input, Toast } from '../../ui';
+import { Button, Input, useToast } from '../../ui';
 import { DocumentTemplate } from '../../../types';
 
 const FormSettings: React.FC<{ profile: any }> = ({ profile }) => {
   const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
   
   // Company Settings
   const [companySettings, setCompanySettings] = useState({
@@ -73,9 +73,9 @@ const FormSettings: React.FC<{ profile: any }> = ({ profile }) => {
           const { data } = supabase.storage.from('Etherize').getPublicUrl(filePath);
           
           setCompanySettings(prev => ({ ...prev, logo_url: data.publicUrl }));
-          setToast({ message: 'Логотип загружен', type: 'success' });
+          toast.success('Логотип загружен');
       } catch (error: any) {
-          setToast({ message: 'Ошибка загрузки: ' + error.message, type: 'error' });
+          toast.error('Ошибка загрузки: ' + error.message);
       } finally {
           setLoading(false);
       }
@@ -102,10 +102,10 @@ const FormSettings: React.FC<{ profile: any }> = ({ profile }) => {
                   default_vat_percent: 20
               }]);
           }
-          setToast({ message: 'Реквизиты сохранены', type: 'success' });
+          toast.success('Реквизиты сохранены');
           fetchData();
       } catch (e: any) {
-          setToast({ message: 'Ошибка: ' + e.message, type: 'error' });
+          toast.error('Ошибка: ' + e.message);
       } finally {
           setLoading(false);
       }
@@ -134,17 +134,16 @@ const FormSettings: React.FC<{ profile: any }> = ({ profile }) => {
               }]);
               if (error) throw error;
           }
-          setToast({ message: 'Шаблон сохранен', type: 'success' });
+          toast.success('Шаблон сохранен');
           fetchData();
       } catch (e: any) {
-          setToast({ message: 'Ошибка: ' + e.message, type: 'error' });
+          toast.error('Ошибка: ' + e.message);
       }
       setLoading(false);
   };
 
   return (
     <div className="h-full overflow-y-auto pb-20 scrollbar-hide animate-in fade-in duration-500">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       {/* COMPANY DETAILS */}
       <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm mb-8">

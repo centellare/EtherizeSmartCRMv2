@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Input, Select, Button, ConfirmModal, ProductImage } from '../../../ui';
 import { Product, InventoryItem } from '../../../../types';
@@ -13,7 +14,7 @@ interface ItemFormProps {
 }
 
 export const ItemForm: React.FC<ItemFormProps> = ({ mode, selectedItem, products = [], profile, onSuccess }) => {
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState({ product_id: '', serial_number: '', quantity: '1', purchase_price: '' });
   const [splitBulk, setSplitBulk] = useState(false); // New: Split into individual items
   
@@ -94,13 +95,10 @@ export const ItemForm: React.FC<ItemFormProps> = ({ mode, selectedItem, products
     executeSave(keepOpen);
   };
 
-  const executeSave = async (keepOpen: boolean) => {
-    setLoading(true);
-    setWarningOpen(false); 
-    
-    const qty = parseFloat(formData.quantity);
-    
-    try {
+  const mutation = useMutation({
+    mutationFn: async ({ keepOpen }: { keepOpen: boolean }) => {
+      const qty = parseFloat(formData.quantity);
+      
       if (mode === 'edit_item' && selectedItem) {
         // Update existing stock item
         const { error } = await supabase.from('inventory_items').update({
@@ -110,7 +108,6 @@ export const ItemForm: React.FC<ItemFormProps> = ({ mode, selectedItem, products
         }).eq('id', selectedItem.id);
         
         if (error) throw error;
-        onSuccess();
 
       } else {
         // Create new stock item(s)
@@ -200,19 +197,25 @@ export const ItemForm: React.FC<ItemFormProps> = ({ mode, selectedItem, products
                     .eq('id', selectedItem.id);
             }
         }
-        
-        if (keepOpen && mode === 'add_item') {
-            setFormData(prev => ({ ...prev, serial_number: '', quantity: '1' }));
-            onSuccess(true);
-        } else {
-            onSuccess(false);
-        }
       }
-    } catch (error: any) {
+    },
+    onSuccess: (_, { keepOpen }) => {
+      queryClient.invalidateQueries({ queryKey: ['inventory_items'] });
+      if (keepOpen && mode === 'add_item') {
+          setFormData(prev => ({ ...prev, serial_number: '', quantity: '1' }));
+          onSuccess(true);
+      } else {
+          onSuccess(false);
+      }
+    },
+    onError: (error: any) => {
       alert('Ошибка при сохранении: ' + error.message);
-    } finally {
-      setLoading(false);
     }
+  });
+
+  const executeSave = (keepOpen: boolean) => {
+    setWarningOpen(false); 
+    mutation.mutate({ keepOpen });
   };
 
   return (
@@ -295,11 +298,11 @@ export const ItemForm: React.FC<ItemFormProps> = ({ mode, selectedItem, products
             <div className="pt-2 flex gap-3">
                 {mode === 'add_item' ? (
                     <>
-                        <Button type="button" variant="secondary" className="flex-1" loading={loading} onClick={(e) => handleFormSubmit(e, true)}>Сохранить и еще</Button>
-                        <Button type="submit" className="flex-1" loading={loading}>Сохранить и закрыть</Button>
+                        <Button type="button" variant="secondary" className="flex-1" loading={mutation.isPending} onClick={(e) => handleFormSubmit(e, true)}>Сохранить и еще</Button>
+                        <Button type="submit" className="flex-1" loading={mutation.isPending}>Сохранить и закрыть</Button>
                     </>
                 ) : (
-                    <Button type="submit" className="w-full h-12" loading={loading}>{mode === 'receive_supply' ? 'Принять на склад' : 'Сохранить изменения'}</Button>
+                    <Button type="submit" className="w-full h-12" loading={mutation.isPending}>{mode === 'receive_supply' ? 'Принять на склад' : 'Сохранить изменения'}</Button>
                 )}
             </div>
         </form>

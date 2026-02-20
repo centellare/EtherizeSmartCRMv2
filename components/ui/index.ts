@@ -6,5 +6,6 @@ export * from './Modal';
 export * from './ConfirmModal';
 export * from './Badge';
 export * from './Toast';
+export * from './ToastContext';
 export * from './Drawer';
 export * from './ProductImage';

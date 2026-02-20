@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, measureQuery } from '../../lib/supabase';
-import { Modal, ConfirmModal, Toast, Button, Drawer } from '../ui';
+import { Modal, ConfirmModal, Button, Drawer, useToast } from '../ui';
 import { Task } from '../../types';
 import { getMinskISODate } from '../../lib/dateUtils';
 
@@ -29,7 +29,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<TaskTab>('active');
   const [filterMode, setFilterMode] = useState<FilterMode>('all');
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
   
   // Временной фильтр для активных задач
   const [activeRange, setActiveRange] = useState({ start: '', end: '' });
@@ -90,7 +90,9 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
       const { data } = await measureQuery(query.order('deadline', { ascending: true }));
       return (data || []) as unknown as Task[];
     },
-    enabled: !!profile?.id
+    enabled: !!profile?.id,
+    refetchInterval: 5000, // Poll every 5 seconds
+    staleTime: 1000 // Consider data stale after 1 second to allow polling to fetch new data
   });
 
   // 4. Archive Tasks
@@ -117,7 +119,8 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
       return { tasks: (data || []) as unknown as Task[], total: count || 0 };
     },
     enabled: !!profile?.id && activeTab === 'archive',
-    placeholderData: (previousData) => previousData // Keep previous data while fetching new page
+    placeholderData: (previousData) => previousData, // Keep previous data while fetching new page
+    refetchInterval: 30000 // Poll archive less frequently
   });
 
   const archiveTasks = archiveData?.tasks || [];
@@ -233,7 +236,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
       }).eq('id', deleteConfirm.id);
       
       if (!error) {
-        setToast({ message: 'Задача удалена', type: 'success' });
+        toast.success('Задача удалена');
         setModalMode('none');
         setDeleteConfirm({ open: false, id: null });
         queryClient.invalidateQueries({ queryKey: ['tasks'] });
@@ -260,7 +263,6 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
 
   return (
     <div className="animate-in fade-in duration-500">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       <TaskFilters 
         activeTab={activeTab} 
@@ -313,7 +315,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
             objects={objects}
             onSuccess={() => {
                 handleCloseModal(); 
-                setToast({message: 'Успешно сохранено', type: 'success'}); 
+                toast.success('Успешно сохранено'); 
                 queryClient.invalidateQueries({ queryKey: ['tasks'] });
             }}
         />
@@ -349,7 +351,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
             task={selectedTask} 
             onSuccess={() => {
                 handleCloseModal();
-                setToast({message: 'Задача завершена', type: 'success'});
+                toast.success('Задача завершена');
                 queryClient.invalidateQueries({ queryKey: ['tasks'] });
             }} 
         />

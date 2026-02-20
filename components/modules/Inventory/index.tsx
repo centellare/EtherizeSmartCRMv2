@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
-import { Button, Toast } from '../../ui';
+import { Button, useToast } from '../../ui';
 import InventoryList from './InventoryList';
 import InventoryModal from './InventoryModal';
 import Nomenclature from './Nomenclature';
@@ -32,7 +32,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'add_item' | 'deploy_item' | 'replace_item' | 'edit_item' | 'return_item' | 'deploy_invoice'>('add_item');
   const [selectedItem, setSelectedItem] = useState<any | null>(null);
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
 
   // --- QUERIES ---
 
@@ -89,7 +89,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
 
   const addToCart = (item: InventoryItem) => {
     if (cart.find(c => c.id === item.id)) {
-      setToast({ message: 'Товар уже в корзине', type: 'error' });
+      toast.error('Товар уже в корзине');
       return;
     }
     const newItem: CartItem = {
@@ -103,7 +103,7 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
       product_id: item.product_id
     };
     setCart(prev => [...prev, newItem]);
-    setToast({ message: 'Добавлено в ручную отгрузку', type: 'success' });
+    toast.success('Добавлено в ручную отгрузку');
   };
 
   const removeFromCart = (id: string) => setCart(prev => prev.filter(c => c.id !== id));
@@ -126,11 +126,11 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
             created_by: profile.id,
             comment: `Перемещено в корзину пользователем ${profile.full_name || 'System'}`
         }]);
-        setToast({ message: 'Единица товара перемещена в корзину', type: 'success' });
+        toast.success('Единица товара перемещена в корзину');
         queryClient.invalidateQueries({ queryKey: ['inventory_items'] });
     } catch (e) {
         console.error(e);
-        setToast({ message: 'Ошибка при удалении', type: 'error' });
+        toast.error('Ошибка при удалении');
     }
   };
 
@@ -146,12 +146,11 @@ const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
         setIsModalOpen(false);
         if (modalMode === 'deploy_item' && cart.length > 0) setCart([]);
     }
-    setToast({ message: 'Операция выполнена успешно', type: 'success' });
+    toast.success('Операция выполнена успешно');
   };
 
   return (
     <div className="animate-in fade-in duration-500 pb-20">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>

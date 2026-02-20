@@ -1,14 +1,14 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Badge, Button, Toast, ConfirmModal } from '../../ui';
+import { Badge, Button, ConfirmModal, useToast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
 import InventoryModal from './InventoryModal';
 
 const SupplyOrders: React.FC<{ profile: any }> = ({ profile }) => {
   const [orders, setOrders] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -52,11 +52,11 @@ const SupplyOrders: React.FC<{ profile: any }> = ({ profile }) => {
           
           if (error) throw error;
           
-          setToast({ message: 'Заказ на закупку удален', type: 'success' });
+          toast.success('Заказ на закупку удален');
           fetchOrders();
       } catch (e: any) {
           console.error(e);
-          setToast({ message: 'Ошибка удаления: ' + e.message, type: 'error' });
+          toast.error('Ошибка удаления: ' + e.message);
       } finally {
           setLoading(false);
           setDeleteConfirm({ open: false, id: null });
@@ -69,7 +69,7 @@ const SupplyOrders: React.FC<{ profile: any }> = ({ profile }) => {
   };
 
   const handleSuccess = () => {
-      setToast({ message: 'Товар принят на склад', type: 'success' });
+      toast.success('Товар принят на склад');
       setIsModalOpen(false);
       fetchOrders();
   };
@@ -78,8 +78,7 @@ const SupplyOrders: React.FC<{ profile: any }> = ({ profile }) => {
 
   return (
     <div className="space-y-6">
-        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
+        
         {orders.length === 0 ? (
             <div className="p-10 text-center text-slate-400 bg-white rounded-[32px] border border-dashed border-slate-200">
                 Дефицита товаров не обнаружено. Все заказы укомплектованы.

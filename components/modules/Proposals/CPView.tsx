@@ -2,7 +2,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
-import { Button, Toast, Select } from '../../ui';
+import { Button, Select, useToast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
 import { sumInWords } from '../../../lib/formatUtils';
 
@@ -27,7 +27,7 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
   const [companySettings, setCompanySettings] = useState<any>(defaultSettings);
   const [loading, setLoading] = useState(true);
   const [creatingInvoice, setCreatingInvoice] = useState(false);
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
   
   const [showBundleDetails, setShowBundleDetails] = useState(false);
   const [selectObjectModalOpen, setSelectObjectModalOpen] = useState(false);
@@ -249,13 +249,13 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
                 created_by: data.created_by
             }]);
         }
-        setToast({ message: `Счет №${inv.number} создан.`, type: 'success' });
+        toast.success(`Счет №${inv.number} создан.`);
         
         queryClient.invalidateQueries({ queryKey: ['invoices'] });
         
         if (onInvoiceCreated) onInvoiceCreated(inv.id);
     } catch (e: any) {
-        setToast({ message: 'Ошибка: ' + e.message, type: 'error' });
+        toast.error('Ошибка: ' + e.message);
     }
     setCreatingInvoice(false);
   };
@@ -318,7 +318,6 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
 
   return (
     <div className="h-full flex flex-col bg-slate-50">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center shadow-sm sticky top-0 z-50">
         <div className="flex items-center gap-4">

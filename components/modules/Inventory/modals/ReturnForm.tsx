@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Input, Select, Button } from '../../../ui';
 import { InventoryItem } from '../../../../types';
@@ -13,6 +14,7 @@ interface ReturnFormProps {
 }
 
 export const ReturnForm: React.FC<ReturnFormProps> = ({ selectedItem, objects, profile, onSuccess, onCancel }) => {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({ 
       quantity_to_return: selectedItem ? selectedItem.quantity.toString() : '1',
@@ -21,23 +23,16 @@ export const ReturnForm: React.FC<ReturnFormProps> = ({ selectedItem, objects, p
 
   if (!selectedItem) return null;
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const qtyToReturn = parseFloat(formData.quantity_to_return); 
-    if (isNaN(qtyToReturn) || qtyToReturn <= 0) {
-        alert("Укажите корректное количество для возврата");
-        return;
-    }
+  const mutation = useMutation({
+    mutationFn: async () => {
+        const qtyToReturn = parseFloat(formData.quantity_to_return); 
+        const reasonText = {
+            surplus: 'Излишек (не пригодилось)',
+            cancellation: 'Отказ клиента',
+            wrong_item: 'Ошибочная отгрузка',
+            repair: 'Демонтаж для ремонта'
+        }[formData.return_reason] || 'Возврат';
 
-    setLoading(true);
-    const reasonText = {
-        surplus: 'Излишек (не пригодилось)',
-        cancellation: 'Отказ клиента',
-        wrong_item: 'Ошибочная отгрузка',
-        repair: 'Демонтаж для ремонта'
-    }[formData.return_reason] || 'Возврат';
-
-    try {
         if (qtyToReturn < selectedItem.quantity) {
             // Partial Return
             await supabase.from('inventory_items')
@@ -77,13 +72,25 @@ export const ReturnForm: React.FC<ReturnFormProps> = ({ selectedItem, objects, p
                 comment: `Полный возврат на склад. Причина: ${reasonText}`
             }]);
         }
-        onSuccess();
-    } catch (err) {
-        console.error(err);
-        alert("Ошибка при возврате товара");
-    } finally {
-        setLoading(false);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory_items'] });
+      onSuccess();
+    },
+    onError: (error: any) => {
+      console.error(error);
+      alert("Ошибка при возврате товара");
     }
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const qtyToReturn = parseFloat(formData.quantity_to_return); 
+    if (isNaN(qtyToReturn) || qtyToReturn <= 0) {
+        alert("Укажите корректное количество для возврата");
+        return;
+    }
+    mutation.mutate();
   };
 
   return (
@@ -126,7 +133,7 @@ export const ReturnForm: React.FC<ReturnFormProps> = ({ selectedItem, objects, p
         
         <div className="flex gap-3 pt-2">
             <Button type="button" variant="secondary" onClick={onCancel} className="flex-1">Отмена</Button>
-            <Button type="submit" className="flex-1" loading={loading}>Подтвердить возврат</Button>
+            <Button type="submit" className="flex-1" loading={mutation.isPending}>Подтвердить возврат</Button>
         </div>
     </form>
   );

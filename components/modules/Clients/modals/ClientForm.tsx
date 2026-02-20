@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Input, Select } from '../../../ui';
 
@@ -22,7 +23,7 @@ const SOURCES = [
 ];
 
 export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff, profile, onSuccess }) => {
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [clients, setClients] = useState<any[]>([]); // For referral selection
   const [formData, setFormData] = useState({
     name: '',
@@ -63,9 +64,27 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
     fetchClients();
   }, [mode, initialData, profile]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const mutation = useMutation({
+    mutationFn: async (payload: any) => {
+      if (mode === 'edit') {
+        const { error } = await supabase.from('clients').update(payload).eq('id', initialData.id);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from('clients').insert([payload]);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clients'] });
+      onSuccess();
+    },
+    onError: (error: any) => {
+      alert('Ошибка при сохранении: ' + error.message);
+    }
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     const payload = { 
         ...formData, 
         referred_by: formData.lead_source === 'referral' ? (formData.referred_by || null) : null, // Clear referral if source changed
@@ -80,16 +99,7 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
       payload.contact_position = '';
     }
     
-    const { error } = mode === 'edit' 
-      ? await supabase.from('clients').update(payload).eq('id', initialData.id) 
-      : await supabase.from('clients').insert([payload]);
-    
-    if (!error) {
-      onSuccess();
-    } else {
-        alert('Ошибка при сохранении: ' + error.message);
-    }
-    setLoading(false);
+    mutation.mutate(payload);
   };
 
   const managers = staff.filter(s => s.role === 'manager' || s.role === 'director');
@@ -179,7 +189,7 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
           placeholder="Дополнительная информация о клиенте..."
         />
       </div>
-      <Button type="submit" className="w-full h-14" loading={loading} icon="save">
+      <Button type="submit" className="w-full h-14" loading={mutation.isPending} icon="save">
         {mode === 'edit' ? 'Сохранить изменения' : 'Создать клиента'}
       </Button>
     </form>

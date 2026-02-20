@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, measureQuery } from '../../lib/supabase';
-import { Button, Input, Modal, ConfirmModal, Toast, Select } from '../ui';
+import { Button, Input, Modal, ConfirmModal, Select, useToast } from '../ui';
 import { Transaction } from '../../types';
 import { getMinskISODate, formatDate } from '../../lib/dateUtils';
 
@@ -17,7 +17,7 @@ import { Analytics } from './Finances/Analytics';
 const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'journal' | 'analytics'>('journal');
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
   
   // Date Helpers for Defaults
   const getMonthBounds = () => {
@@ -104,7 +104,9 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
       }
       return [];
     },
-    enabled: !!profile?.id
+    enabled: !!profile?.id,
+    refetchInterval: 5000, // Poll every 5 seconds
+    staleTime: 1000
   });
 
   // --- REALTIME ---
@@ -277,7 +279,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     // setLoading(true); // Handled by mutation or just wait
     const { error } = await supabase.from('transactions').update({ deleted_at: new Date().toISOString() }).eq('id', confirmConfig.id);
     if (!error) {
-        setToast({ message: 'Запись удалена', type: 'success' });
+        toast.success('Запись удалена');
         setConfirmConfig({ ...confirmConfig, open: false });
         setModalMode('none');
         queryClient.invalidateQueries({ queryKey: ['transactions'] });
@@ -296,7 +298,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
             const newStatus = newFact >= trans.amount - 0.01 ? 'approved' : (newFact > 0 ? 'partial' : 'pending');
             await supabase.from('transactions').update({ fact_amount: newFact, status: newStatus }).eq('id', payment.transaction_id);
         }
-        setToast({ message: 'Платеж удален', type: 'success' });
+        toast.success('Платеж удален');
         setModalMode('none');
         queryClient.invalidateQueries({ queryKey: ['transactions'] });
     }
@@ -336,7 +338,6 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
 
   return (
     <div className="animate-in fade-in duration-500">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       {/* Header & Controls */}
       <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 mb-8">
@@ -459,7 +460,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
             initialData={selectedTransaction}
             objects={objects}
             profile={profile}
-            onSuccess={() => { setModalMode('none'); setToast({message: 'Успешно сохранено', type: 'success'}); queryClient.invalidateQueries({ queryKey: ['transactions'] }); }}
+            onSuccess={() => { setModalMode('none'); toast.success('Успешно сохранено'); queryClient.invalidateQueries({ queryKey: ['transactions'] }); }}
         />
       </Modal>
 
@@ -468,7 +469,7 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
             transaction={selectedTransaction}
             payment={modalMode === 'edit_payment' ? selectedPayment : null}
             profile={profile}
-            onSuccess={() => { setModalMode('none'); setToast({message: 'Платеж сохранен', type: 'success'}); queryClient.invalidateQueries({ queryKey: ['transactions'] }); }}
+            onSuccess={() => { setModalMode('none'); toast.success('Платеж сохранен'); queryClient.invalidateQueries({ queryKey: ['transactions'] }); }}
             onDelete={canEditDelete ? handleDeletePayment : undefined}
         />
       </Modal>

@@ -2,7 +2,7 @@
 import React, { useState, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
-import { Badge, Input, Select, ConfirmModal, Toast } from '../../ui';
+import { Badge, Input, Select, ConfirmModal, useToast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
 
 interface ProposalListProps {
@@ -13,7 +13,7 @@ interface ProposalListProps {
 
 const ProposalList: React.FC<ProposalListProps> = ({ onView, onEdit, onViewInvoice }) => {
   const queryClient = useQueryClient();
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
   
   // Filters
   const [searchQuery, setSearchQuery] = useState('');
@@ -47,12 +47,12 @@ const ProposalList: React.FC<ProposalListProps> = ({ onView, onEdit, onViewInvoi
       
       if (error) throw error;
       
-      setToast({ message: 'КП удалено', type: 'success' });
+      toast.success('КП удалено');
       
       queryClient.invalidateQueries({ queryKey: ['proposals'] });
     } catch (e: any) {
       console.error(e);
-      setToast({ message: 'Ошибка удаления: ' + e.message, type: 'error' });
+      toast.error('Ошибка удаления: ' + e.message);
     } finally {
       setDeleteConfirm({ open: false, id: null });
     }
@@ -91,8 +91,7 @@ const ProposalList: React.FC<ProposalListProps> = ({ onView, onEdit, onViewInvoi
 
   return (
     <div className="space-y-6">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-
+      
       {/* Toolbar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 flex flex-col md:flex-row gap-4 shadow-sm">
         <div className="flex-grow">

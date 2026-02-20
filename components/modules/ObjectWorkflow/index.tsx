@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { supabase } from '../../../lib/supabase';
-import { Button, Modal, Input, Select, ConfirmModal, Toast, Drawer } from '../../ui';
+import { Button, Modal, Input, Select, ConfirmModal, Drawer, useToast } from '../../ui';
 import { WorkflowHeader } from './WorkflowHeader';
 import { StageTimeline } from './StageTimeline';
 import { TasksTab } from './TasksTab';
@@ -45,7 +45,7 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
   // Client Viewing State
   const [clientToView, setClientToView] = useState<any>(null);
   
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
 
   // Modals state
   const [isStageModalOpen, setIsStageModalOpen] = useState(false);
@@ -110,10 +110,10 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
     setLoading(true);
     const { error } = await supabase.from('objects').update({ current_status: newStatus, updated_by: profile.id, updated_at: new Date().toISOString() }).eq('id', object.id);
     if (!error) {
-      setToast({ message: 'Статус объекта обновлен', type: 'success' });
+      toast.success('Статус объекта обновлен');
       await fetchData();
     } else {
-      setToast({ message: 'Ошибка обновления статуса', type: 'error' });
+      toast.error('Ошибка обновления статуса');
     }
   };
 
@@ -136,10 +136,10 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
     setLoading(true);
     try {
       await supabase.rpc('finalize_project', { p_object_id: object.id, p_user_id: profile.id });
-      setToast({ message: 'Проект успешно завершен!', type: 'success' });
+      toast.success('Проект успешно завершен!');
       onBack();
     } catch (err: any) {
-      setToast({ message: 'Ошибка при завершении проекта', type: 'error' });
+      toast.error('Ошибка при завершении проекта');
     }
     setLoading(false);
   };
@@ -160,11 +160,11 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
       if (error) throw error;
 
       setIsStageModalOpen(false);
-      setToast({ message: 'Переход на новый этап выполнен', type: 'success' });
+      toast.success('Переход на новый этап выполнен');
       await fetchData();
     } catch (err: any) { 
       console.error(err);
-      setToast({ message: err.message || 'Ошибка перехода', type: 'error' });
+      toast.error(err.message || 'Ошибка перехода');
     }
     setLoading(false);
   };
@@ -186,11 +186,11 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
 
       setIsRollbackModalOpen(false);
       setAutoOpenTaskModal(true);
-      setToast({ message: 'Объект возвращен на доработку', type: 'success' });
+      toast.success('Объект возвращен на доработку');
       await fetchData();
     } catch (err: any) { 
        console.error(err);
-       setToast({ message: err.message || 'Ошибка возврата', type: 'error' });
+       toast.error(err.message || 'Ошибка возврата');
     }
     setLoading(false);
   };
@@ -206,11 +206,11 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
       
       if (error) throw error;
 
-      setToast({ message: 'Этап успешно восстановлен', type: 'success' });
+      toast.success('Этап успешно восстановлен');
       await fetchData();
     } catch (err: any) {
       console.error(err);
-      setToast({ message: err.message || 'Ошибка восстановления этапа', type: 'error' });
+      toast.error(err.message || 'Ошибка восстановления этапа');
     } finally {
       setLoading(false);
     }
@@ -224,11 +224,11 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
         if (client) {
             setClientToView(client);
         } else {
-            setToast({ message: 'Клиент не найден', type: 'error' });
+            toast.error('Клиент не найден');
         }
     } catch (e) {
         console.error(e);
-        setToast({ message: 'Ошибка загрузки клиента', type: 'error' });
+        toast.error('Ошибка загрузки клиента');
     } finally {
         setLoading(false);
     }
@@ -236,7 +236,6 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
 
   return (
     <div className="animate-in fade-in duration-300 h-full flex flex-col">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
       
       <div className="bg-white rounded-[32px] p-8 border border-[#e1e2e1] mb-8 shadow-sm flex-shrink-0">
         <WorkflowHeader 
@@ -316,7 +315,7 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
                       <CPGenerator 
                           profile={profile} 
                           initialObjectId={object.id}
-                          onSuccess={() => { setIsCPModalOpen(false); setToast({ message: 'КП создано', type: 'success' }); }}
+                          onSuccess={() => { setIsCPModalOpen(false); toast.success('КП создано'); }}
                           onCancel={() => setIsCPModalOpen(false)}
                       />
                   </div>

@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Button, Toast } from '../../ui';
+import { Button, useToast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
 import { sumInWords } from '../../../lib/formatUtils';
 
@@ -16,7 +16,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [statusLoading, setStatusLoading] = useState(false);
-  const [toast, setToast] = useState<{message: string, type: 'success' | 'error'} | null>(null);
+  const toast = useToast();
   
   // Print Options
   const [showBundleDetails, setShowBundleDetails] = useState(false);
@@ -67,7 +67,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
         }
     } catch (e: any) {
         console.error("Error fetching invoice:", e);
-        setToast({ message: "Ошибка загрузки: " + e.message, type: 'error' });
+        toast.error("Ошибка загрузки: " + e.message);
     } finally {
         setLoading(false);
     }
@@ -255,14 +255,14 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                       }
                   }
               }
-              setToast({ message: 'Счет проведен. Товар зарезервирован, дефицит добавлен в заказ.', type: 'success' });
+              toast.success('Счет проведен. Товар зарезервирован, дефицит добавлен в заказ.');
           } else {
-              setToast({ message: 'Статус счета обновлен', type: 'success' });
+              toast.success('Статус счета обновлен');
           }
           fetchData();
       } catch (e: any) {
           console.error(e);
-          setToast({ message: 'Ошибка: ' + e.message, type: 'error' });
+          toast.error('Ошибка: ' + e.message);
       } finally {
           setStatusLoading(false);
       }
@@ -319,7 +319,6 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
 
   return (
     <div className="h-full flex flex-col bg-slate-50">
-        {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
         
         <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center shadow-sm sticky top-0 z-50">
             <div className="flex items-center gap-4">

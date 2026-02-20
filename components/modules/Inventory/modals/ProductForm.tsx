@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Input, Select, Button } from '../../../ui';
 import { Product } from '../../../../types';
@@ -12,6 +13,7 @@ interface ProductFormProps {
 }
 
 export const ProductForm: React.FC<ProductFormProps> = ({ product, categories, existingTypes, onSuccess }) => {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -56,33 +58,38 @@ export const ProductForm: React.FC<ProductFormProps> = ({ product, categories, e
     }
   }, [product]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    
-    const payload = {
-      ...formData,
-      category: formData.category || 'Общее',
-      type: formData.type || 'Товар',
-      base_price: parseFloat(formData.base_price) || 0,
-      retail_price: parseFloat(formData.retail_price) || 0,
-      weight: formData.weight ? parseFloat(formData.weight) : null,
-      manufacturer: formData.manufacturer || null,
-      origin_country: formData.origin_country || null,
-      image_url: formData.image_url || null
-    };
+  const mutation = useMutation({
+    mutationFn: async () => {
+        const payload = {
+          ...formData,
+          category: formData.category || 'Общее',
+          type: formData.type || 'Товар',
+          base_price: parseFloat(formData.base_price) || 0,
+          retail_price: parseFloat(formData.retail_price) || 0,
+          weight: formData.weight ? parseFloat(formData.weight) : null,
+          manufacturer: formData.manufacturer || null,
+          origin_country: formData.origin_country || null,
+          image_url: formData.image_url || null
+        };
 
-    try {
         if (product) {
             await supabase.from('products').update(payload).eq('id', product.id);
         } else {
             await supabase.from('products').insert([payload]);
         }
-        onSuccess();
-    } catch (e: any) {
-        alert("Ошибка: " + e.message);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['products'] });
+      onSuccess();
+    },
+    onError: (error: any) => {
+      alert("Ошибка: " + error.message);
     }
-    setLoading(false);
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    mutation.mutate();
   };
 
   return (
@@ -161,7 +168,7 @@ export const ProductForm: React.FC<ProductFormProps> = ({ product, categories, e
             </label>
         </div>
 
-        <Button type="submit" className="w-full h-12" loading={loading}>Сохранить</Button>
+        <Button type="submit" className="w-full h-12" loading={mutation.isPending}>Сохранить</Button>
     </form>
   );
 };

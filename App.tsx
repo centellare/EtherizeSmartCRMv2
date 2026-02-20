@@ -5,7 +5,7 @@ import { supabase, checkConnection } from './lib/supabase';
 import Auth from './components/Auth';
 import Layout from './components/Layout';
 import MainContent from './components/MainContent';
-import { Button } from './components/ui';
+import { Button, ToastProvider } from './components/ui';
 import { isModuleAllowed } from './lib/access';
 
 export type Module = 'dashboard' | 'clients' | 'objects' | 'tasks' | 'finances' | 'team' | 'inventory' | 'notifications' | 'trash' | 'database' | 'proposals';
@@ -179,28 +179,30 @@ const App: React.FC = () => {
 
   // 4. Основной интерфейс
   return (
-    <Layout 
-      profile={profile} 
-      activeModule={activeModule} 
-      setActiveModule={handleModuleChange}
-      onProfileUpdate={refreshProfile}
-    >
-      <MainContent 
-        activeModule={activeModule} 
+    <ToastProvider>
+      <Layout 
         profile={profile} 
+        activeModule={activeModule} 
         setActiveModule={handleModuleChange}
-        activeObjectId={activeObjectId}
-        activeStageId={activeStageId}
-        onNavigateToObject={handleNavigateToObject}
-        onAddObject={handleAddObjectToClient}
-        initialClientId={initialClientId}
-        clearActiveObject={() => {
-          setActiveObjectId(null);
-          setActiveStageId(null);
-          setInitialClientId(null);
-        }}
-      />
-    </Layout>
+        onProfileUpdate={refreshProfile}
+      >
+        <MainContent 
+          activeModule={activeModule} 
+          profile={profile} 
+          setActiveModule={handleModuleChange}
+          activeObjectId={activeObjectId}
+          activeStageId={activeStageId}
+          onNavigateToObject={handleNavigateToObject}
+          onAddObject={handleAddObjectToClient}
+          initialClientId={initialClientId}
+          clearActiveObject={() => {
+            setActiveObjectId(null);
+            setActiveStageId(null);
+            setInitialClientId(null);
+          }}
+        />
+      </Layout>
+    </ToastProvider>
   );
 };
 

@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Input, Select } from '../../../ui';
 import { getMinskISODate } from '../../../../lib/dateUtils';
@@ -14,7 +15,7 @@ interface TaskModalProps {
 }
 
 export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile, staff, objects, onSuccess }) => {
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
     id: '', 
     object_id: '', 
@@ -102,14 +103,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
     }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.object_id) { alert('Выберите объект'); return; }
-    if (!formData.title.trim()) { alert('Введите название задачи'); return; }
-    if (!formData.assigned_to) { alert('Выберите исполнителя'); return; }
+  const mutation = useMutation({
+    mutationFn: async () => {
+      if (!formData.object_id) throw new Error('Выберите объект');
+      if (!formData.title.trim()) throw new Error('Введите название задачи');
+      if (!formData.assigned_to) throw new Error('Выберите исполнителя');
 
-    setLoading(true);
-    try {
       let taskId = formData.id;
       
       if (mode === 'edit') {
@@ -128,8 +127,6 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
 
         if (error) throw error;
       } else {
-        const { id, checklist, questions, ...insertData } = formData;
-        
         // Find current stage from objects list
         const selectedObject = objects.find(o => o.id === formData.object_id);
         const currentStage = selectedObject?.current_stage || null;
@@ -198,12 +195,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
           if (qError) throw qError;
         }
       }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
       onSuccess();
-    } catch (err: any) {
-      alert(`Ошибка: ${err.message || 'Не удалось сохранить'}`);
-    } finally {
-      setLoading(false);
+    },
+    onError: (error: any) => {
+      alert(`Ошибка: ${error.message || 'Не удалось сохранить'}`);
     }
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    mutation.mutate();
   };
 
   return (
@@ -276,7 +280,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
         <label className="block text-xs font-medium text-[#444746] mb-1.5 ml-1">Описание / ТЗ</label>
         <textarea className="w-full bg-white border border-slate-200 rounded-2xl p-4 text-sm outline-none focus:border-blue-500" rows={3} placeholder="Описание / детали..." value={formData.comment} onChange={(e) => setFormData({...formData, comment: e.target.value})} />
         </div>
-        <Button type="submit" className="w-full h-14" loading={loading}>{mode === 'edit' ? 'Сохранить изменения' : 'Создать задачу'}</Button>
+        <Button type="submit" className="w-full h-14" loading={mutation.isPending}>{mode === 'edit' ? 'Сохранить изменения' : 'Создать задачу'}</Button>
     </form>
   );
 };

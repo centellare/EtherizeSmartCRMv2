@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Input, Select } from '../../../ui';
 import { formatDate, getMinskISODate } from '../../../../lib/dateUtils';
@@ -19,7 +20,7 @@ const DOC_TYPES = [
 ];
 
 export const PaymentForm: React.FC<PaymentFormProps> = ({ transaction, payment, profile, onSuccess, onDelete }) => {
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const [formData, setFormData] = useState({
       amount: '',
       payment_date: getMinskISODate(),
@@ -53,53 +54,56 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ transaction, payment, 
       }
   }, [transaction, payment, isEdit]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const mutation = useMutation({
+    mutationFn: async (payload: any) => {
+      if (isEdit) {
+          const { error } = await supabase.from('transaction_payments').update(payload).eq('id', payment.id);
+          if (error) throw error;
+      } else {
+          const { error } = await supabase.from('transaction_payments').insert([{
+              transaction_id: transaction.id,
+              created_by: profile.id,
+              ...payload
+          }]);
+          if (error) throw error;
+      }
+
+      // Recalculate transaction status/fact
+      if (!isEdit) {
+           const newFact = (transaction.fact_amount || 0) + payload.amount;
+           const status = newFact >= transaction.amount - 0.01 ? 'approved' : 'partial';
+           await supabase.from('transactions').update({ status, fact_amount: newFact }).eq('id', transaction.id);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      onSuccess();
+    },
+    onError: (error: any) => {
+      alert('Ошибка: ' + error.message);
+    }
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     const amt = parseFloat(formData.amount);
     
     if (isNaN(amt) || amt < 0) {
         alert("Некорректная сумма");
-        setLoading(false);
         return;
     }
 
-    try {
-        const payload = {
-            amount: amt,
-            payment_date: formData.payment_date ? new Date(formData.payment_date).toISOString() : new Date().toISOString(),
-            comment: formData.comment,
-            requires_doc: formData.requires_doc,
-            doc_type: formData.requires_doc ? formData.doc_type : null,
-            doc_number: formData.requires_doc ? formData.doc_number : null,
-            doc_date: (formData.requires_doc && formData.doc_date) ? formData.doc_date : null
-        };
+    const payload = {
+        amount: amt,
+        payment_date: formData.payment_date ? new Date(formData.payment_date).toISOString() : new Date().toISOString(),
+        comment: formData.comment,
+        requires_doc: formData.requires_doc,
+        doc_type: formData.requires_doc ? formData.doc_type : null,
+        doc_number: formData.requires_doc ? formData.doc_number : null,
+        doc_date: (formData.requires_doc && formData.doc_date) ? formData.doc_date : null
+    };
 
-        if (isEdit) {
-            const { error } = await supabase.from('transaction_payments').update(payload).eq('id', payment.id);
-            if (error) throw error;
-        } else {
-            const { error } = await supabase.from('transaction_payments').insert([{
-                transaction_id: transaction.id,
-                created_by: profile.id,
-                ...payload
-            }]);
-            if (error) throw error;
-        }
-
-        // Recalculate transaction status/fact
-        if (!isEdit) {
-             const newFact = (transaction.fact_amount || 0) + amt;
-             const status = newFact >= transaction.amount - 0.01 ? 'approved' : 'partial';
-             await supabase.from('transactions').update({ status, fact_amount: newFact }).eq('id', transaction.id);
-        }
-
-        onSuccess();
-    } catch (err: any) {
-        alert('Ошибка: ' + err.message);
-    } finally {
-        setLoading(false);
-    }
+    mutation.mutate(payload);
   };
 
   return (
@@ -167,7 +171,7 @@ export const PaymentForm: React.FC<PaymentFormProps> = ({ transaction, payment, 
         </div>
 
         <div className="flex gap-2 pt-2">
-            <Button type="submit" className="w-full h-12" loading={loading} icon={isEdit ? "save" : "check"}>{isEdit ? "Сохранить" : "Подтвердить платеж"}</Button>
+            <Button type="submit" className="w-full h-12" loading={mutation.isPending} icon={isEdit ? "save" : "check"}>{isEdit ? "Сохранить" : "Подтвердить платеж"}</Button>
             {isEdit && onDelete && (
                 <Button type="button" variant="danger" className="w-12 h-12 !px-0" onClick={() => onDelete(payment.id)} icon="delete"></Button>
             )}

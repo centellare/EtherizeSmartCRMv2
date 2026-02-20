@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Input, Select, Button } from '../../../ui';
 import { Product, InventoryItem } from '../../../../types';
@@ -16,6 +17,7 @@ interface DeployFormProps {
 }
 
 export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems, catalog, items, objects, profile, onSuccess }) => {
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({ 
       object_id: '', 
@@ -178,13 +180,9 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
     printWindow.document.close();
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.object_id) { alert('Выберите объект'); return; }
-    setLoading(true);
-    const now = new Date();
-
-    try {
+  const mutation = useMutation({
+    mutationFn: async () => {
+        const now = new Date();
         if (isBulk) {
             // ... (Same Bulk Logic)
             const itemsMissingSerials = cartItems.filter(item => {
@@ -196,7 +194,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
 
             if (itemsMissingSerials.length > 0) {
                 const confirmSkip = window.confirm(`Вы не указали серийные номера для некоторых товаров (${itemsMissingSerials.length} поз.). \n\nОтгрузить без серийников?`);
-                if (!confirmSkip) { setLoading(false); return; }
+                if (!confirmSkip) return;
             }
 
             for (const item of cartItems) {
@@ -315,13 +313,21 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
                 comment: `Отгрузка ${qtyToDeploy} ${selectedItem.product?.unit}. ${formData.serial_number ? `S/N: ${formData.serial_number}` : ''}`
             }]);
         }
-        onSuccess();
-    } catch (err: any) {
-        console.error(err);
-        alert('Ошибка при отгрузке: ' + err.message);
-    } finally {
-        setLoading(false);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['inventory_items'] });
+      onSuccess();
+    },
+    onError: (error: any) => {
+      console.error(error);
+      alert('Ошибка при отгрузке: ' + error.message);
     }
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.object_id) { alert('Выберите объект'); return; }
+    mutation.mutate();
   };
 
   return (
@@ -490,7 +496,7 @@ export const DeployForm: React.FC<DeployFormProps> = ({ selectedItem, cartItems,
             </div>
         )}
 
-        <Button type="submit" className="w-full h-12" loading={loading}>{isBulk ? 'Отгрузить всё' : 'Отгрузить'}</Button>
+        <Button type="submit" className="w-full h-12" loading={mutation.isPending}>{isBulk ? 'Отгрузить всё' : 'Отгрузить'}</Button>
     </form>
   );
 };

@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { InventoryItem } from '../../../types';
 import { Badge, Button } from '../../ui';
@@ -14,31 +15,21 @@ interface ItemDetailsDrawerProps {
 }
 
 const ItemDetailsDrawer: React.FC<ItemDetailsDrawerProps> = ({ item, isOpen, onClose, onAction, profile }) => {
-  const [history, setHistory] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  useEffect(() => {
-    if (isOpen && item) {
-      fetchHistory();
-    }
-  }, [isOpen, item]);
-
-  const fetchHistory = async () => {
-    if (!item) return;
-    setLoading(true);
-    try {
-      const { data } = await supabase
+  
+  const { data: history = [], isLoading: loading } = useQuery({
+    queryKey: ['inventory_history', item?.id],
+    queryFn: async () => {
+      if (!item) return [];
+      const { data, error } = await supabase
         .from('inventory_history')
         .select('*, profiles(full_name)')
         .eq('item_id', item.id)
         .order('created_at', { ascending: false });
-      setHistory(data || []);
-    } catch (error) {
-      console.error('Error fetching history:', error);
-    } finally {
-      setLoading(false);
-    }
-  };
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!item && isOpen
+  });
 
   if (!item) return null;
 

@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Input, Select } from '../../../ui';
 import { getMinskISODate } from '../../../../lib/dateUtils';
@@ -13,7 +14,7 @@ interface TransactionFormProps {
 }
 
 export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialData, objects, profile, onSuccess }) => {
-  const [loading, setLoading] = useState(false);
+  const queryClient = useQueryClient();
   const isSpecialist = profile.role === 'specialist';
   
   const [formData, setFormData] = useState({ 
@@ -51,51 +52,55 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialD
     }
   }, [mode, initialData, objects]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const mutation = useMutation({
+    mutationFn: async (payload: any) => {
+      if (mode === 'edit' && initialData) {
+          const { error } = await supabase.from('transactions').update(payload).eq('id', initialData.id);
+          if (error) throw error;
+      } else {
+          const { error } = await supabase.from('transactions').insert([{
+              ...payload,
+              status: 'pending',
+              created_by: profile.id
+          }]);
+          if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['transactions'] });
+      onSuccess();
+    },
+    onError: (error: any) => {
+      alert('Ошибка: ' + error.message);
+    }
+  });
+
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     const amount = parseFloat(formData.amount);
     if (isNaN(amount) || amount <= 0) {
         alert('Введите корректную сумму');
-        setLoading(false);
         return;
     }
 
     const type = isSpecialist ? 'expense' : formData.type;
     
-    try {
-        const payload = {
-            object_id: formData.object_id,
-            type: type,
-            amount: amount,
-            // Для прихода plan = amount. Для расхода request = amount.
-            planned_amount: type === 'income' ? amount : null,
-            requested_amount: type === 'expense' ? amount : null,
-            // Теперь planned_date сохраняем для обоих типов!
-            planned_date: formData.planned_date, 
-            category: formData.category,
-            description: formData.description,
-            doc_link: formData.doc_link || null,
-            doc_name: formData.doc_name || null
-        };
+    const payload = {
+        object_id: formData.object_id,
+        type: type,
+        amount: amount,
+        // Для прихода plan = amount. Для расхода request = amount.
+        planned_amount: type === 'income' ? amount : null,
+        requested_amount: type === 'expense' ? amount : null,
+        // Теперь planned_date сохраняем для обоих типов!
+        planned_date: formData.planned_date, 
+        category: formData.category,
+        description: formData.description,
+        doc_link: formData.doc_link || null,
+        doc_name: formData.doc_name || null
+    };
 
-        if (mode === 'edit' && initialData) {
-            const { error } = await supabase.from('transactions').update(payload).eq('id', initialData.id);
-            if (error) throw error;
-        } else {
-            const { error } = await supabase.from('transactions').insert([{
-                ...payload,
-                status: 'pending',
-                created_by: profile.id
-            }]);
-            if (error) throw error;
-        }
-        onSuccess();
-    } catch (err: any) {
-        alert('Ошибка: ' + err.message);
-    } finally {
-        setLoading(false);
-    }
+    mutation.mutate(payload);
   };
 
   return (
@@ -147,7 +152,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialD
             <textarea className="w-full bg-white border border-slate-200 rounded-2xl p-4 text-sm outline-none focus:border-blue-500" rows={3} value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
         </div>
         
-        <Button type="submit" className="w-full h-14" loading={loading} icon="save">{mode === 'edit' ? 'Сохранить изменения' : 'Создать запись'}</Button>
+        <Button type="submit" className="w-full h-14" loading={mutation.isPending} icon="save">{mode === 'edit' ? 'Сохранить изменения' : 'Создать запись'}</Button>
     </form>
   );
 };
