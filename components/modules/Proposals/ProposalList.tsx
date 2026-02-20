@@ -30,7 +30,6 @@ const ProposalList: React.FC<ProposalListProps> = ({ onView, onEdit, onViewInvoi
       const { data } = await supabase
         .from('commercial_proposals')
         .select('*, client:clients(name), creator:profiles(full_name), invoices(id, number, status)')
-        .is('deleted_at', null)
         .order('created_at', { ascending: false });
       return data || [];
     }
