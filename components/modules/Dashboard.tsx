@@ -208,7 +208,7 @@ const DirectorView: React.FC<{ tasks: any[], objects: any[], transactions: any[]
   const financials = useMemo(() => {
     const income = transactions.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
     const expense = transactions.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0);
-    const pendingIncome = transactions.filter(t => t.type === 'income' && t.status !== 'approved').reduce((s, t) => s + t.amount, 0);
+    const pendingIncome = transactions.filter(t => t.type === 'income' && t.status !== 'approved').reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
     return { income, expense, profit: income - expense, pendingIncome };
   }, [transactions]);
 
