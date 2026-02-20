@@ -33,6 +33,12 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
   const [selectObjectModalOpen, setSelectObjectModalOpen] = useState(false);
   const [availableObjects, setAvailableObjects] = useState<any[]>([]);
   const [selectedObjectId, setSelectedObjectId] = useState<string>('');
+  const [dueDate, setDueDate] = useState<string>(() => {
+      const d = new Date();
+      d.setDate(d.getDate() + 3);
+      return d.toISOString().split('T')[0];
+  });
+  const [createTransaction, setCreateTransaction] = useState(true);
 
   // 1. ULTRA SAFE HELPERS
   const toNum = (val: any): number => {
@@ -186,7 +192,8 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
             total_amount: toNum(data.total_amount_byn),
             has_vat: data.has_vat,
             created_by: data.created_by,
-            status: 'draft'
+            status: 'draft',
+            due_date: dueDate
         }]).select('id, number').single();
 
         if (invError) throw invError;
@@ -233,16 +240,14 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
             if (childError) throw childError;
         }
 
-        if (selectedObjectId) {
-            const plannedDate = new Date();
-            plannedDate.setDate(plannedDate.getDate() + 3);
+        if (createTransaction && selectedObjectId) {
             await supabase.from('transactions').insert([{
                 object_id: selectedObjectId,
                 invoice_id: inv.id,
                 type: 'income',
                 amount: toNum(data.total_amount_byn),
                 planned_amount: toNum(data.total_amount_byn),
-                planned_date: plannedDate.toISOString(),
+                planned_date: dueDate,
                 category: 'Оплата по счету',
                 description: `Счет №${inv.number} (из КП).`,
                 status: 'pending',
@@ -336,14 +341,40 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
       {selectObjectModalOpen && (
           <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
               <div className="bg-white rounded-[24px] p-6 w-full max-w-md shadow-xl">
-                  <h3 className="text-lg font-bold mb-4">Привязать к объекту</h3>
-                  <Select 
-                    label="Объект" 
-                    value={selectedObjectId} 
-                    onChange={(e:any) => setSelectedObjectId(e.target.value)} 
-                    options={objectOptions} 
-                  />
-                  <div className="flex gap-2 mt-4">
+                  <h3 className="text-lg font-bold mb-4">Параметры счета</h3>
+                  <div className="space-y-4">
+                    <Select 
+                        label="Привязать к объекту" 
+                        value={selectedObjectId} 
+                        onChange={(e:any) => setSelectedObjectId(e.target.value)} 
+                        options={objectOptions} 
+                    />
+                    
+                    <div className="space-y-1">
+                        <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest ml-1">Срок действия (до)</label>
+                        <input 
+                            type="date" 
+                            value={dueDate}
+                            onChange={(e) => setDueDate(e.target.value)}
+                            className="w-full h-12 bg-slate-50 border border-slate-200 rounded-xl px-4 text-sm outline-none focus:border-blue-500 transition-all"
+                        />
+                    </div>
+
+                    <label className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:bg-slate-100 transition-colors">
+                        <input 
+                            type="checkbox" 
+                            checked={createTransaction}
+                            onChange={(e) => setCreateTransaction(e.target.checked)}
+                            className="w-5 h-5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <div className="flex flex-col">
+                            <span className="text-sm font-medium text-slate-700">Создать запись в финансах</span>
+                            <span className="text-[10px] text-slate-400">Планируемый приход на дату срока действия</span>
+                        </div>
+                    </label>
+                  </div>
+
+                  <div className="flex gap-2 mt-6">
                       <Button className="flex-1" onClick={handleCreateInvoice}>Создать счет</Button>
                       <Button variant="ghost" className="flex-1" onClick={() => setSelectObjectModalOpen(false)}>Отмена</Button>
                   </div>

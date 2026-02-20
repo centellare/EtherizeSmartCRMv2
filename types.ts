@@ -237,6 +237,7 @@ export interface Invoice {
   has_vat: boolean;
   status: 'draft' | 'sent' | 'paid' | 'cancelled';
   shipping_status?: 'none' | 'partial' | 'shipped'; // NEW: Shipping Tracking
+  due_date?: string | null; // NEW: Invoice validity date
   created_at: string;
   created_by: string;
   

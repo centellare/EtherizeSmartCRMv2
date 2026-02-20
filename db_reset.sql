@@ -66,6 +66,7 @@ ALTER TABLE public.inventory_items ALTER COLUMN purchase_price TYPE numeric USIN
 ALTER TABLE public.invoice_items ALTER COLUMN price TYPE numeric USING price::numeric;
 ALTER TABLE public.invoice_items ALTER COLUMN total TYPE numeric USING total::numeric;
 ALTER TABLE public.invoice_items ALTER COLUMN quantity TYPE numeric USING quantity::numeric;
+ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS due_date date;
 
 ALTER TABLE public.cp_items ALTER COLUMN price_at_moment TYPE numeric USING price_at_moment::numeric;
 ALTER TABLE public.cp_items ALTER COLUMN final_price_byn TYPE numeric USING final_price_byn::numeric;

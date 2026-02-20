@@ -367,6 +367,9 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                     <h1 className="text-xl font-bold uppercase">СЧЕТ-ПРОТОКОЛ</h1>
                     <p className="text-sm font-bold">согласования свободных отпускных цен</p>
                     <p className="text-sm font-bold mt-1">№ {toStr(invoice.number)} от {formatDate(invoice.created_at)}</p>
+                    {invoice.due_date && (
+                        <p className="text-xs text-red-600 font-bold mt-1">Действителен до: {formatDate(invoice.due_date)}</p>
+                    )}
                 </div>
 
                 <div className="mb-6 text-[12px]">
@@ -437,7 +440,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                 <div className="border border-black p-2 text-[9px] mb-6">
                     <ol className="list-decimal list-inside space-y-1">
                         <li>Поставщик обязуется поставить Покупателю, а Покупатель обязуется принять и оплатить товар.</li>
-                        <li>Оплата 100% в течение 3 рабочих дней.</li>
+                        <li>Оплата 100% {invoice.due_date ? `в срок до ${formatDate(invoice.due_date)}` : 'в течение 3 рабочих дней'}.</li>
                         <li>Срок поставки до 20 рабочих дней.</li>
                     </ol>
                 </div>
