@@ -499,7 +499,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
                             </div>
                             
                             {isExpanded && (
-                                <div className="divide-y divide-slate-50">
+                                <div className="divide-y divide-slate-50 max-h-64 overflow-y-auto scrollbar-hide">
                                     {items.map(p => {
                                         const stockQty = stockMap[p.id] || 0;
                                         return (

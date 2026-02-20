@@ -65,6 +65,7 @@ const InvoiceList: React.FC<InvoiceListProps> = ({ onView, onViewCP }) => {
           
           toast.success('Счет удален');
           queryClient.invalidateQueries({ queryKey: ['invoices'] });
+          queryClient.invalidateQueries({ queryKey: ['transactions'] });
       } catch (e: any) {
           console.error(e);
           toast.error('Ошибка: ' + e.message);
