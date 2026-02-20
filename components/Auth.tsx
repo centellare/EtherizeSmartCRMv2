@@ -3,13 +3,14 @@ import React, { useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { Input, Button } from './ui';
 
-type AuthMode = 'login' | 'reset';
+type AuthMode = 'login' | 'reset' | 'register';
 
 const Auth: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<AuthMode>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -20,6 +21,31 @@ const Auth: React.FC = () => {
     setSuccessMessage(null);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) setError(error.message);
+    setLoading(false);
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: fullName,
+        }
+      }
+    });
+
+    if (error) {
+      setError(error.message);
+    } else {
+      setSuccessMessage('Регистрация успешна! Пожалуйста, проверьте почту для подтверждения (если это настроено) или войдите.');
+      setMode('login');
+    }
     setLoading(false);
   };
 
@@ -56,6 +82,8 @@ const Auth: React.FC = () => {
           <p className="text-sm text-slate-500 mt-2">
             {mode === 'login' 
               ? 'Войдите в систему для начала работы' 
+              : mode === 'register'
+              ? 'Создайте новый аккаунт'
               : 'Введите Email, указанный при регистрации'}
           </p>
         </div>
@@ -67,7 +95,14 @@ const Auth: React.FC = () => {
               <Input label="Рабочий Email" type="email" required value={email} onChange={(e: any) => setEmail(e.target.value)} icon="email" />
               <div className="space-y-1">
                 <Input label="Пароль" type="password" required value={password} onChange={(e: any) => setPassword(e.target.value)} icon="lock" />
-                <div className="flex justify-end">
+                <div className="flex justify-between items-center">
+                  <button 
+                    type="button" 
+                    onClick={() => { setMode('register'); setError(null); setSuccessMessage(null); }}
+                    className="text-[11px] font-bold text-[#005ac1] uppercase tracking-wider hover:underline px-2 py-1"
+                  >
+                    Регистрация
+                  </button>
                   <button 
                     type="button" 
                     onClick={() => { setMode('reset'); setError(null); setSuccessMessage(null); }}
@@ -79,6 +114,27 @@ const Auth: React.FC = () => {
               </div>
             </div>
             <Button type="submit" loading={loading} className="w-full h-12" icon="login">Войти</Button>
+          </form>
+        ) : mode === 'register' ? (
+          <form onSubmit={handleRegister} className="space-y-6">
+            {error && <div className="bg-[#ffdad6] text-[#410002] p-4 rounded-xl text-sm">{error}</div>}
+            <div className="space-y-4">
+              <Input label="ФИО" type="text" required value={fullName} onChange={(e: any) => setFullName(e.target.value)} icon="person" />
+              <Input label="Рабочий Email" type="email" required value={email} onChange={(e: any) => setEmail(e.target.value)} icon="email" />
+              <Input label="Пароль" type="password" required value={password} onChange={(e: any) => setPassword(e.target.value)} icon="lock" />
+            </div>
+            <div className="space-y-3">
+              <Button type="submit" loading={loading} className="w-full h-12" icon="person_add">Зарегистрироваться</Button>
+              <Button 
+                variant="ghost" 
+                onClick={() => { setMode('login'); setError(null); setSuccessMessage(null); }}
+                className="w-full h-12" 
+                icon="arrow_back"
+                disabled={loading}
+              >
+                Вернуться к входу
+              </Button>
+            </div>
           </form>
         ) : (
           <form onSubmit={handleResetPassword} className="space-y-6">

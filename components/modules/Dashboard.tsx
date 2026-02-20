@@ -1,9 +1,12 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { supabase, measureQuery } from '../../lib/supabase';
+import React, { useMemo } from 'react';
 import { Badge, Button } from '../ui';
 import { formatDate, getMinskISODate } from '../../lib/dateUtils';
 import { TeamGantt } from './Dashboard/TeamGantt';
+import { useTasks } from '../../hooks/useTasks';
+import { useObjects } from '../../hooks/useObjects';
+import { useTransactions } from '../../hooks/useTransactions';
+import { useStaff } from '../../hooks/useStaff';
 
 const formatCurrency = (val: number) => 
   new Intl.NumberFormat('ru-BY', { style: 'currency', currency: 'BYN', maximumFractionDigits: 0 }).format(val);
@@ -510,42 +513,17 @@ const ManagerView: React.FC<{ tasks: any[], objects: any[], userId: string, staf
 // --- MAIN COMPONENT ---
 
 const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
-  const [loading, setLoading] = useState(true);
-  const [data, setData] = useState<{ tasks: any[], objects: any[], transactions: any[], staff: any[] }>({
-    tasks: [], objects: [], transactions: [], staff: []
-  });
-  
-  const fetchData = async () => {
-    if (!profile?.id) return;
-    setLoading(true);
-
-    try {
-      const [tasksRes, objectsRes, transRes, staffRes] = await Promise.all([
-        measureQuery(supabase.from('tasks').select('*, objects(name)').is('is_deleted', false)),
-        measureQuery(supabase.from('objects').select('*').is('is_deleted', false)),
-        measureQuery(supabase.from('transactions').select('*').is('deleted_at', null)),
-        measureQuery(supabase.from('profiles').select('id, full_name, role').is('deleted_at', null))
-      ]);
-
-      setData({
-        tasks: tasksRes.data || [],
-        objects: objectsRes.data || [],
-        transactions: transRes.data || [],
-        staff: staffRes.data || []
-      });
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { fetchData(); }, [profile?.id]);
-
   const role = profile?.role || 'specialist';
   const isAdmin = role === 'admin';
   const isDirector = role === 'director';
   const isManager = role === 'manager';
+
+  const { data: tasks = [], isLoading: tasksLoading } = useTasks();
+  const { data: objects = [], isLoading: objectsLoading } = useObjects();
+  const { data: transactions = [], isLoading: transLoading } = useTransactions();
+  const { data: staff = [], isLoading: staffLoading } = useStaff();
+
+  const loading = tasksLoading || objectsLoading || transLoading || staffLoading;
 
   return (
     <div className="animate-in fade-in duration-500 pb-10">
@@ -560,18 +538,18 @@ const Dashboard: React.FC<{ profile: any }> = ({ profile }) => {
         </div>
       </div>
 
-      {loading && data.tasks.length === 0 ? (
+      {loading && tasks.length === 0 ? (
         <div className="flex justify-center py-20">
           <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
         </div>
       ) : (
         <>
           {(isAdmin || isDirector) ? (
-            <DirectorView tasks={data.tasks} objects={data.objects} transactions={data.transactions} staff={data.staff} />
+            <DirectorView tasks={tasks} objects={objects} transactions={transactions} staff={staff} />
           ) : isManager ? (
-            <ManagerView tasks={data.tasks} objects={data.objects} userId={profile.id} staff={data.staff} />
+            <ManagerView tasks={tasks} objects={objects} userId={profile.id} staff={staff} />
           ) : (
-            <SpecialistView tasks={data.tasks} objects={data.objects} userId={profile.id} />
+            <SpecialistView tasks={tasks} objects={objects} userId={profile.id} />
           )}
         </>
       )}

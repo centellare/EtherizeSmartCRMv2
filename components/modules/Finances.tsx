@@ -1,10 +1,12 @@
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { supabase, measureQuery } from '../../lib/supabase';
+import React, { useState, useEffect, useMemo } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { supabase } from '../../lib/supabase';
 import { Button, Input, Modal, ConfirmModal, Select, useToast } from '../ui';
 import { Transaction } from '../../types';
 import { getMinskISODate, formatDate } from '../../lib/dateUtils';
+import { useObjects } from '../../hooks/useObjects';
+import { useTransactions } from '../../hooks/useTransactions';
 
 // Sub-components
 import { StatsOverview } from './Finances/StatsOverview';
@@ -61,52 +63,12 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
   // --- QUERIES ---
 
   // 1. Objects
-  const { data: objects = [] } = useQuery({
-    queryKey: ['objects'],
-    queryFn: async () => {
-      const { data } = await supabase.from('objects').select('id, name, client:clients(name)').is('is_deleted', false).order('name');
-      return data || [];
-    },
-    staleTime: 1000 * 60 * 5
-  });
+  const { data: objects = [] } = useObjects();
 
   // 2. Transactions
-  const { data: transactions = [], isLoading } = useQuery({
-    queryKey: ['transactions', { userId: profile?.id, role: profile?.role }],
-    queryFn: async () => {
-      let query = supabase
-        .from('transactions')
-        .select(`
-          *, 
-          objects(id, name, responsible_id), 
-          creator:profiles!transactions_created_by_fkey(full_name),
-          processor:profiles!processed_by(full_name),
-          payments:transaction_payments(
-            *,
-            creator:profiles!transaction_payments_created_by_fkey(full_name)
-          )
-        `)
-        .is('deleted_at', null);
-
-      if (isSpecialist) {
-        query = query.eq('created_by', profile.id);
-      }
-
-      const result = await measureQuery(query.order('created_at', { ascending: false }));
-      
-      if (result.data) {
-        return result.data.map((t: any) => ({
-          ...t,
-          payments: (t.payments || []).sort((a: any, b: any) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()),
-          created_by_name: t.creator?.full_name || 'Система',
-          processor_name: t.processor?.full_name || null
-        })) as Transaction[];
-      }
-      return [];
-    },
-    enabled: !!profile?.id,
-    refetchInterval: 5000, // Poll every 5 seconds
-    staleTime: 1000
+  const { data: transactions = [], isLoading } = useTransactions({
+    userId: profile?.id,
+    isSpecialist
   });
 
   // --- REALTIME ---
