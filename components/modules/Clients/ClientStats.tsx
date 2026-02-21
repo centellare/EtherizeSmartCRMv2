@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Legend } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 import { Client } from '../../../types';
 
 interface ClientStatsProps {
@@ -22,7 +22,7 @@ export const ClientStats: React.FC<ClientStatsProps> = ({ clients }) => {
   const sourceData = useMemo(() => {
     const counts: Record<string, number> = {};
     clients.forEach(client => {
-      const source = client.source || client.lead_source || 'other';
+      const source = client.lead_source || 'other';
       counts[source] = (counts[source] || 0) + 1;
     });
 
@@ -42,6 +42,20 @@ export const ClientStats: React.FC<ClientStatsProps> = ({ clients }) => {
     });
 
     return Object.entries(counts).map(([name, value]) => ({ name, value }));
+  }, [clients]);
+
+  const partnerData = useMemo(() => {
+    const counts: Record<string, number> = {};
+    clients.forEach(client => {
+      if (client.lead_source === 'partner' && client.partner) {
+        const partnerName = client.partner.name;
+        counts[partnerName] = (counts[partnerName] || 0) + 1;
+      }
+    });
+
+    return Object.entries(counts)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value);
   }, [clients]);
 
   return (
@@ -88,8 +102,30 @@ export const ClientStats: React.FC<ClientStatsProps> = ({ clients }) => {
         </div>
       </div>
 
+      {/* Partner Distribution */}
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+        <h3 className="text-lg font-bold text-slate-900 mb-4">Клиенты от партнеров</h3>
+        {partnerData.length > 0 ? (
+          <div className="h-[300px] w-full">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={partnerData} layout="vertical" margin={{ left: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                <XAxis type="number" allowDecimals={false} />
+                <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 12}} />
+                <Tooltip cursor={{ fill: 'transparent' }} />
+                <Bar dataKey="value" fill="#8884d8" radius={[0, 4, 4, 0]} name="Клиентов" barSize={20} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
+          <div className="h-[300px] w-full flex items-center justify-center text-slate-400">
+            Нет данных о партнерах
+          </div>
+        )}
+      </div>
+
       {/* Top Referrers (if any) */}
-      <div className="col-span-1 lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+      <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
         <h3 className="text-lg font-bold text-slate-900 mb-4">Топ рекомендаций (Сарафан)</h3>
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
