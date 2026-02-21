@@ -8,7 +8,7 @@ import MainContent from './components/MainContent';
 import { Button, ToastProvider } from './components/ui';
 import { isModuleAllowed } from './lib/access';
 
-export type Module = 'dashboard' | 'clients' | 'objects' | 'tasks' | 'finances' | 'team' | 'inventory' | 'notifications' | 'trash' | 'database' | 'proposals';
+export type Module = 'dashboard' | 'clients' | 'objects' | 'tasks' | 'finances' | 'team' | 'inventory' | 'notifications' | 'trash' | 'database' | 'proposals' | 'partners';
 
 const App: React.FC = () => {
   const { session, profile, loading, refreshProfile, recoverSession } = useAuth();

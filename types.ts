@@ -300,3 +300,49 @@ export interface PriceCatalogItem {
   unit: string;
   is_active: boolean;
 }
+
+// --- PARTNERS & CLIENTS ---
+
+export interface Partner {
+  id: string;
+  name: string;
+  contact_person?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  default_commission_percent: number;
+  status: 'active' | 'inactive';
+  notes?: string | null;
+  created_at: string;
+  updated_at: string;
+  
+  // Joins
+  clients?: any[]; // Can be Client[] or count object
+  total_clients?: number;
+  total_revenue?: number;
+  paid_commission?: number;
+}
+
+export interface Client {
+  id: string;
+  name: string;
+  type: 'individual' | 'company';
+  contact_person?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  requisites?: string | null; // Was address
+  lead_source?: string | null; // Was source
+  referred_by?: string | null;
+  partner_id?: string | null; // NEW: Link to partner
+  manager_id?: string | null;
+  created_at: string;
+  updated_at: string;
+  
+  // Joins
+  partner?: Partner;
+  manager?: { full_name: string };
+  objects?: any[];
+  // Legacy/Alias for UI compatibility
+  source?: string | null;
+  address?: string | null;
+}
+

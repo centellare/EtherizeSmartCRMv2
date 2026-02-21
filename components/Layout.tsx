@@ -57,6 +57,7 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
     { id: 'tasks', label: 'Задачи', icon: 'check_circle' },
     { id: 'objects', label: 'Объекты', icon: 'home_work' },
     { id: 'clients', label: 'Клиенты', icon: 'group' },
+    { id: 'partners', label: 'Партнеры', icon: 'handshake' },
     { id: 'proposals', label: 'КП и Цены', icon: 'description' },
     { id: 'inventory', label: 'Склад', icon: 'inventory_2' },
     { id: 'finances', label: 'Финансы', icon: 'account_balance' },

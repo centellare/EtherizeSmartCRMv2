@@ -50,8 +50,61 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
         { name: 'client_b', type: 'uuid', references: 'clients' },
         { name: 'type', type: 'text' }
     ]
+  },
+  {
+    name: 'partners',
+    description: 'Партнеры (B2B)',
+    columns: [
+        { name: 'id', type: 'uuid', isPrimary: true },
+        { name: 'name', type: 'text' },
+        { name: 'contact_person', type: 'text' },
+        { name: 'phone', type: 'text' },
+        { name: 'email', type: 'text' },
+        { name: 'default_commission_percent', type: 'numeric', description: 'Процент комиссии' },
+        { name: 'status', type: 'text', description: 'active | inactive' },
+        { name: 'notes', type: 'text' }
+    ]
   }
 ];
+
+export const MIGRATION_SQL_V7 = `
+-- SmartHome CRM: PARTNERS MODULE (v7.0)
+-- Добавляет таблицу партнеров и связь с клиентами.
+
+BEGIN;
+
+-- 1. Create Partners Table
+CREATE TABLE IF NOT EXISTS public.partners (
+    id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
+    name text NOT NULL,
+    contact_person text,
+    phone text,
+    email text,
+    default_commission_percent numeric DEFAULT 10,
+    status text DEFAULT 'active' CHECK (status IN ('active', 'inactive')),
+    notes text,
+    created_at timestamptz DEFAULT now(),
+    updated_at timestamptz DEFAULT now()
+);
+
+-- 2. Update Clients Table
+ALTER TABLE public.clients ADD COLUMN IF NOT EXISTS partner_id uuid REFERENCES public.partners(id);
+
+-- 3. RLS Policies for Partners
+ALTER TABLE public.partners ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Partners view" ON public.partners;
+CREATE POLICY "Partners view" ON public.partners FOR SELECT USING (
+    get_my_role() IN ('admin', 'director', 'manager')
+);
+
+DROP POLICY IF EXISTS "Partners manage" ON public.partners;
+CREATE POLICY "Partners manage" ON public.partners FOR ALL USING (
+    get_my_role() IN ('admin', 'director')
+);
+
+COMMIT;
+`;
 
 export const MIGRATION_SQL_V6 = `
 -- SmartHome CRM: FULL LOGIC RESET v6.6 (Task Checklists & Questions RLS Fix)
@@ -565,12 +618,12 @@ CREATE POLICY "History manage" ON public.object_history FOR ALL USING (
 COMMIT;
 `;
 
-export const MIGRATION_SQL_V5 = MIGRATION_SQL_V6;
+export const MIGRATION_SQL_V5 = MIGRATION_SQL_V7;
 export const SUPABASE_SETUP_GUIDE = `
-### ВАЖНО: Полный сброс логики (v6.6)
+### ВАЖНО: Обновление Партнеры (v7.0)
 1. Скопируйте SQL-скрипт обновления.
 2. Откройте SQL Editor в Supabase.
 3. Выполните скрипт.
    
-Это исправит создание пользователей через дашборд и ошибки RLS.
+Это добавит таблицу партнеров и связь с клиентами.
 `;

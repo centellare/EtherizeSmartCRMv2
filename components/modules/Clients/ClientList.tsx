@@ -61,6 +61,13 @@ export const ClientList: React.FC<ClientListProps> = ({
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter truncate mb-4">Отв: {client.contact_person}</p>
               )}
               
+              {client.partner && (
+                <div className="mb-4 inline-flex items-center gap-1 bg-indigo-50 text-indigo-700 px-2 py-1 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                  <span className="material-icons-round text-xs">handshake</span>
+                  {client.partner.name}
+                </div>
+              )}
+              
               <div className="space-y-2 mb-6">
                 {client.phone && (
                   <div className="flex items-center gap-2 text-sm text-[#444746]">

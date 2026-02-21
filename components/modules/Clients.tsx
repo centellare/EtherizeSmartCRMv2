@@ -9,6 +9,7 @@ import { Module } from '../../App';
 import { ClientList } from './Clients/ClientList';
 import { ClientForm } from './Clients/modals/ClientForm';
 import { ClientDetails } from './Clients/modals/ClientDetails';
+import { ClientStats } from './Clients/ClientStats'; // NEW
 
 interface ClientsProps {
   profile: any;
@@ -23,6 +24,9 @@ const Clients: React.FC<ClientsProps> = ({
 }) => {
   const queryClient = useQueryClient();
   const toast = useToast();
+
+  // Tabs state
+  const [activeTab, setActiveTab] = useState<'list' | 'stats'>('list');
 
   // Modals state
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'details' | 'none'>('none');
@@ -42,10 +46,17 @@ const Clients: React.FC<ClientsProps> = ({
     queryFn: async () => {
       const { data } = await supabase
         .from('clients')
-        .select('*, manager:profiles!fk_clients_manager(full_name), objects!fk_objects_client(id, name, is_deleted)')
+        .select('*, manager:profiles!fk_clients_manager(full_name), objects!fk_objects_client(id, name, is_deleted), partner:partners(id, name)')
         .is('deleted_at', null)
         .order('name');
-      return data || [];
+      
+      // Map 'person' to 'individual' to match type definition if needed, or update type definition
+      // The DB enum is 'person' | 'company' but type is 'individual' | 'company'
+      // Let's cast it for now or fix the type.
+      return (data || []).map((c: any) => ({
+        ...c,
+        type: c.type === 'person' ? 'individual' : c.type
+      }));
     },
     enabled: !!profile?.id
   });
@@ -120,41 +131,62 @@ const Clients: React.FC<ClientsProps> = ({
         <Button onClick={() => { setSelectedClient(null); setModalMode('create'); }} icon="person_add">Добавить клиента</Button>
       </div>
 
-      <div className="flex flex-col md:flex-row gap-4 mb-8 bg-white p-4 rounded-2xl border border-[#e1e2e1]">
-        <div className="flex-grow">
-          <Input 
-            placeholder="Поиск по имени, контактному лицу, телефону или email..." 
-            value={searchQuery} 
-            onChange={(e: any) => setSearchQuery(e.target.value)} 
-            icon="search"
-          />
-        </div>
-        <div className="w-full md:w-48">
-          <Select 
-            value={typeFilter} 
-            onChange={(e: any) => setTypeFilter(e.target.value)}
-            options={[
-              { value: 'all', label: 'Все типы' },
-              { value: 'person', label: 'Физлица' },
-              { value: 'company', label: 'Компании' }
-            ]}
-          />
-        </div>
+      <div className="flex gap-2 mb-6 border-b border-slate-200">
+        <button 
+          onClick={() => setActiveTab('list')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'list' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+        >
+          Список
+        </button>
+        <button 
+          onClick={() => setActiveTab('stats')}
+          className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${activeTab === 'stats' ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+        >
+          Статистика
+        </button>
       </div>
 
-      {isClientsLoading ? (
-        <div className="flex justify-center py-20">
-           <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
-        </div>
+      {activeTab === 'list' ? (
+        <>
+          <div className="flex flex-col md:flex-row gap-4 mb-8 bg-white p-4 rounded-2xl border border-[#e1e2e1]">
+            <div className="flex-grow">
+              <Input 
+                placeholder="Поиск по имени, контактному лицу, телефону или email..." 
+                value={searchQuery} 
+                onChange={(e: any) => setSearchQuery(e.target.value)} 
+                icon="search"
+              />
+            </div>
+            <div className="w-full md:w-48">
+              <Select 
+                value={typeFilter} 
+                onChange={(e: any) => setTypeFilter(e.target.value)}
+                options={[
+                  { value: 'all', label: 'Все типы' },
+                  { value: 'person', label: 'Физлица' },
+                  { value: 'company', label: 'Компании' }
+                ]}
+              />
+            </div>
+          </div>
+
+          {isClientsLoading ? (
+            <div className="flex justify-center py-20">
+               <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin"></div>
+            </div>
+          ) : (
+            <ClientList 
+              clients={filteredClients}
+              canManage={canManage}
+              onView={(client) => { setSelectedClient(client); setModalMode('details'); }}
+              onEdit={(client) => { setSelectedClient(client); setModalMode('edit'); }}
+              onDelete={(id) => setDeleteModal({ open: true, id })}
+              onNavigateToObject={onNavigateToObject}
+            />
+          )}
+        </>
       ) : (
-        <ClientList 
-          clients={filteredClients}
-          canManage={canManage}
-          onView={(client) => { setSelectedClient(client); setModalMode('details'); }}
-          onEdit={(client) => { setSelectedClient(client); setModalMode('edit'); }}
-          onDelete={(id) => setDeleteModal({ open: true, id })}
-          onNavigateToObject={onNavigateToObject}
-        />
+        <ClientStats clients={clients} />
       )}
 
       {/* --- MODALS --- */}

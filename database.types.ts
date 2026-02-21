@@ -15,6 +15,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      partners: {
+        Row: {
+          id: string
+          name: string
+          contact_person: string | null
+          phone: string | null
+          email: string | null
+          default_commission_percent: number
+          status: 'active' | 'inactive'
+          notes: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          name: string
+          contact_person?: string | null
+          phone?: string | null
+          email?: string | null
+          default_commission_percent?: number
+          status?: 'active' | 'inactive'
+          notes?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          name?: string
+          contact_person?: string | null
+          phone?: string | null
+          email?: string | null
+          default_commission_percent?: number
+          status?: 'active' | 'inactive'
+          notes?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       price_rules: {
         Row: {
           id: string
@@ -102,6 +141,7 @@ export type Database = {
           lead_source: string | null
           manager_id: string | null
           name: string
+          partner_id: string | null
           phone: string | null
           referred_by: string | null
           requisites: string | null
@@ -122,6 +162,7 @@ export type Database = {
           lead_source?: string | null
           manager_id?: string | null
           name: string
+          partner_id?: string | null
           phone?: string | null
           referred_by?: string | null
           requisites?: string | null
@@ -142,6 +183,7 @@ export type Database = {
           lead_source?: string | null
           manager_id?: string | null
           name?: string
+          partner_id?: string | null
           phone?: string | null
           referred_by?: string | null
           requisites?: string | null

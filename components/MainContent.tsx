@@ -14,6 +14,7 @@ const Finances = React.lazy(() => import('./modules/Finances'));
 const Team = React.lazy(() => import('./modules/Team'));
 const Inventory = React.lazy(() => import('./modules/Inventory/index'));
 const Proposals = React.lazy(() => import('./modules/Proposals/index'));
+const Partners = React.lazy(() => import('./modules/Partners'));
 const Notifications = React.lazy(() => import('./modules/Notifications'));
 const Trash = React.lazy(() => import('./modules/Trash'));
 
@@ -108,6 +109,9 @@ const MainContent: React.FC<MainContentProps> = ({
 
     case 'proposals':
       return renderWithProtection('proposals', <Proposals profile={profile} />);
+
+    case 'partners':
+      return renderWithProtection('partners', <Partners profile={profile} />);
 
     case 'notifications': 
       return renderWithProtection('notifications', <Notifications profile={profile} />);
