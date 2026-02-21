@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/hooks/useAuth';
-import { supabase, checkConnection } from '@/lib/supabase';
-import Auth from '@/components/Auth';
-import Layout from '@/components/Layout';
-import MainContent from '@/components/MainContent';
-import { Button, ToastProvider } from '@/components/ui';
-import { isModuleAllowed } from '@/lib/access';
+import { useAuth } from './hooks/useAuth';
+import { supabase, checkConnection } from './lib/supabase';
+import Auth from './components/Auth';
+import Layout from './components/Layout';
+import MainContent from './components/MainContent';
+import { Button, ToastProvider } from './components/ui';
+import { isModuleAllowed } from './lib/access';
 
 export type Module = 'dashboard' | 'clients' | 'objects' | 'tasks' | 'finances' | 'team' | 'inventory' | 'notifications' | 'trash' | 'database' | 'proposals' | 'partners';
 

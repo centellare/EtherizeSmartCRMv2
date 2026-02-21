@@ -6,10 +6,6 @@
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["./src/*"]
-    },
 
     /* Bundler mode */
     "moduleResolution": "bundler",
@@ -21,7 +17,6 @@
 
     /* Linting */
     "strict": true,
-    "forceConsistentCasingInFileNames": true,
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
