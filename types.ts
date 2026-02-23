@@ -325,7 +325,7 @@ export interface Partner {
 export interface Client {
   id: string;
   name: string;
-  type: 'person' | 'company'; // Исправлено с 'individual'
+  type: 'person' | 'company'; // Исправлено с individual
   contact_person: string | null;
   phone: string | null;
   email: string | null;
@@ -334,14 +334,15 @@ export interface Client {
   referred_by: string | null;
   partner_id: string | null;
   manager_id: string | null;
-  created_at: string; // Оставляем string, если в БД Not Null, иначе добавь | null
+  created_at: string | null; // Разрешаем null для сборки
   updated_at: string | null;
   
-  // Joins
-  partner?: Partner;
-  manager?: { full_name: string };
+  // Joins (делаем опциональными и гибкими, чтобы Supabase не ломал типизацию при выборке)
+  partner?: any; 
+  manager?: { full_name: string } | null;
   objects?: any[];
-  // Legacy/Alias for UI compatibility
+  
+  // Legacy
   source?: string | null;
   address?: string | null;
 }
