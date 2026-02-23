@@ -27,28 +27,69 @@ const CashFlowForecast: React.FC<{ transactions: any[] }> = ({ transactions }) =
         label: `${formatDate(start).slice(0, 5)} - ${formatDate(end).slice(0, 5)}`,
         startStr: getMinskISODate(start),
         endStr: getMinskISODate(end),
-        income: 0,
-        expense: 0
+        incomeFact: 0,
+        incomePlan: 0,
+        expenseFact: 0,
+        expensePlan: 0
       };
     });
 
     transactions.forEach(t => {
-      // Only Pending/Partial transactions with planned_date
-      if ((t.status === 'pending' || t.status === 'partial') && t.planned_date) {
-        const tDate = t.planned_date; // String YYYY-MM-DD
-        const targetWeek = weeks.find(w => tDate >= w.startStr && tDate <= w.endStr);
-        if (targetWeek) {
-          const amount = t.type === 'expense' ? (t.requested_amount || t.amount) : (t.amount - (t.fact_amount || 0));
-          if (t.type === 'income') targetWeek.income += amount;
-          else targetWeek.expense += amount;
-        }
+      // 1. FACT (Actual Payments)
+      let factAdded = false;
+      if (t.payments && t.payments.length > 0) {
+          t.payments.forEach((p: any) => {
+              const pDate = p.payment_date ? p.payment_date.split('T')[0] : '';
+              const targetWeek = weeks.find(w => pDate >= w.startStr && pDate <= w.endStr);
+              if (targetWeek) {
+                  if (t.type === 'income') targetWeek.incomeFact += (p.amount || 0);
+                  else targetWeek.expenseFact += (p.amount || 0);
+                  factAdded = true;
+              }
+          });
+      } 
+      
+      // Fallback for legacy transactions without payments array but with fact_amount
+      if (!factAdded && t.fact_amount > 0) {
+           const rawDate = t.planned_date || t.created_at;
+           const tDate = rawDate ? (rawDate.includes('T') ? rawDate.split('T')[0] : rawDate) : '';
+           const targetWeek = weeks.find(w => tDate >= w.startStr && tDate <= w.endStr);
+           if (targetWeek) {
+               if (t.type === 'income') targetWeek.incomeFact += t.fact_amount;
+               else targetWeek.expenseFact += t.fact_amount;
+           }
+      }
+
+      // 2. PLAN (Expected/Remaining)
+      if (t.status !== 'rejected') {
+          const targetAmount = t.type === 'expense' 
+              ? (t.status === 'approved' ? t.amount : (t.requested_amount || t.amount))
+              : t.amount;
+          
+          // Calculate Fact Total for this transaction (to subtract from plan)
+          const factTotal = t.fact_amount || 0;
+          const remaining = Math.max(0, targetAmount - factTotal);
+
+          if (remaining > 1) { // Filter out small dust
+              const tDate = t.planned_date;
+              if (tDate) {
+                  const targetWeek = weeks.find(w => tDate >= w.startStr && tDate <= w.endStr);
+                  if (targetWeek) {
+                      if (t.type === 'income') targetWeek.incomePlan += remaining;
+                      else targetWeek.expensePlan += remaining;
+                  }
+              }
+          }
       }
     });
 
     return weeks;
   }, [transactions]);
 
-  const maxVal = Math.max(...data.map(d => Math.max(d.income, d.expense)), 1000);
+  const maxVal = Math.max(
+      ...data.map(d => Math.max(d.incomeFact + d.incomePlan, d.expenseFact + d.expensePlan)), 
+      1000
+  );
 
   return (
     <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm h-full flex flex-col">
@@ -58,38 +99,57 @@ const CashFlowForecast: React.FC<{ transactions: any[] }> = ({ transactions }) =
                 <span className="material-icons-round text-blue-600">query_stats</span>
                 Прогноз потоков (Месяц)
             </h4>
-            <p className="text-xs text-slate-500 mt-1">Ожидаемые поступления и выплаты по неделям</p>
+            <p className="text-xs text-slate-500 mt-1">План/Факт по неделям</p>
         </div>
-        <div className="flex gap-4 text-[10px] font-bold uppercase">
-            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-emerald-400"></div>Приход</div>
-            <div className="flex items-center gap-1"><div className="w-3 h-3 rounded bg-rose-400"></div>Расход</div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[9px] font-bold uppercase">
+            <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-emerald-500"></div>Приход (Факт)</div>
+            <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-blue-400"></div>Приход (План)</div>
+            <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-rose-500"></div>Расход (Факт)</div>
+            <div className="flex items-center gap-1"><div className="w-2 h-2 rounded bg-amber-400"></div>Расход (План)</div>
         </div>
       </div>
 
       <div className="flex-grow flex items-end justify-between gap-4 h-[180px] pb-2">
         {data.map((week, idx) => {
-            const net = week.income - week.expense;
+            const totalIncome = week.incomeFact + week.incomePlan;
+            const totalExpense = week.expenseFact + week.expensePlan;
+            const net = totalIncome - totalExpense;
+
             return (
                 <div key={idx} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group cursor-pointer relative">
                     {/* Tooltip */}
-                    <div className="absolute -top-12 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-800 text-white text-[10px] p-2 rounded-lg whitespace-nowrap z-10 pointer-events-none">
-                        Баланс недели: {formatCurrency(net)}
+                    <div className="absolute -top-16 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-800 text-white text-[10px] p-2 rounded-lg whitespace-nowrap z-10 pointer-events-none">
+                        <div className="font-bold mb-1">{week.label}</div>
+                        <div>Приход: {formatCurrency(totalIncome)} (Ф: {formatCurrency(week.incomeFact)})</div>
+                        <div>Расход: {formatCurrency(totalExpense)} (Ф: {formatCurrency(week.expenseFact)})</div>
+                        <div className="mt-1 pt-1 border-t border-slate-600">Баланс: {formatCurrency(net)}</div>
                     </div>
 
                     <div className="w-full flex gap-1 items-end h-full justify-center">
-                        {/* Income Bar */}
+                        {/* Income Bar (Stacked) */}
                         <div 
-                            className="w-1/2 bg-emerald-400 rounded-t-lg transition-all hover:bg-emerald-500 relative min-h-[4px]"
-                            style={{ height: `${(week.income / maxVal) * 100}%` }}
+                            className="w-1/2 flex flex-col justify-end rounded-t-lg overflow-hidden relative min-h-[4px] bg-slate-100"
+                            style={{ height: `${(totalIncome / maxVal) * 100}%` }}
                         >
-                            {week.income > 0 && <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-slate-600">{formatCurrency(week.income)}</span>}
+                            {/* Plan (Top) */}
+                            <div className="w-full bg-blue-400 transition-all hover:bg-blue-500" style={{ height: `${(week.incomePlan / totalIncome) * 100}%` }}></div>
+                            {/* Fact (Bottom) */}
+                            <div className="w-full bg-emerald-500 transition-all hover:bg-emerald-600" style={{ height: `${(week.incomeFact / totalIncome) * 100}%` }}></div>
+                            
+                            {totalIncome > 0 && <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-slate-600">{formatCurrency(totalIncome)}</span>}
                         </div>
-                        {/* Expense Bar */}
+
+                        {/* Expense Bar (Stacked) */}
                         <div 
-                            className="w-1/2 bg-rose-400 rounded-t-lg transition-all hover:bg-rose-500 relative min-h-[4px]"
-                            style={{ height: `${(week.expense / maxVal) * 100}%` }}
+                            className="w-1/2 flex flex-col justify-end rounded-t-lg overflow-hidden relative min-h-[4px] bg-slate-100"
+                            style={{ height: `${(totalExpense / maxVal) * 100}%` }}
                         >
-                            {week.expense > 0 && <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-slate-600">{formatCurrency(week.expense)}</span>}
+                            {/* Plan (Top) */}
+                            <div className="w-full bg-amber-400 transition-all hover:bg-amber-500" style={{ height: `${(week.expensePlan / totalExpense) * 100}%` }}></div>
+                            {/* Fact (Bottom) */}
+                            <div className="w-full bg-rose-500 transition-all hover:bg-rose-600" style={{ height: `${(week.expenseFact / totalExpense) * 100}%` }}></div>
+                            
+                            {totalExpense > 0 && <span className="absolute -top-5 left-1/2 -translate-x-1/2 text-[9px] font-bold text-slate-600">{formatCurrency(totalExpense)}</span>}
                         </div>
                     </div>
                     <span className="text-[10px] font-bold text-slate-400">{week.label}</span>
