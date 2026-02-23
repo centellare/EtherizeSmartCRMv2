@@ -4,6 +4,7 @@ import { supabase } from '../../../lib/supabase';
 import { Button, useToast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
 import { sumInWords } from '../../../lib/formatUtils';
+import { notifyRole } from '../../../lib/notifications';
 
 interface InvoiceViewProps {
   invoiceId: string;
@@ -154,6 +155,9 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
           // 2. Logic for Reservation & Deficit (Only when moving from Draft -> Sent/Paid)
           if ((newStatus === 'sent' || newStatus === 'paid') && invoice.status === 'draft') {
               
+              // Notify storekeeper about new shipment task
+              await notifyRole(['storekeeper'], `Счет №${invoice.number} готов к отгрузке (статус: ${newStatus})`);
+
               // A. Get invoice items (products only, flatten hierarchy)
               const { data: invItems } = await supabase
                   .from('invoice_items')
@@ -176,7 +180,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                   const productIds = Object.keys(requirements);
                   const { data: stockItems } = await supabase
                       .from('inventory_items')
-                      .select('id, product_id, quantity, purchase_price, catalog_id, serial_number, assigned_to_id')
+                      .select('id, product_id, quantity, purchase_price, serial_number, assigned_to_id')
                       .in('product_id', productIds)
                       .eq('status', 'in_stock')
                       .gt('quantity', 0)
@@ -222,7 +226,6 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                                   status: 'reserved',
                                   reserved_for_invoice_id: invoiceId,
                                   purchase_price: item.purchase_price,
-                                  catalog_id: item.catalog_id,
                                   assigned_to_id: item.assigned_to_id,
                                   serial_number: null // Reset serial on split as we don't know which one
                               });
@@ -252,6 +255,9 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                               status: 'pending'
                           }));
                           await supabase.from('supply_order_items').insert(soItems);
+
+                          // Notify storekeeper/manager about deficit
+                          await notifyRole(['storekeeper', 'manager'], `Создан заказ на снабжение (дефицит) по счету №${invoice.number}`);
                       }
                   }
               }

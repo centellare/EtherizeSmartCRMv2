@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Input } from '../../../ui';
+import { createNotification } from '../../../../lib/notifications';
 
 interface TaskCompletionModalProps {
   task: any;
@@ -32,6 +33,12 @@ export const TaskCompletionModal: React.FC<TaskCompletionModalProps> = ({ task, 
       // If RLS filters the row (permission denied), data will be empty but no error thrown
       if (!data || data.length === 0) {
           throw new Error('Нет прав на завершение этой задачи.');
+      }
+
+      // Notify creator
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user && task.created_by && task.created_by !== user.id) {
+        await createNotification(task.created_by, `Задача "${task.title}" выполнена.`);
       }
 
       onSuccess();

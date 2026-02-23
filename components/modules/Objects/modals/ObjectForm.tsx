@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Input, Select } from '../../../ui';
+import { createNotification } from '../../../../lib/notifications';
 
 interface ObjectFormProps {
   mode: 'create' | 'edit';
@@ -53,6 +54,11 @@ export const ObjectForm: React.FC<ObjectFormProps> = ({
       if (mode === 'edit' && initialData) {
         const res = await supabase.from('objects').update(payload).eq('id', initialData.id);
         error = res.error;
+
+        // Notify responsible if changed
+        if (initialData.responsible_id !== payload.responsible_id && payload.responsible_id && payload.responsible_id !== profile.id) {
+          await createNotification(payload.responsible_id, `Вам назначен объект: ${payload.name}`);
+        }
       } else {
         const res = await supabase.from('objects').insert([{ 
           ...payload, 
@@ -61,6 +67,11 @@ export const ObjectForm: React.FC<ObjectFormProps> = ({
           current_status: 'in_work' 
         }]);
         error = res.error;
+
+        // Notify responsible
+        if (payload.responsible_id && payload.responsible_id !== profile.id) {
+          await createNotification(payload.responsible_id, `Вам назначен новый объект: ${payload.name}`);
+        }
       }
       if (error) throw error;
     },

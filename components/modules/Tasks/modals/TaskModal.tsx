@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Input, Select } from '../../../ui';
 import { getMinskISODate } from '../../../../lib/dateUtils';
+import { createNotification } from '../../../../lib/notifications';
 
 interface TaskModalProps {
   mode: 'create' | 'edit';
@@ -126,6 +127,12 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
         }).eq('id', formData.id);
 
         if (error) throw error;
+
+        // Notify if assignee changed
+        if (initialData.assigned_to !== formData.assigned_to && formData.assigned_to !== profile.id) {
+          await createNotification(formData.assigned_to, `Вам назначена задача: ${formData.title}`);
+        }
+
       } else {
         // Find current stage from objects list
         const selectedObject = objects.find(o => o.id === formData.object_id);
@@ -147,6 +154,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
 
         if (error) throw error;
         if (newTask) taskId = newTask.id;
+
+        // Notify assignee
+        if (formData.assigned_to !== profile.id) {
+          await createNotification(formData.assigned_to, `Вам назначена новая задача: ${formData.title}`);
+        }
       }
 
       if (taskId) {

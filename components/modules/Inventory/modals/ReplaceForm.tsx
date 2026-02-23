@@ -42,7 +42,7 @@ export const ReplaceForm: React.FC<ReplaceFormProps> = ({ selectedItem, items, p
             await supabase.from('inventory_items').update({ quantity: selectedItem.quantity - qtyOld }).eq('id', selectedItem.id);
             // Create record for history tracking
             await supabase.from('inventory_items').insert({
-                catalog_id: selectedItem.catalog_id,
+                product_id: selectedItem.product_id,
                 serial_number: selectedItem.serial_number,
                 quantity: qtyOld,
                 purchase_price: selectedItem.purchase_price,
@@ -76,21 +76,21 @@ export const ReplaceForm: React.FC<ReplaceFormProps> = ({ selectedItem, items, p
         }
 
         // 2. Process NEW item (Install)
-        const warrantyMonths = stockItem.catalog?.warranty_period_months || 0;
+        const warrantyDays = stockItem.product?.warranty_days || 0;
         const warrantyEnd = new Date(now);
-        warrantyEnd.setMonth(warrantyEnd.getMonth() + warrantyMonths);
+        warrantyEnd.setDate(warrantyEnd.getDate() + warrantyDays);
 
         // Deduct from stock
         const newStockQty = stockItem.quantity - qtyNew;
         if (newStockQty <= 0.0001) {
-             await supabase.from('inventory_items').update({ quantity: 0, is_deleted: true, deleted_at: now.toISOString() }).eq('id', stockItem.id);
+             await supabase.from('inventory_items').update({ quantity: 0, deleted_at: now.toISOString() }).eq('id', stockItem.id);
         } else {
              await supabase.from('inventory_items').update({ quantity: newStockQty }).eq('id', stockItem.id);
         }
 
         // Create new deployed record
         const { data: deployedNew } = await supabase.from('inventory_items').insert({
-            catalog_id: stockItem.catalog_id,
+            product_id: stockItem.product_id,
             serial_number: stockItem.serial_number, 
             quantity: qtyNew,
             purchase_price: stockItem.purchase_price,
@@ -107,7 +107,7 @@ export const ReplaceForm: React.FC<ReplaceFormProps> = ({ selectedItem, items, p
                 action_type: 'deploy',
                 to_object_id: selectedItem.current_object_id,
                 created_by: profile.id,
-                comment: `Замена для ${selectedItem.catalog?.name} (S/N: ${selectedItem.serial_number || 'N/A'})`
+                comment: `Замена для ${selectedItem.product?.name} (S/N: ${selectedItem.serial_number || 'N/A'})`
             }]);
         }
     },
@@ -139,7 +139,7 @@ export const ReplaceForm: React.FC<ReplaceFormProps> = ({ selectedItem, items, p
         {/* БЛОК 1: ЧТО ЗАМЕНЯЕМ (ДЕМОНТАЖ) */}
         <div className="bg-red-50 p-4 rounded-2xl border border-red-100">
             <p className="text-[10px] text-red-500 mb-1 font-bold uppercase tracking-wider">Демонтаж / Списание</p>
-            <p className="font-bold text-slate-900">{selectedItem.catalog?.name}</p>
+            <p className="font-bold text-slate-900">{selectedItem.product?.name}</p>
             <p className="text-[10px] font-mono text-red-700 mb-3">S/N: {selectedItem.serial_number || 'N/A'}</p>
             
             <div className="flex items-end gap-3">
@@ -154,7 +154,7 @@ export const ReplaceForm: React.FC<ReplaceFormProps> = ({ selectedItem, items, p
                     />
                 </div>
                 <div className="mb-2">
-                    <span className="text-xs text-slate-400 font-bold uppercase">{selectedItem.catalog?.unit}</span>
+                    <span className="text-xs text-slate-400 font-bold uppercase">{selectedItem.product?.unit}</span>
                 </div>
             </div>
         </div>
@@ -184,7 +184,7 @@ export const ReplaceForm: React.FC<ReplaceFormProps> = ({ selectedItem, items, p
                     {value: '', label: 'Поиск товара...'}, 
                     ...items.filter(i => i.status === 'in_stock').map(i => ({
                         value: i.id, 
-                        label: `${i.catalog?.name} | S/N: ${i.serial_number || 'нет'} | Остаток: ${i.quantity}`
+                        label: `${i.product?.name} | S/N: ${i.serial_number || 'нет'} | Остаток: ${i.quantity}`
                     }))
                 ]}
             />
@@ -200,7 +200,7 @@ export const ReplaceForm: React.FC<ReplaceFormProps> = ({ selectedItem, items, p
                     />
                     <div className="flex items-end mb-2">
                         <span className="text-[10px] text-blue-600 font-bold">
-                            {items.find(i => i.id === formData.new_item_id)?.catalog?.unit}
+                            {items.find(i => i.id === formData.new_item_id)?.product?.unit}
                         </span>
                     </div>
                 </div>

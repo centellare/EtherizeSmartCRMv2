@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Input, Select } from '../../../ui';
+import { createNotification } from '../../../../lib/notifications';
 
 interface ClientFormProps {
   mode: 'create' | 'edit';
@@ -83,9 +84,19 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
       if (mode === 'edit') {
         const { error } = await supabase.from('clients').update(cleanPayload).eq('id', initialData.id);
         if (error) throw error;
+
+        // Notify manager if changed
+        if (initialData.manager_id !== payload.manager_id && payload.manager_id && payload.manager_id !== profile.id) {
+          await createNotification(payload.manager_id, `Вам назначен клиент: ${payload.name}`);
+        }
       } else {
         const { error } = await supabase.from('clients').insert([cleanPayload]);
         if (error) throw error;
+
+        // Notify manager
+        if (payload.manager_id && payload.manager_id !== profile.id) {
+          await createNotification(payload.manager_id, `Вам назначен новый клиент: ${payload.name}`);
+        }
       }
     },
     onSuccess: () => {

@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
-import { Modal, Input, Button, Badge } from './ui';
+import { Modal, Input, Button, Badge, useToast } from './ui';
 import { isModuleAllowed } from '../lib/access';
 import CommandPalette from './CommandPalette';
 import { useQueryClient } from '@tanstack/react-query';
@@ -20,9 +20,11 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
   const [loading, setLoading] = useState(false);
   const [isLive, setIsLive] = useState(true);
   const [profileForm, setProfileForm] = useState({ full_name: '', phone: '', birth_date: '' });
+  const [unreadCount, setUnreadCount] = useState(0);
   
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const queryClient = useQueryClient();
+  const toast = useToast();
 
   useEffect(() => {
     if (profile) {
@@ -31,8 +33,19 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
         phone: profile.phone || '', 
         birth_date: profile.birth_date || '' 
       });
+      fetchUnreadCount();
     }
   }, [profile]);
+
+  const fetchUnreadCount = async () => {
+    if (!profile) return;
+    const { count } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('profile_id', profile.id)
+      .eq('is_read', false);
+    setUnreadCount(count || 0);
+  };
 
   // ОПТИМИЗИРОВАННЫЙ REALTIME
   useEffect(() => {
@@ -49,8 +62,51 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
         }
       });
 
-    return () => { supabase.removeChannel(channel); };
-  }, [queryClient]);
+    // Notification Subscription
+    const notificationChannel = supabase.channel('layout_notifications')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'notifications', filter: `profile_id=eq.${profile?.id}` },
+        (payload) => {
+          setUnreadCount((prev) => prev + 1);
+          const newNotif = payload.new as any;
+          
+          // Show Toast
+          toast.info(newNotif.content);
+
+          // Show System Notification
+          if ("Notification" in window) {
+            if (Notification.permission === "granted") {
+              new Notification("SmartCRM", { body: newNotif.content });
+            } else if (Notification.permission !== "denied") {
+              Notification.requestPermission().then(permission => {
+                if (permission === "granted") {
+                  new Notification("SmartCRM", { body: newNotif.content });
+                }
+              });
+            }
+          }
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'UPDATE', schema: 'public', table: 'notifications', filter: `profile_id=eq.${profile?.id}` },
+        (payload) => {
+          const newNotif = payload.new as any;
+          const oldNotif = payload.old as any;
+          // If marked as read
+          if (newNotif.is_read && !oldNotif.is_read) {
+            setUnreadCount((prev) => Math.max(0, prev - 1));
+          }
+        }
+      )
+      .subscribe();
+
+    return () => { 
+      supabase.removeChannel(channel); 
+      supabase.removeChannel(notificationChannel);
+    };
+  }, [queryClient, profile, toast]);
 
   const allMenuItems = [
     { id: 'dashboard', label: 'Дашборд', icon: 'dashboard' },
@@ -210,7 +266,11 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
             </div>
             <button onClick={() => setActiveModule('notifications')} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors relative ${activeModule === 'notifications' ? 'bg-[#d3e4ff] text-[#001d3d]' : 'hover:bg-[#f3f5f7] text-[#444746]'}`}>
               <span className="material-icons-round">notifications</span>
-              <span className="absolute top-2.5 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span>
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] bg-red-500 rounded-full border-2 border-white flex items-center justify-center text-[9px] font-bold text-white px-1">
+                  {unreadCount > 99 ? '99+' : unreadCount}
+                </span>
+              )}
             </button>
           </div>
         </header>

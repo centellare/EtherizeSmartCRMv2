@@ -40,7 +40,7 @@ export const ReturnForm: React.FC<ReturnFormProps> = ({ selectedItem, objects, p
                 .eq('id', selectedItem.id);
 
             const { data: returnedItem } = await supabase.from('inventory_items').insert([{
-                catalog_id: selectedItem.catalog_id,
+                product_id: selectedItem.product_id,
                 serial_number: selectedItem.serial_number,
                 quantity: qtyToReturn,
                 purchase_price: selectedItem.purchase_price,
@@ -97,7 +97,7 @@ export const ReturnForm: React.FC<ReturnFormProps> = ({ selectedItem, objects, p
     <form onSubmit={handleSubmit} className="space-y-4">
         <div className="bg-orange-50 p-4 rounded-2xl border border-orange-100">
             <p className="text-xs text-orange-600 font-bold uppercase mb-1">Возврат на склад</p>
-            <p className="font-bold text-slate-900">{selectedItem.catalog?.name}</p>
+            <p className="font-bold text-slate-900">{selectedItem.product?.name}</p>
             <p className="text-xs text-slate-500">
                 Объект: {objects.find(o => o.id === selectedItem.current_object_id)?.name}
             </p>

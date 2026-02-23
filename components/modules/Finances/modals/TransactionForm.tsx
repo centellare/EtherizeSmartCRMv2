@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Input, Select } from '../../../ui';
 import { getMinskISODate } from '../../../../lib/dateUtils';
+import { notifyRole } from '../../../../lib/notifications';
 
 interface TransactionFormProps {
   mode: 'create' | 'edit';
@@ -64,6 +65,11 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialD
               created_by: profile.id
           }]);
           if (error) throw error;
+
+          // Notify admins about new expense request
+          if (payload.type === 'expense') {
+            await notifyRole(['admin', 'director'], `Новый запрос на расход: ${payload.amount} BYN (${payload.category})`);
+          }
       }
     },
     onSuccess: () => {
