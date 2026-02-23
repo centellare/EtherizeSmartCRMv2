@@ -325,17 +325,17 @@ export interface Partner {
 export interface Client {
   id: string;
   name: string;
-  type: 'person' | 'company';
-  contact_person?: string | null;
-  phone?: string | null;
-  email?: string | null;
-  requisites?: string | null; // Was address
-  lead_source?: string | null; // Was source
-  referred_by?: string | null;
-  partner_id?: string | null; // NEW: Link to partner
-  manager_id?: string | null;
-  created_at: string;
-  updated_at: string;
+  type: 'person' | 'company'; // Исправлено с 'individual'
+  contact_person: string | null;
+  phone: string | null;
+  email: string | null;
+  requisites: string | null;
+  lead_source: string | null;
+  referred_by: string | null;
+  partner_id: string | null;
+  manager_id: string | null;
+  created_at: string; // Оставляем string, если в БД Not Null, иначе добавь | null
+  updated_at: string | null;
   
   // Joins
   partner?: Partner;

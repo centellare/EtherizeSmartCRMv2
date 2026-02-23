@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
@@ -24,15 +23,16 @@ const SOURCES = [
 
 export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff, profile, onSuccess }) => {
   const queryClient = useQueryClient();
-  const [partners, setPartners] = useState<any[]>([]); // For partner selection
+
+  const [partners, setPartners] = useState<any[]>([]); 
   const [formData, setFormData] = useState({
     name: '',
-    type: 'person' as 'person' | 'company',
+    type: 'person' as 'person' | 'company', // Изменено на person
     contact_person: '',
     phone: '',
     email: '',
-    requisites: '', // Was address
-    lead_source: 'other', // Was source
+    requisites: '',
+    lead_source: 'other',
     partner_id: '',
     manager_id: profile?.id || '',
   });
@@ -41,7 +41,8 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
     if (mode === 'edit' && initialData) {
       setFormData({
         name: initialData.name,
-        type: initialData.type,
+        // Если прилетит старый кэш с individual, сразу мапим в person
+        type: initialData.type === 'individual' ? 'person' : initialData.type, 
         contact_person: initialData.contact_person || '',
         phone: initialData.phone || '',
         email: initialData.email || '',
@@ -52,7 +53,6 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
       });
     }
     
-    // Fetch partners
     const fetchPartners = async () => {
         const { data } = await supabase.from('partners').select('id, name').eq('status', 'active').order('name');
         setPartners(data || []);
@@ -62,10 +62,9 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
 
   const mutation = useMutation({
     mutationFn: async (payload: any) => {
-      // Clean up payload
       const cleanPayload = {
         name: payload.name,
-        type: payload.type,
+        type: payload.type, // Теперь тут всегда person или company
         contact_person: payload.contact_person,
         phone: payload.phone,
         email: payload.email,
@@ -119,8 +118,8 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
         <Select 
           label="Тип" 
           value={formData.type} 
-          onChange={(e: any) => setFormData({...formData, type: e.target.value as 'person' | 'company'})}
-          options={[{ value: 'person', label: 'Физлицо' }, { value: 'company', label: 'Компания' }]}
+          onChange={(e: any) => setFormData({...formData, type: e.target.value as 'person' | 'company'})} // Изменено
+          options={[{ value: 'person', label: 'Физлицо' }, { value: 'company', label: 'Компания' }]} // Изменено
           icon="category"
         />
         <Select 
