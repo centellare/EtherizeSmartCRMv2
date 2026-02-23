@@ -50,7 +50,13 @@ const Clients: React.FC<ClientsProps> = ({
         .is('deleted_at', null)
         .order('name');
       
-      return data || [];
+      // Map 'person' to 'individual' to match type definition if needed, or update type definition
+      // The DB enum is 'person' | 'company' but type is 'individual' | 'company'
+      // Let's cast it for now or fix the type.
+      return (data || []).map((c: any) => ({
+        ...c,
+        type: c.type === 'person' ? 'individual' : c.type
+      }));
     },
     enabled: !!profile?.id
   });

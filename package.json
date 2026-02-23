@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "lint": "tsc --noEmit",
     "preview": "vite preview",
-    "start": "serve -s dist -l tcp://0.0.0.0:${PORT:-3000}"
+    "start": "vite dev --host"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.45.4",
@@ -16,8 +16,7 @@
     "lucide-react": "^0.575.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "recharts": "^3.7.0",
-    "serve": "^14.2.5"
+    "recharts": "^3.7.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.0",
