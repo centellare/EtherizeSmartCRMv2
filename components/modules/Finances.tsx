@@ -92,6 +92,13 @@ const Finances: React.FC<{ profile: any; initialTransactionId?: string | null }>
 
   // --- CALCULATIONS ---
 
+  // Helper to calculate "Real" Fact Amount (handles legacy/simple approved items without explicit payments)
+  const getFactAmount = (t: any) => {
+      if (t.fact_amount && t.fact_amount > 0) return t.fact_amount;
+      if (t.status === 'approved') return t.amount;
+      return 0;
+  };
+
   // 1. GLOBAL METRICS (Lifetime, Snapshot)
   const globalMetrics = useMemo(() => {
       const todayStr = getMinskISODate();
@@ -102,18 +109,19 @@ const Finances: React.FC<{ profile: any; initialTransactionId?: string | null }>
           relevantTransactions = transactions.filter(t => t.object_id === selectedObjectId);
       }
 
-      const allIncome = relevantTransactions.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
-      const allExpense = relevantTransactions.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0);
+      // REAL BALANCE: Fact Income - Fact Expense
+      const allIncome = relevantTransactions.filter(t => t.type === 'income').reduce((s, t) => s + getFactAmount(t), 0);
+      const allExpense = relevantTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + getFactAmount(t), 0);
       const balance = allIncome - allExpense;
 
       // Debtors: Planned Income (Pending/Partial) where planned_date < today
       const debtorsList = relevantTransactions.filter(t => 
           t.type === 'income' && 
-          (t.status === 'pending' || t.status === 'partial') && 
+          (t.amount - getFactAmount(t)) > 0.01 && // Has debt
           t.planned_date && 
           t.planned_date < todayStr
       );
-      const debtorsSum = debtorsList.reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
+      const debtorsSum = debtorsList.reduce((s, t) => s + (t.amount - getFactAmount(t)), 0);
 
       return {
           balance,
@@ -124,65 +132,94 @@ const Finances: React.FC<{ profile: any; initialTransactionId?: string | null }>
 
   // 2. PERIOD FLOW METRICS (Depends on Dates)
   const periodMetrics = useMemo(() => {
-      const filteredByDate = transactions.filter(t => {
-          // Object Filter
-          if (selectedObjectId && t.object_id !== selectedObjectId) return false;
+      // 1. Filter by Object first
+      let relevantTransactions = transactions;
+      if (selectedObjectId) {
+          relevantTransactions = transactions.filter(t => t.object_id === selectedObjectId);
+      }
 
-          // Use planned_date or fact_date (via payment_date logic usually, but here we rely on transaction fields)
-          // If transaction is approved/partial, we might look at payments, but for simplicity let's use:
-          // - fact_date (if exists) or created_at for FACT
-          // - planned_date for PLAN
-          
-          // However, the request says "use date field". 
-          // Let's assume 'date' means:
-          // - For FACT: The date it happened (often created_at or a specific fact_date if we had one, but let's use created_at or planned_date if that's what user meant. 
-          //   Actually, usually 'planned_date' is the main date field for scheduling.
-          //   Let's use 'planned_date' as the primary filter for PLAN, and 'created_at' (or payment dates) for FACT?
-          //   User said: "use the date field (planned/actual event date)".
-          //   In our type we have 'planned_date'. We don't have a specific 'fact_date' column in the interface shown, but we have 'created_at'.
-          //   Let's use 'planned_date' if available, otherwise 'created_at'.
-          
+      // 2. Plan Metrics: Based on Transaction Date (planned_date)
+      const planTransactions = relevantTransactions.filter(t => {
           const targetDate = t.planned_date || getMinskISODate(t.created_at);
           const matchesStart = !startDate || targetDate >= startDate;
           const matchesEnd = !endDate || targetDate <= endDate;
           return matchesStart && matchesEnd;
       });
 
-      // Income Fact: Sum of fact_amount
-      const incomeFactList = filteredByDate.filter(t => t.type === 'income');
-      const incomeFactSum = incomeFactList.reduce((s, t) => s + (t.fact_amount || 0), 0);
-
-      // Income Plan: Sum of (amount - fact_amount) where status is NOT approved (fully paid)
-      // Only include if there is debt remaining
-      const incomePlanList = filteredByDate.filter(t => 
+      // Income Plan: Sum of remaining debt (EXPECTED MONEY IN)
+      const incomePlanList = planTransactions.filter(t => 
           t.type === 'income' && 
-          t.status !== 'approved' && 
-          (t.amount - (t.fact_amount || 0)) > 0.01
+          (t.amount - getFactAmount(t)) > 0.01
       );
-      const incomePlanSum = incomePlanList.reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
+      const incomePlanSum = incomePlanList.reduce((s, t) => s + (t.amount - getFactAmount(t)), 0);
 
-      // Expense Fact: Sum of fact_amount (or amount if approved and no partial logic for expenses yet)
-      // For expenses, usually 'approved' means fully paid/done. 
-      // If we track partial expenses, we should use fact_amount. 
-      // Assuming 'approved' expense = fully paid = amount.
-      const expenseFactList = filteredByDate.filter(t => t.type === 'expense' && t.status === 'approved');
-      const expenseFactSum = expenseFactList.reduce((s, t) => s + t.amount, 0);
-
-      // Expense Plan: Sum of (requested_amount or amount) - fact_amount
-      const expensePlanList = filteredByDate.filter(t => 
+      // Expense Plan: Sum of remaining payable (EXPECTED MONEY OUT)
+      const expensePlanList = planTransactions.filter(t => 
           t.type === 'expense' && 
-          t.status !== 'approved'
+          t.status !== 'rejected'
       );
       const expensePlanSum = expensePlanList.reduce((s, t) => {
-          const targetAmount = t.requested_amount || t.amount;
-          const done = t.fact_amount || 0;
+          const targetAmount = t.status === 'approved' ? t.amount : (t.requested_amount || t.amount);
+          const done = getFactAmount(t);
           return s + Math.max(0, targetAmount - done);
       }, 0);
 
+      // 3. Fact Metrics: Based on Actual Payment Dates
+      let incomeFactSum = 0;
+      let incomeFactCount = 0;
+      let expenseFactSum = 0;
+      let expenseFactCount = 0;
+
+      relevantTransactions.forEach(t => {
+          // Calculate Fact for this transaction in the given period
+          let factInPeriod = 0;
+          let hasFact = false;
+
+          if (t.payments && t.payments.length > 0) {
+              // If payments exist, sum those in range
+              t.payments.forEach((p: any) => {
+                  // Ensure we compare YYYY-MM-DD only
+                  const pDate = p.payment_date ? p.payment_date.split('T')[0] : '';
+                  const matchesStart = !startDate || pDate >= startDate;
+                  const matchesEnd = !endDate || pDate <= endDate;
+                  if (matchesStart && matchesEnd) {
+                      factInPeriod += (p.amount || 0);
+                      hasFact = true;
+                  }
+              });
+          } else {
+              // Legacy/Simple: Check transaction date
+              // t.planned_date is YYYY-MM-DD usually. t.created_at is ISO.
+              const rawDate = t.planned_date || t.created_at;
+              const tDate = rawDate ? (rawDate.includes('T') ? rawDate.split('T')[0] : rawDate) : '';
+              
+              const matchesStart = !startDate || tDate >= startDate;
+              const matchesEnd = !endDate || tDate <= endDate;
+              
+              if (matchesStart && matchesEnd) {
+                  const amt = getFactAmount(t);
+                  if (amt > 0) {
+                      factInPeriod += amt;
+                      hasFact = true;
+                  }
+              }
+          }
+
+          if (hasFact) {
+              if (t.type === 'income') {
+                  incomeFactSum += factInPeriod;
+                  incomeFactCount++;
+              } else {
+                  expenseFactSum += factInPeriod;
+                  expenseFactCount++;
+              }
+          }
+      });
+
       return {
-          incomeFactSum, incomeFactCount: incomeFactList.length,
+          incomeFactSum, incomeFactCount,
           incomePlanSum, incomePlanCount: incomePlanList.length,
-          expenseFactSum, expenseFactCount: expenseFactList.length,
+          expenseFactSum, expenseFactCount,
           expensePlanSum, expensePlanCount: expensePlanList.length
       };
   }, [transactions, startDate, endDate, selectedObjectId]);
