@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../ui';
 import CPGenerator from './CPGenerator';
@@ -10,7 +10,7 @@ import FormSettings from './FormSettings';
 import InvoiceView from './InvoiceView';
 import InvoiceList from './InvoiceList';
 
-const Proposals: React.FC<{ profile: any }> = ({ profile }) => {
+const Proposals: React.FC<{ profile: any; initialObjectId?: string | null }> = ({ profile, initialObjectId }) => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'proposals' | 'invoices' | 'prices' | 'forms'>('proposals');
   const [mode, setMode] = useState<'list' | 'create' | 'edit' | 'view_cp' | 'view_invoice'>('list');
@@ -25,6 +25,17 @@ const Proposals: React.FC<{ profile: any }> = ({ profile }) => {
     setSelectedId(id);
     setMode('view_invoice');
   };
+
+  useEffect(() => {
+    if (initialObjectId) {
+      if (initialObjectId.startsWith('invoices/')) {
+        const id = initialObjectId.split('/')[1];
+        handleViewInvoice(id);
+      } else {
+        handleViewCP(initialObjectId);
+      }
+    }
+  }, [initialObjectId]);
 
   const handleEdit = (id: string) => {
     setSelectedId(id);

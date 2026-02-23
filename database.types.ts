@@ -771,6 +771,7 @@ export type Database = {
       notifications: {
         Row: {
           content: string
+          link: string | null
           created_at: string | null
           created_by: string | null
           deleted_at: string | null
@@ -783,6 +784,7 @@ export type Database = {
         }
         Insert: {
           content: string
+          link?: string | null
           created_at?: string | null
           created_by?: string | null
           deleted_at?: string | null
@@ -795,6 +797,7 @@ export type Database = {
         }
         Update: {
           content?: string
+          link?: string | null
           created_at?: string | null
           created_by?: string | null
           deleted_at?: string | null

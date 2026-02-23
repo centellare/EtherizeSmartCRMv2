@@ -16,7 +16,7 @@ import { PaymentForm } from './Finances/modals/PaymentForm';
 import { TransactionDetails } from './Finances/modals/TransactionDetails';
 import { Analytics } from './Finances/Analytics';
 
-const Finances: React.FC<{ profile: any }> = ({ profile }) => {
+const Finances: React.FC<{ profile: any; initialTransactionId?: string | null }> = ({ profile, initialTransactionId }) => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<'journal' | 'analytics'>('journal');
   const toast = useToast();
@@ -70,6 +70,16 @@ const Finances: React.FC<{ profile: any }> = ({ profile }) => {
     userId: profile?.id,
     isSpecialist
   });
+
+  useEffect(() => {
+    if (initialTransactionId && transactions.length > 0) {
+      const t = transactions.find((t: any) => t.id === initialTransactionId);
+      if (t) {
+        setSelectedTransaction(t);
+        setModalMode('details');
+      }
+    }
+  }, [initialTransactionId, transactions]);
 
   // --- REALTIME ---
   useEffect(() => {

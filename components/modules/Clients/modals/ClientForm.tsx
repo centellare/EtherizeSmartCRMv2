@@ -87,15 +87,15 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
 
         // Notify manager if changed
         if (initialData.manager_id !== payload.manager_id && payload.manager_id && payload.manager_id !== profile.id) {
-          await createNotification(payload.manager_id, `Вам назначен клиент: ${payload.name}`);
+          await createNotification(payload.manager_id, `Вам назначен клиент: ${payload.name}`, `#clients/${initialData.id}`);
         }
       } else {
-        const { error } = await supabase.from('clients').insert([cleanPayload]);
+        const { data, error } = await supabase.from('clients').insert([cleanPayload]).select('id').single();
         if (error) throw error;
 
         // Notify manager
         if (payload.manager_id && payload.manager_id !== profile.id) {
-          await createNotification(payload.manager_id, `Вам назначен новый клиент: ${payload.name}`);
+          await createNotification(payload.manager_id, `Вам назначен новый клиент: ${payload.name}`, `#clients/${data.id}`);
         }
       }
     },

@@ -22,9 +22,15 @@ export interface CartItem {
 
 type Tab = 'stock' | 'nomenclature' | 'warranty' | 'orders';
 
-const Inventory: React.FC<{ profile: any }> = ({ profile }) => {
+const Inventory: React.FC<{ profile: any; initialTab?: string | null }> = ({ profile, initialTab }) => {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>('stock');
+  
+  useEffect(() => {
+    if (initialTab && ['stock', 'nomenclature', 'warranty', 'orders'].includes(initialTab)) {
+      setActiveTab(initialTab as Tab);
+    }
+  }, [initialTab]);
   
   // Cart State
   const [cart, setCart] = useState<CartItem[]>([]);

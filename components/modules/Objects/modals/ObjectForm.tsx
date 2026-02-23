@@ -57,20 +57,20 @@ export const ObjectForm: React.FC<ObjectFormProps> = ({
 
         // Notify responsible if changed
         if (initialData.responsible_id !== payload.responsible_id && payload.responsible_id && payload.responsible_id !== profile.id) {
-          await createNotification(payload.responsible_id, `Вам назначен объект: ${payload.name}`);
+          await createNotification(payload.responsible_id, `Вам назначен объект: ${payload.name}`, `#objects/${initialData.id}`);
         }
       } else {
-        const res = await supabase.from('objects').insert([{ 
+        const { data: newObject, error: insertError } = await supabase.from('objects').insert([{ 
           ...payload, 
           created_by: profile.id, 
           current_stage: 'negotiation', 
           current_status: 'in_work' 
-        }]);
-        error = res.error;
+        }]).select('id').single();
+        error = insertError;
 
         // Notify responsible
-        if (payload.responsible_id && payload.responsible_id !== profile.id) {
-          await createNotification(payload.responsible_id, `Вам назначен новый объект: ${payload.name}`);
+        if (newObject && payload.responsible_id && payload.responsible_id !== profile.id) {
+          await createNotification(payload.responsible_id, `Вам назначен новый объект: ${payload.name}`, `#objects/${newObject.id}`);
         }
       }
       if (error) throw error;

@@ -99,16 +99,16 @@ const MainContent: React.FC<MainContentProps> = ({
       ));
     
     case 'finances': 
-      return renderWithProtection('finances', <Finances profile={profile} />);
+      return renderWithProtection('finances', <Finances profile={profile} initialTransactionId={activeObjectId} />);
     
     case 'team': 
       return renderWithProtection('team', <Team profile={profile} />);
     
     case 'inventory':
-      return renderWithProtection('inventory', <Inventory profile={profile} />);
+      return renderWithProtection('inventory', <Inventory profile={profile} initialTab={activeObjectId} />);
 
     case 'proposals':
-      return renderWithProtection('proposals', <Proposals profile={profile} />);
+      return renderWithProtection('proposals', <Proposals profile={profile} initialObjectId={activeObjectId} />);
 
     case 'partners':
       return renderWithProtection('partners', <Partners profile={profile} />);

@@ -38,7 +38,7 @@ export const TaskCompletionModal: React.FC<TaskCompletionModalProps> = ({ task, 
       // Notify creator
       const { data: { user } } = await supabase.auth.getUser();
       if (user && task.created_by && task.created_by !== user.id) {
-        await createNotification(task.created_by, `Задача "${task.title}" выполнена.`);
+        await createNotification(task.created_by, `Задача "${task.title}" выполнена.`, `#tasks/${task.id}`);
       }
 
       onSuccess();

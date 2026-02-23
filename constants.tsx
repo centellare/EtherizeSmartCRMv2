@@ -67,6 +67,18 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
   }
 ];
 
+export const MIGRATION_SQL_V8 = `
+-- SmartHome CRM: NOTIFICATIONS LINK (v8.0)
+-- Добавляет поле link в таблицу уведомлений для кликабельности.
+
+BEGIN;
+
+-- 1. Add link column to notifications
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS link text;
+
+COMMIT;
+`;
+
 export const MIGRATION_SQL_V7 = `
 -- SmartHome CRM: PARTNERS MODULE (v7.0)
 -- Добавляет таблицу партнеров и связь с клиентами.

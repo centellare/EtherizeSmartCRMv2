@@ -156,7 +156,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
           if ((newStatus === 'sent' || newStatus === 'paid') && invoice.status === 'draft') {
               
               // Notify storekeeper about new shipment task
-              await notifyRole(['storekeeper'], `Счет №${invoice.number} готов к отгрузке (статус: ${newStatus})`);
+              await notifyRole(['storekeeper'], `Счет №${invoice.number} готов к отгрузке (статус: ${newStatus})`, `#proposals/invoices/${invoiceId}`);
 
               // A. Get invoice items (products only, flatten hierarchy)
               const { data: invItems } = await supabase
@@ -257,7 +257,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                           await supabase.from('supply_order_items').insert(soItems);
 
                           // Notify storekeeper/manager about deficit
-                          await notifyRole(['storekeeper', 'manager'], `Создан заказ на снабжение (дефицит) по счету №${invoice.number}`);
+                          await notifyRole(['storekeeper', 'manager'], `Создан заказ на снабжение (дефицит) по счету №${invoice.number}`, '#inventory/orders');
                       }
                   }
               }

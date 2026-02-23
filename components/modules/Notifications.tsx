@@ -67,12 +67,28 @@ const Notifications: React.FC<{ profile: any }> = ({ profile }) => {
           </div>
         ) : (
           items.map(item => (
-            <div key={item.id} className={`p-5 rounded-[24px] border transition-all ${item.is_read ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-blue-100 shadow-sm ring-1 ring-blue-50'}`}>
+            <div 
+              key={item.id} 
+              onClick={async () => {
+                if (!item.is_read) {
+                  await supabase.from('notifications').update({ is_read: true }).eq('id', item.id);
+                  // Optimistic update locally
+                  setItems(prev => prev.map(n => n.id === item.id ? { ...n, is_read: true } : n));
+                }
+                if (item.link) {
+                  window.location.hash = item.link;
+                }
+              }}
+              className={`p-5 rounded-[24px] border transition-all relative ${item.link ? 'cursor-pointer hover:bg-blue-50/50 hover:border-blue-200' : ''} ${item.is_read ? 'bg-slate-50 border-slate-100 opacity-60' : 'bg-white border-blue-100 shadow-sm ring-1 ring-blue-50'}`}
+            >
               <div className="flex justify-between gap-4">
                 <p className={`text-sm leading-relaxed ${item.is_read ? 'text-slate-500' : 'text-slate-900 font-medium'}`}>{item.content}</p>
                 {!item.is_read && <div className="w-2 h-2 bg-blue-600 rounded-full shrink-0 mt-1.5"></div>}
               </div>
-              <p className="text-[10px] text-slate-400 font-bold uppercase mt-3 tracking-widest">{new Date(item.created_at).toLocaleString()}</p>
+              <div className="flex justify-between items-center mt-3">
+                 <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">{new Date(item.created_at).toLocaleString()}</p>
+                 {item.link && <span className="material-icons-round text-slate-300 text-sm">arrow_forward</span>}
+              </div>
             </div>
           ))
         )}

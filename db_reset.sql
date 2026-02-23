@@ -74,6 +74,8 @@ ALTER TABLE public.cp_items ALTER COLUMN quantity TYPE numeric USING quantity::n
 
 ALTER TABLE public.transaction_payments ALTER COLUMN amount TYPE numeric USING amount::numeric;
 
+ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS link text;
+
 ALTER TABLE public.products ADD COLUMN IF NOT EXISTS markup_percent numeric DEFAULT 0;
 
 UPDATE public.products 

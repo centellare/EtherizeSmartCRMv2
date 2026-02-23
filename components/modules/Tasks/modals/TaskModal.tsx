@@ -130,7 +130,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
 
         // Notify if assignee changed
         if (initialData.assigned_to !== formData.assigned_to && formData.assigned_to !== profile.id) {
-          await createNotification(formData.assigned_to, `Вам назначена задача: ${formData.title}`);
+          await createNotification(formData.assigned_to, `Вам назначена задача: ${formData.title}`, `#tasks/${taskId}`);
         }
 
       } else {
@@ -157,7 +157,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
 
         // Notify assignee
         if (formData.assigned_to !== profile.id) {
-          await createNotification(formData.assigned_to, `Вам назначена новая задача: ${formData.title}`);
+          await createNotification(formData.assigned_to, `Вам назначена новая задача: ${formData.title}`, `#tasks/${taskId}`);
         }
       }
 

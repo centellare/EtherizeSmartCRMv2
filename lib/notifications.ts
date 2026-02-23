@@ -1,10 +1,11 @@
 import { supabase } from './supabase';
 
-export const createNotification = async (profileId: string, content: string) => {
+export const createNotification = async (profileId: string, content: string, link?: string) => {
   try {
     await supabase.from('notifications').insert({
       profile_id: profileId,
       content,
+      link,
       is_read: false,
     });
   } catch (error) {
@@ -12,7 +13,7 @@ export const createNotification = async (profileId: string, content: string) => 
   }
 };
 
-export const notifyRole = async (roles: string[], content: string) => {
+export const notifyRole = async (roles: string[], content: string, link?: string) => {
   try {
     const { data: profiles } = await supabase
       .from('profiles')
@@ -23,6 +24,7 @@ export const notifyRole = async (roles: string[], content: string) => {
       const notifications = profiles.map((profile) => ({
         profile_id: profile.id,
         content,
+        link,
         is_read: false,
       }));
 

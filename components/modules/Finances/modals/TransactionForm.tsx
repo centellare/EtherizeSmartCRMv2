@@ -59,16 +59,16 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialD
           const { error } = await supabase.from('transactions').update(payload).eq('id', initialData.id);
           if (error) throw error;
       } else {
-          const { error } = await supabase.from('transactions').insert([{
+          const { data, error } = await supabase.from('transactions').insert([{
               ...payload,
               status: 'pending',
               created_by: profile.id
-          }]);
+          }]).select().single();
           if (error) throw error;
 
           // Notify admins about new expense request
-          if (payload.type === 'expense') {
-            await notifyRole(['admin', 'director'], `Новый запрос на расход: ${payload.amount} BYN (${payload.category})`);
+          if (payload.type === 'expense' && data) {
+            await notifyRole(['admin', 'director'], `Новый запрос на расход: ${payload.amount} BYN (${payload.category})`, `#finances/${data.id}`);
           }
       }
     },
