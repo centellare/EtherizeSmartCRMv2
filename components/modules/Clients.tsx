@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
@@ -9,7 +8,7 @@ import { Module } from '../../App';
 import { ClientList } from './Clients/ClientList';
 import { ClientForm } from './Clients/modals/ClientForm';
 import { ClientDetails } from './Clients/modals/ClientDetails';
-import { ClientStats } from './Clients/ClientStats'; // NEW
+import { ClientStats } from './Clients/ClientStats';
 
 interface ClientsProps {
   profile: any;
@@ -25,15 +24,11 @@ const Clients: React.FC<ClientsProps> = ({
   const queryClient = useQueryClient();
   const toast = useToast();
 
-  // Tabs state
   const [activeTab, setActiveTab] = useState<'list' | 'stats'>('list');
-
-  // Modals state
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'details' | 'none'>('none');
   const [selectedClient, setSelectedClient] = useState<any>(null);
   const [deleteModal, setDeleteModal] = useState<{open: boolean, id: string | null}>({ open: false, id: null });
 
-  // Filters
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('all');
 
@@ -50,13 +45,8 @@ const Clients: React.FC<ClientsProps> = ({
         .is('deleted_at', null)
         .order('name');
       
-      // Map 'person' to 'individual' to match type definition if needed, or update type definition
-      // The DB enum is 'person' | 'company' but type is 'individual' | 'company'
-      // Let's cast it for now or fix the type.
-      return (data || []).map((c: any) => ({
-        ...c,
-        type: c.type === 'person' ? 'individual' : c.type
-      }));
+      // Теперь возвращаем данные напрямую, так как фронтенд переведен на 'person'
+      return data || []; 
     },
     enabled: !!profile?.id
   });
@@ -73,7 +63,6 @@ const Clients: React.FC<ClientsProps> = ({
     staleTime: 1000 * 60 * 5
   });
 
-  // Deep Linking: Open details if ID provided
   useEffect(() => {
     if (initialClientId && clients.length > 0) {
       const target = clients.find((c: any) => c.id === initialClientId);
@@ -97,7 +86,6 @@ const Clients: React.FC<ClientsProps> = ({
 
   const handleDelete = async () => {
     if (!deleteModal.id) return;
-    // setLoading(true); // handled by mutation usually, but here we just wait
     const { error } = await supabase.from('clients').update({ deleted_at: new Date().toISOString() }).eq('id', deleteModal.id);
     
     if (!error) {
@@ -108,7 +96,6 @@ const Clients: React.FC<ClientsProps> = ({
     } else {
         toast.error('Ошибка при удалении');
     }
-    // setLoading(false);
   };
 
   const handleCloseModal = () => {
@@ -122,7 +109,6 @@ const Clients: React.FC<ClientsProps> = ({
 
   return (
     <div className="animate-in fade-in duration-500">
-      
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-8">
         <div>
           <h2 className="text-3xl font-medium text-[#1c1b1f]">Клиенты</h2>
@@ -163,7 +149,7 @@ const Clients: React.FC<ClientsProps> = ({
                 onChange={(e: any) => setTypeFilter(e.target.value)}
                 options={[
                   { value: 'all', label: 'Все типы' },
-                  { value: 'person', label: 'Физлица' },
+                  { value: 'person', label: 'Физлица' }, // Исправлено с 'individual' на 'person' 
                   { value: 'company', label: 'Компании' }
                 ]}
               />
@@ -189,8 +175,6 @@ const Clients: React.FC<ClientsProps> = ({
         <ClientStats clients={clients} />
       )}
 
-      {/* --- MODALS --- */}
-
       <Modal 
         isOpen={modalMode === 'create' || modalMode === 'edit'} 
         onClose={handleCloseModal} 
@@ -209,7 +193,6 @@ const Clients: React.FC<ClientsProps> = ({
         />
       </Modal>
 
-      {/* CHANGED: Client Details is now a Drawer */}
       <Drawer isOpen={modalMode === 'details'} onClose={handleCloseModal} title="Информация о клиенте">
         <ClientDetails 
             client={selectedClient} 

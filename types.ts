@@ -325,7 +325,7 @@ export interface Partner {
 export interface Client {
   id: string;
   name: string;
-  type: 'individual' | 'company';
+  type: 'person' | 'company';
   contact_person?: string | null;
   phone?: string | null;
   email?: string | null;

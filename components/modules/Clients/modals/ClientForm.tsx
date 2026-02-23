@@ -27,7 +27,7 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
   const [partners, setPartners] = useState<any[]>([]); // For partner selection
   const [formData, setFormData] = useState({
     name: '',
-    type: 'individual' as 'individual' | 'company',
+    type: 'person' as 'person' | 'company',
     contact_person: '',
     phone: '',
     email: '',
@@ -119,8 +119,8 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
         <Select 
           label="Тип" 
           value={formData.type} 
-          onChange={(e: any) => setFormData({...formData, type: e.target.value as 'individual' | 'company'})}
-          options={[{ value: 'individual', label: 'Физлицо' }, { value: 'company', label: 'Компания' }]}
+          onChange={(e: any) => setFormData({...formData, type: e.target.value as 'person' | 'company'})}
+          options={[{ value: 'person', label: 'Физлицо' }, { value: 'company', label: 'Компания' }]}
           icon="category"
         />
         <Select 
