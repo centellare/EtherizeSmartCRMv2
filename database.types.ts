@@ -1086,6 +1086,7 @@ export type Database = {
           phone: string | null
           role: Database["public"]["Enums"]["user_role"]
           skills: string[] | null
+          telegram_chat_id: string | null
           updated_at: string | null
           updated_by: string | null
         }
@@ -1102,6 +1103,7 @@ export type Database = {
           phone?: string | null
           role: Database["public"]["Enums"]["user_role"]
           skills?: string[] | null
+          telegram_chat_id?: string | null
           updated_at?: string | null
           updated_by?: string | null
         }
@@ -1118,6 +1120,7 @@ export type Database = {
           phone?: string | null
           role?: Database["public"]["Enums"]["user_role"]
           skills?: string[] | null
+          telegram_chat_id?: string | null
           updated_at?: string | null
           updated_by?: string | null
         }

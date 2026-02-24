@@ -31,8 +31,9 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
       setProfileForm({ 
         full_name: profile.full_name || '', 
         phone: profile.phone || '', 
-        birth_date: profile.birth_date || '' 
-      });
+        birth_date: profile.birth_date || '',
+        telegram_chat_id: (profile as any).telegram_chat_id || ''
+      } as any);
       fetchUnreadCount();
     }
   }, [profile]);
@@ -174,6 +175,18 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input label="Контактный телефон" value={profileForm.phone} onChange={(e:any) => setProfileForm({...profileForm, phone: e.target.value})} icon="phone" />
               <Input label="Дата рождения" type="date" value={profileForm.birth_date} onChange={(e:any) => setProfileForm({...profileForm, birth_date: e.target.value})} icon="calendar_today" />
+            </div>
+            <div className="pt-2 border-t border-slate-100">
+              <Input 
+                label="Telegram Chat ID (для уведомлений)" 
+                value={(profileForm as any).telegram_chat_id || ''} 
+                onChange={(e:any) => setProfileForm({...profileForm, telegram_chat_id: e.target.value} as any)} 
+                icon="send" 
+                placeholder="Например: 123456789"
+              />
+              <p className="text-[10px] text-slate-400 mt-1 ml-1">
+                Чтобы узнать свой ID, напишите боту @userinfobot
+              </p>
             </div>
           </div>
           <div className="pt-4"><Button type="submit" className="w-full h-14" loading={loading} icon="save">Сохранить изменения</Button></div>

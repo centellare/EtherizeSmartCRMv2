@@ -30,6 +30,8 @@ interface MainContentProps {
   clearActiveObject: () => void;
 }
 
+import { getBotToken } from '../lib/telegram';
+
 const ModuleLoader = () => (
   <div className="flex h-full items-center justify-center min-h-[400px]">
     <div className="flex flex-col items-center gap-3">
@@ -121,11 +123,44 @@ const MainContent: React.FC<MainContentProps> = ({
     
     case 'database': 
       return renderWithProtection('database', (
-        <div className="space-y-6">
-          <div className="mb-6">
+        <div className="space-y-8">
+          <div>
             <h2 className="text-2xl font-medium text-[#1c1b1f]">Настройка базы данных</h2>
             <p className="text-[#444746] text-sm mt-1">Выполните этот SQL код в панели Supabase для корректной работы системы</p>
           </div>
+          
+          {/* Telegram Bot Settings */}
+          <div className="bg-white p-6 rounded-[28px] border border-[#e1e2e1]">
+            <h3 className="text-lg font-bold text-[#1c1b1f] mb-4 flex items-center gap-2">
+              <span className="material-icons-round text-blue-600">send</span>
+              Настройка Telegram Бота
+            </h3>
+            <div className="max-w-xl space-y-4">
+              <p className="text-sm text-slate-500">
+                Для отправки уведомлений в Telegram необходимо указать токен бота. 
+                Создайте бота через @BotFather и вставьте полученный токен ниже.
+              </p>
+              <div className="flex gap-2">
+                <input 
+                  type="password" 
+                  placeholder="123456789:ABCdefGHIjklMNOpqrsTUVwxyz"
+                  className="flex-grow h-12 px-4 rounded-xl border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                  defaultValue={getBotToken()}
+                  onChange={(e) => localStorage.setItem('TELEGRAM_BOT_TOKEN', e.target.value)}
+                />
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="h-12 px-6 rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 transition-colors"
+                >
+                  Сохранить
+                </button>
+              </div>
+              <p className="text-[10px] text-slate-400">
+                * Токен сохраняется локально в браузере администратора. Для продакшена рекомендуется использовать переменные окружения.
+              </p>
+            </div>
+          </div>
+
           <SqlGenerator schemas={INITIAL_SUGGESTED_SCHEMA} />
         </div>
       ));

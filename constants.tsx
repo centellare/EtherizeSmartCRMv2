@@ -67,6 +67,18 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
   }
 ];
 
+export const MIGRATION_SQL_V9 = `
+-- SmartHome CRM: TELEGRAM NOTIFICATIONS (v9.0)
+-- Добавляет поле telegram_chat_id в таблицу профилей.
+
+BEGIN;
+
+-- 1. Add telegram_chat_id column to profiles
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS telegram_chat_id text;
+
+COMMIT;
+`;
+
 export const MIGRATION_SQL_V8 = `
 -- SmartHome CRM: NOTIFICATIONS LINK (v8.0)
 -- Добавляет поле link в таблицу уведомлений для кликабельности.
