@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Input, Button } from './ui';
 
-type AuthMode = 'login' | 'reset' | 'register' | 'update_password';
+type AuthMode = 'login' | 'reset' | 'register' | 'update_password' | 'verify';
 
 const Auth: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -11,6 +11,7 @@ const Auth: React.FC = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fullName, setFullName] = useState('');
+  const [token, setToken] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
@@ -82,7 +83,28 @@ const Auth: React.FC = () => {
     if (error) {
       setError(error.message);
     } else {
-      setSuccessMessage('Ссылка для сброса пароля отправлена на ваш Email. Пожалуйста, проверьте почту.');
+      setSuccessMessage('Ссылка для сброса пароля отправлена на ваш Email.');
+      // Optionally switch to verify mode if they want to enter code manually
+      // setMode('verify'); 
+    }
+    setLoading(false);
+  };
+
+  const handleVerifyToken = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token,
+      type: 'recovery',
+    });
+
+    if (error) {
+      setError(error.message);
+    } else {
+      setMode('update_password');
     }
     setLoading(false);
   };
@@ -115,7 +137,7 @@ const Auth: React.FC = () => {
             </span>
           </div>
           <h1 className="text-2xl font-medium text-[#1c1b1f] tracking-tight">
-            {mode === 'login' ? 'SmartHome CRM' : mode === 'register' ? 'Регистрация' : mode === 'update_password' ? 'Новый пароль' : 'Восстановление доступа'}
+            {mode === 'login' ? 'SmartHome CRM' : mode === 'register' ? 'Регистрация' : mode === 'update_password' ? 'Новый пароль' : mode === 'verify' ? 'Ввод кода' : 'Восстановление доступа'}
           </h1>
           <p className="text-sm text-slate-500 mt-2">
             {mode === 'login' 
@@ -124,6 +146,8 @@ const Auth: React.FC = () => {
               ? 'Создайте новый аккаунт'
               : mode === 'update_password'
               ? 'Введите новый пароль для вашего аккаунта'
+              : mode === 'verify'
+              ? 'Введите код из письма для сброса пароля'
               : 'Введите Email, указанный при регистрации'}
           </p>
         </div>
@@ -185,6 +209,26 @@ const Auth: React.FC = () => {
             </div>
             <Button type="submit" loading={loading} className="w-full h-12" icon="save">Сохранить пароль</Button>
           </form>
+        ) : mode === 'verify' ? (
+          <form onSubmit={handleVerifyToken} className="space-y-6">
+            {error && <div className="bg-[#ffdad6] text-[#410002] p-4 rounded-xl text-sm">{error}</div>}
+            <div className="space-y-4">
+              <Input label="Email" type="email" required value={email} onChange={(e: any) => setEmail(e.target.value)} icon="email" />
+              <Input label="Код из письма" type="text" required value={token} onChange={(e: any) => setToken(e.target.value)} icon="key" placeholder="123456" />
+            </div>
+            <div className="space-y-3">
+              <Button type="submit" loading={loading} className="w-full h-12" icon="check_circle">Подтвердить</Button>
+              <Button 
+                variant="ghost" 
+                onClick={() => { setMode('reset'); setError(null); }}
+                className="w-full h-12" 
+                icon="arrow_back"
+                disabled={loading}
+              >
+                Назад
+              </Button>
+            </div>
+          </form>
         ) : (
           <form onSubmit={handleResetPassword} className="space-y-6">
             {error && <div className="bg-[#ffdad6] text-[#410002] p-4 rounded-xl text-sm">{error}</div>}
@@ -204,6 +248,13 @@ const Auth: React.FC = () => {
               <Button type="submit" loading={loading} className="w-full h-12" icon="send">
                 Отправить ссылку
               </Button>
+              <button 
+                type="button"
+                onClick={() => { setMode('verify'); setError(null); setSuccessMessage(null); }}
+                className="w-full text-center text-xs font-bold text-[#005ac1] uppercase tracking-wider hover:underline py-2"
+              >
+                У меня есть код
+              </button>
               <Button 
                 variant="ghost" 
                 onClick={() => { setMode('login'); setError(null); setSuccessMessage(null); }}
