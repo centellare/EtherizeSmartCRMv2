@@ -2,7 +2,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
-import { Badge, Button, Modal, Input, Select, ConfirmModal } from '../ui';
+import { Badge, Button, Modal, Input, Select, ConfirmModal, useToast } from '../ui';
 
 const ROLES = [
   { value: 'admin', label: 'Администратор' },
@@ -17,6 +17,7 @@ type UserRole = 'admin' | 'director' | 'manager' | 'specialist' | 'storekeeper';
 
 const Team: React.FC<{ profile: any }> = ({ profile }) => {
   const queryClient = useQueryClient();
+  const toast = useToast();
   
   // Search & Filter
   const [search, setSearch] = useState('');
@@ -25,7 +26,9 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
   // Modals
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
   const [selectedMember, setSelectedMember] = useState<any>(null);
+  const [inviteLink, setInviteLink] = useState('');
   
   const [formData, setFormData] = useState({ 
     full_name: '', 
@@ -93,7 +96,6 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-    // setLoading(true);
     
     // Explicit casting to match Supabase types for Role
     const payload = {
@@ -110,26 +112,21 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
       if (!error) {
         setIsEditModalOpen(false);
         queryClient.invalidateQueries({ queryKey: ['team'] });
+        toast.success('Профиль обновлен');
+      } else {
+        toast.error('Ошибка обновления профиля');
       }
     } else {
-      // Create
-      const { error } = await supabase.from('profiles').insert([{
-        ...payload,
-        email: formData.email,
-        must_change_password: true
-      }]);
-      
-      if (!error) {
-        setIsEditModalOpen(false);
-        queryClient.invalidateQueries({ queryKey: ['team'] });
-      }
+      // Invite Flow (Generate Link)
+      const link = `${window.location.origin}/?mode=register&email=${encodeURIComponent(formData.email)}&name=${encodeURIComponent(formData.full_name)}`;
+      setInviteLink(link);
+      setIsEditModalOpen(false);
+      setIsInviteModalOpen(true);
     }
-    // setLoading(false);
   };
 
   const handleDelete = async () => {
     if (!selectedMember) return;
-    // setLoading(true);
     const { error } = await supabase.from('profiles').update({ 
       deleted_at: new Date().toISOString() 
     }).eq('id', selectedMember.id);
@@ -137,8 +134,15 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
     if (!error) {
       setIsDeleteModalOpen(false);
       queryClient.invalidateQueries({ queryKey: ['team'] });
+      toast.success('Сотрудник уволен');
+    } else {
+      toast.error('Ошибка при удалении');
     }
-    // setLoading(false);
+  };
+
+  const copyInviteLink = () => {
+    navigator.clipboard.writeText(inviteLink);
+    toast.success('Ссылка скопирована');
   };
 
   const getUserInitials = (name: string) => {
@@ -325,16 +329,35 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
           />
           
           <div className="pt-4">
-            <Button type="submit" className="w-full h-14" loading={false} icon="save">
-              {selectedMember ? 'Сохранить изменения' : 'Создать профиль'}
+            <Button type="submit" className="w-full h-14" loading={false} icon={selectedMember ? "save" : "link"}>
+              {selectedMember ? 'Сохранить изменения' : 'Сформировать приглашение'}
             </Button>
           </div>
           {!selectedMember && (
             <p className="text-[10px] text-slate-400 italic text-center px-4">
-              Пароль для нового сотрудника нужно будет установить через панель администратора Supabase Auth.
+              Будет создана ссылка для самостоятельной регистрации сотрудника.
             </p>
           )}
         </form>
+      </Modal>
+
+      {/* Invite Modal */}
+      <Modal isOpen={isInviteModalOpen} onClose={() => setIsInviteModalOpen(false)} title="Приглашение сотрудника">
+        <div className="space-y-6 text-center">
+          <div className="w-16 h-16 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center mx-auto">
+            <span className="material-icons-round text-3xl">mail_outline</span>
+          </div>
+          <div>
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Ссылка для регистрации</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Отправьте эту ссылку сотруднику. После регистрации он появится в списке, и вы сможете назначить ему роль.
+            </p>
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 break-all text-xs font-mono text-slate-600 mb-4 select-all">
+              {inviteLink}
+            </div>
+            <Button onClick={copyInviteLink} className="w-full h-12" icon="content_copy">Скопировать ссылку</Button>
+          </div>
+        </div>
       </Modal>
 
       <ConfirmModal 

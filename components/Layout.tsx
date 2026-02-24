@@ -20,6 +20,7 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
   const [loading, setLoading] = useState(false);
   const [isLive, setIsLive] = useState(true);
   const [profileForm, setProfileForm] = useState({ full_name: '', phone: '', birth_date: '' });
+  const [passwordForm, setPasswordForm] = useState({ newPassword: '', confirmPassword: '' });
   const [unreadCount, setUnreadCount] = useState(0);
   
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
@@ -128,11 +129,39 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
   const handleProfileUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const { error } = await supabase.from('profiles').update(profileForm).eq('id', profile.id);
-    if (!error) {
-      await onProfileUpdate();
-      setIsProfileModalOpen(false);
+    
+    // Update Profile Info
+    const { error: profileError } = await supabase.from('profiles').update(profileForm).eq('id', profile.id);
+    
+    if (profileError) {
+      toast.error('Ошибка обновления профиля');
+      setLoading(false);
+      return;
     }
+
+    // Update Password if provided
+    if (passwordForm.newPassword) {
+      if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+        toast.error('Пароли не совпадают');
+        setLoading(false);
+        return;
+      }
+      
+      const { error: passwordError } = await supabase.auth.updateUser({ password: passwordForm.newPassword });
+      
+      if (passwordError) {
+        toast.error(`Ошибка смены пароля: ${passwordError.message}`);
+        setLoading(false);
+        return;
+      } else {
+        toast.success('Пароль успешно изменен');
+        setPasswordForm({ newPassword: '', confirmPassword: '' });
+      }
+    }
+
+    await onProfileUpdate();
+    setIsProfileModalOpen(false);
+    toast.success('Профиль обновлен');
     setLoading(false);
   };
 
@@ -170,13 +199,16 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
             <h4 className="text-lg font-bold text-slate-900">{profile?.full_name}</h4>
             <div className="flex gap-2 mt-1"><Badge color="blue">{profile?.role?.toUpperCase() || 'USER'}</Badge></div>
           </div>
+          
           <div className="space-y-4">
+            <h5 className="text-sm font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">Личные данные</h5>
             <Input label="Ваше ФИО" required value={profileForm.full_name} onChange={(e:any) => setProfileForm({...profileForm, full_name: e.target.value})} icon="person" />
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input label="Контактный телефон" value={profileForm.phone} onChange={(e:any) => setProfileForm({...profileForm, phone: e.target.value})} icon="phone" />
               <Input label="Дата рождения" type="date" value={profileForm.birth_date} onChange={(e:any) => setProfileForm({...profileForm, birth_date: e.target.value})} icon="calendar_today" />
             </div>
-            <div className="pt-2 border-t border-slate-100">
+            
+            <div className="pt-2">
               <Input 
                 label="Telegram Chat ID (для уведомлений)" 
                 value={(profileForm as any).telegram_chat_id || ''} 
@@ -188,7 +220,28 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
                 Чтобы узнать свой ID, напишите боту @userinfobot
               </p>
             </div>
+
+            <h5 className="text-sm font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2 pt-4">Смена пароля</h5>
+            <Input 
+              label="Новый пароль" 
+              type="password" 
+              value={passwordForm.newPassword} 
+              onChange={(e:any) => setPasswordForm({...passwordForm, newPassword: e.target.value})} 
+              icon="lock" 
+              placeholder="Оставьте пустым, если не меняете"
+            />
+            {passwordForm.newPassword && (
+              <Input 
+                label="Подтверждение пароля" 
+                type="password" 
+                value={passwordForm.confirmPassword} 
+                onChange={(e:any) => setPasswordForm({...passwordForm, confirmPassword: e.target.value})} 
+                icon="lock_clock" 
+                required
+              />
+            )}
           </div>
+          
           <div className="pt-4"><Button type="submit" className="w-full h-14" loading={loading} icon="save">Сохранить изменения</Button></div>
         </form>
       </Modal>

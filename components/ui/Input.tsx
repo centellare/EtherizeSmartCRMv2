@@ -1,14 +1,16 @@
 
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 
 interface InputProps extends React.InputHTMLAttributes<HTMLInputElement> {
   label?: string;
   icon?: string;
 }
 
-export const Input: React.FC<InputProps> = ({ label, icon, className = '', ...props }) => {
+export const Input: React.FC<InputProps> = ({ label, icon, className = '', type = 'text', ...props }) => {
   const inputRef = useRef<HTMLInputElement>(null);
-  const isDate = props.type === 'date';
+  const [showPassword, setShowPassword] = useState(false);
+  const isDate = type === 'date';
+  const isPassword = type === 'password';
 
   const handleContainerClick = () => {
     if (isDate && inputRef.current) {
@@ -24,6 +26,11 @@ export const Input: React.FC<InputProps> = ({ label, icon, className = '', ...pr
         inputRef.current.focus();
       }
     }
+  };
+
+  const togglePasswordVisibility = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setShowPassword(!showPassword);
   };
 
   return (
@@ -48,16 +55,29 @@ export const Input: React.FC<InputProps> = ({ label, icon, className = '', ...pr
         )}
         <input 
           {...props} 
+          type={isPassword ? (showPassword ? 'text' : 'password') : type}
           ref={inputRef}
           className={`w-full bg-white border border-slate-200 rounded-2xl px-4 py-3 text-base text-[#1c1b1f] outline-none transition-all placeholder:text-slate-300 focus:border-[#005ac1] focus:ring-4 focus:ring-[#005ac1]/5 ${
             isDate ? 'cursor-pointer hover:border-[#005ac1] hover:bg-slate-50' : ''
-          } ${icon ? 'pl-11' : ''} ${className}`}
+          } ${icon ? 'pl-11' : ''} ${isPassword ? 'pr-12' : ''} ${className}`}
         />
         {isDate && (
           <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
             <span className="text-[10px] font-bold text-[#005ac1] uppercase tracking-tighter">Выбрать</span>
             <span className="material-icons-round text-[#005ac1] text-sm">touch_app</span>
           </div>
+        )}
+        {isPassword && (
+          <button
+            type="button"
+            onClick={togglePasswordVisibility}
+            className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-[#005ac1] transition-colors focus:outline-none"
+            tabIndex={-1}
+          >
+            <span className="material-icons-round">
+              {showPassword ? 'visibility_off' : 'visibility'}
+            </span>
+          </button>
         )}
       </div>
       <style>{`
