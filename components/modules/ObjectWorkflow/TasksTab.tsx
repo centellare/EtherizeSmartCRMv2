@@ -100,13 +100,23 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   }, [allTasks, viewedStageId, object.id]);
 
   const filteredTasks = useMemo(() => {
-    return allTasks.filter(t => t.object_id === object.id && t.stage_id === viewedStageId)
+    return allTasks.filter(t => t.object_id === object.id && t.stage_id === viewedStageId && (t.status !== 'completed' || viewedStageId !== object.current_stage))
       .map(t => ({ 
         ...t, 
         checklist: checklists[t.id] || [], 
         questions: questions[t.id] || [] 
       }));
   }, [allTasks, viewedStageId, object.id, checklists, questions]);
+
+  // Sync selectedTask with tasks updates
+  useEffect(() => {
+    if (selectedTask && filteredTasks.length > 0) {
+      const updated = filteredTasks.find(t => t.id === selectedTask.id);
+      if (updated && updated.status !== selectedTask.status) {
+        setSelectedTask(updated);
+      }
+    }
+  }, [filteredTasks, selectedTask]);
 
   const isViewingHistory = viewedStageId !== object.current_stage;
   const isAdmin = profile.role === 'admin' || profile.role === 'director';
@@ -369,6 +379,7 @@ export const TasksTab: React.FC<TasksTabProps> = ({
               onClose={() => setIsTaskDetailsModalOpen(false)}
               onNavigateToObject={() => {}}
               hideObjectLink={true}
+              onStatusChange={() => refreshData()}
             />
             {(selectedTask?.assigned_to === profile.id || isAdmin) && selectedTask?.status === 'in_progress' && (
                 <div className="mt-8 pt-4 border-t border-slate-100">

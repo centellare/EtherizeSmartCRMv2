@@ -129,7 +129,7 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
             {/* Rows */}
             <div className="space-y-4 relative z-10">
                 {sortedStaff.map(member => {
-                    const memberTasks = tasks.filter(t => t.assigned_to === member.id && t.status === 'pending');
+                    const memberTasks = tasks.filter(t => t.assigned_to === member.id && t.status !== 'completed');
                     
                     // Show row even if no tasks, to see availability
                     return (

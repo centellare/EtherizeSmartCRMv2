@@ -167,7 +167,7 @@ const CriticalProjects: React.FC<{ objects: any[], tasks: any[] }> = ({ objects,
         return objects
             .filter(o => o.current_status !== 'completed' && o.current_status !== 'frozen')
             .map(o => {
-                const overdueTasks = tasks.filter(t => t.object_id === o.id && t.status === 'pending' && t.deadline && t.deadline < getMinskISODate()).length;
+                const overdueTasks = tasks.filter(t => t.object_id === o.id && t.status !== 'completed' && t.deadline && t.deadline < getMinskISODate()).length;
                 const isStuck = o.current_status === 'on_pause' || o.current_status === 'review_required';
                 
                 let score = 0;
@@ -347,7 +347,7 @@ const DirectorView: React.FC<{ tasks: any[], objects: any[], transactions: any[]
 // --- REST OF THE FILE REMAINS (SpecialistView, ManagerView, Dashboard Main Component) ---
 
 const SpecialistView: React.FC<{ tasks: any[], objects: any[], userId: string }> = ({ tasks, objects, userId }) => {
-  const myTasks = tasks.filter(t => t.assigned_to === userId && t.status === 'pending');
+  const myTasks = tasks.filter(t => t.assigned_to === userId && t.status !== 'completed');
   const todayStr = getMinskISODate();
   
   const priorities = {
@@ -547,7 +547,7 @@ const ManagerView: React.FC<{ tasks: any[], objects: any[], userId: string, staf
             className="bg-white p-5 rounded-[24px] border border-slate-200 shadow-sm flex items-center gap-4 cursor-pointer hover:border-indigo-400 hover:shadow-md transition-all group"
          >
             <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center group-hover:bg-indigo-600 group-hover:text-white transition-colors"><span className="material-icons-round">assignment</span></div>
-            <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Задач в работе</p><p className="text-2xl font-bold">{tasks.filter(t=>t.status==='pending').length}</p></div>
+            <div><p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Задач в работе</p><p className="text-2xl font-bold">{tasks.filter(t=>t.status !== 'completed').length}</p></div>
          </div>
       </div>
 

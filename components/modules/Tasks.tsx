@@ -79,7 +79,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
       let query = supabase.from('tasks')
         .select('*, checklist:task_checklists(*), questions:task_questions(*), executor:profiles!assigned_to(id, full_name, role), objects(id, name, responsible_id), creator:profiles!created_by(id, full_name)')
         .is('is_deleted', false)
-        .eq('status', 'pending');
+        .in('status', ['pending', 'in_progress']);
 
       if (filterMode === 'mine') {
         query = query.eq('assigned_to', profile.id);
@@ -170,6 +170,16 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
         handleInitialTask();
     }
   }, [initialTaskId, activeTasks, isActiveLoading]);
+
+  // Sync selectedTask with activeTasks updates
+  useEffect(() => {
+    if (selectedTask && activeTasks.length > 0) {
+      const updated = activeTasks.find(t => t.id === selectedTask.id);
+      if (updated && updated.status !== selectedTask.status) {
+        setSelectedTask(updated);
+      }
+    }
+  }, [activeTasks, selectedTask]);
 
   // --- FILTER LOGIC ---
   const baseVisibleTasks = useMemo(() => activeTasks, [activeTasks]);
@@ -334,6 +344,9 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
                     onNavigateToObject={(objId, stageId) => {
                         onNavigateToObject(objId, stageId);
                         setModalMode('none');
+                    }}
+                    onStatusChange={() => {
+                        queryClient.invalidateQueries({ queryKey: ['tasks'] });
                     }}
                 />
                 

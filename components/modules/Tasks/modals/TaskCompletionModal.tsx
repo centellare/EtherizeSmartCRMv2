@@ -18,9 +18,12 @@ export const TaskCompletionModal: React.FC<TaskCompletionModalProps> = ({ task, 
     if (!task) return;
     setLoading(true);
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      
       const { data, error } = await supabase.from('tasks').update({
         status: 'completed',
         completed_at: new Date().toISOString(),
+        completed_by: user?.id,
         completion_comment: form.comment,
         completion_doc_link: form.link,
         completion_doc_name: form.doc_name
@@ -36,7 +39,6 @@ export const TaskCompletionModal: React.FC<TaskCompletionModalProps> = ({ task, 
       }
 
       // Notify creator
-      const { data: { user } } = await supabase.auth.getUser();
       if (user && task.created_by && task.created_by !== user.id) {
         await createNotification(task.created_by, `Задача "${task.title}" выполнена.`, `#tasks/${task.id}`);
       }

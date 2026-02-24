@@ -14,6 +14,7 @@ interface TaskDetailsProps {
   onClose: () => void;
   onNavigateToObject: (objId: string, stageId?: string) => void;
   hideObjectLink?: boolean;
+  onStatusChange?: () => void;
 }
 
 const formatDuration = (start: string, end: string) => {
@@ -30,7 +31,7 @@ const formatDuration = (start: string, end: string) => {
 };
 
 export const TaskDetails: React.FC<TaskDetailsProps> = ({ 
-  task, profile, isAdmin, onEdit, onDelete, onClose, onNavigateToObject, hideObjectLink 
+  task, profile, isAdmin, onEdit, onDelete, onClose, onNavigateToObject, hideObjectLink, onStatusChange 
 }) => {
   const queryClient = useQueryClient();
   // Local state for optimistic checklist updates
@@ -100,6 +101,7 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
         if (error) throw error;
         
         queryClient.invalidateQueries({ queryKey: ['tasks'] });
+        onStatusChange?.();
         // We don't close the drawer, just update the UI via invalidation
     } catch (e) {
         console.error(e);
@@ -123,6 +125,7 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
           
           onClose(); 
           queryClient.invalidateQueries({ queryKey: ['tasks'] });
+          onStatusChange?.();
       } catch (e) {
           console.error(e);
           alert('Ошибка при возврате задачи');

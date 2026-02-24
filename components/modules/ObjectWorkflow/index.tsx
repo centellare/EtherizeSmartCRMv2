@@ -118,7 +118,7 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
   };
 
   const handleNextStageInit = (force = false) => {
-    const pending = tasks.filter(t => t.stage_id === object.current_stage && t.status === 'pending');
+    const pending = tasks.filter(t => t.stage_id === object.current_stage && t.status !== 'completed');
     if (!force && pending.length > 0) {
       setIsPendingTasksWarningOpen(true);
       return;
