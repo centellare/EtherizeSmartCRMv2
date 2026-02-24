@@ -75,6 +75,20 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
       toast.success(editingProduct ? 'Товар обновлен' : 'Товар создан');
   };
 
+  const handleDelete = async (id: string) => {
+      if (!window.confirm('Вы уверены, что хотите удалить этот товар?')) return;
+      
+      try {
+        const { error } = await supabase.from('products').update({ is_archived: true }).eq('id', id);
+        if (error) throw error;
+        
+        toast.success('Товар удален (архивирован)');
+        queryClient.invalidateQueries({ queryKey: ['products'] });
+      } catch (e: any) {
+        toast.error('Ошибка удаления: ' + e.message);
+      }
+  };
+
   // --- CSV PARSER ---
   const parseCSVLine = (line: string) => {
       const values = [];
@@ -217,11 +231,16 @@ const Nomenclature: React.FC<{ profile: any }> = ({ profile }) => {
                                             <div className="pl-2 text-xs text-slate-500">{p.type}</div>
                                             <div className="text-right pr-4 font-mono text-xs">{p.base_price.toFixed(2)}</div>
                                             <div className="text-right pr-4 font-bold text-emerald-600 text-sm">{p.retail_price.toFixed(2)}</div>
-                                            <div className="flex justify-end pr-2">
+                                            <div className="flex justify-end pr-2 gap-1">
                                                 {canEdit && (
-                                                    <button onClick={() => { setEditingProduct(p); setIsModalOpen(true); }} className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-blue-600">
-                                                        <span className="material-icons-round text-sm">edit</span>
-                                                    </button>
+                                                    <>
+                                                        <button onClick={() => { setEditingProduct(p); setIsModalOpen(true); }} className="w-8 h-8 rounded-full hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-blue-600" title="Редактировать">
+                                                            <span className="material-icons-round text-sm">edit</span>
+                                                        </button>
+                                                        <button onClick={() => handleDelete(p.id)} className="w-8 h-8 rounded-full hover:bg-red-50 flex items-center justify-center text-slate-400 hover:text-red-600" title="Удалить">
+                                                            <span className="material-icons-round text-sm">delete</span>
+                                                        </button>
+                                                    </>
                                                 )}
                                             </div>
                                         </div>

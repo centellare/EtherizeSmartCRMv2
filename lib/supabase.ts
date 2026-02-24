@@ -5,6 +5,31 @@ import { Database } from '../database.types';
 const supabaseUrl = 'https://rlwqwkoihrezbtftmodu.supabase.co';
 const supabaseAnonKey = 'sb_publishable_vu4aaeNtWF_l-u9XwOwVbA_QvygsNnS';
 
+// Monkey patch navigator.locks.request to prevent timeouts on Supabase locks
+// This fixes "Acquiring an exclusive Navigator LockManager lock timed out" error in restricted environments
+if (typeof window !== 'undefined' && window.navigator && window.navigator.locks) {
+  const originalRequest = window.navigator.locks.request.bind(window.navigator.locks);
+  (window.navigator.locks as any).request = async (name: string, ...args: any[]) => {
+    // Check if it's a Supabase lock (starts with lock:sb-)
+    if (name && typeof name === 'string' && name.startsWith('lock:sb-')) {
+       // Execute callback immediately without acquiring a real lock
+       // The last argument is always the callback
+       const callback = args[args.length - 1];
+       if (typeof callback === 'function') {
+         // Mock lock object
+         const mockLock = { name };
+         try {
+           return await callback(mockLock);
+         } catch (e) {
+           console.error('Error in mock lock callback:', e);
+           throw e;
+         }
+       }
+    }
+    return (originalRequest as any)(name, ...args);
+  };
+}
+
 export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
