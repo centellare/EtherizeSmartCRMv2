@@ -337,7 +337,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
                     }}
                 />
                 
-                {(selectedTask?.assigned_to === profile.id || isAdmin) && selectedTask?.status !== 'completed' && (
+                {(selectedTask?.assigned_to === profile.id || isAdmin) && selectedTask?.status === 'in_progress' && (
                     <div className="mt-8 pt-4 border-t border-slate-100">
                         <Button variant="primary" className="w-full h-12" onClick={() => setModalMode('completion')}>Завершить задачу</Button>
                     </div>

@@ -42,6 +42,7 @@ export const TaskList: React.FC<TaskListProps> = ({
         {tasks.map((task) => {
           const isOverdue = task.deadline && task.deadline < getMinskISODate() && task.status !== 'completed';
           const isCompleted = task.status === 'completed';
+          const isInProgress = task.status === 'in_progress';
           const canAction = task.assigned_to === currentUserId || isAdmin;
           
           return (
@@ -49,7 +50,9 @@ export const TaskList: React.FC<TaskListProps> = ({
               key={task.id} 
               onClick={() => onTaskClick(task)} 
               className={`bg-white p-4 sm:p-5 rounded-[28px] border transition-all cursor-pointer group flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-                  isCompleted ? 'border-slate-100 opacity-60 bg-slate-50' : 'border-slate-200 hover:border-blue-400 hover:shadow-md'
+                  isCompleted ? 'border-slate-100 opacity-60 bg-slate-50' : 
+                  isInProgress ? 'border-blue-200 bg-blue-50/30 shadow-sm hover:border-blue-400' :
+                  'border-slate-200 hover:border-blue-400 hover:shadow-md'
               }`}
             >
               <div className="flex items-start sm:items-center gap-4 sm:gap-5 min-w-0 flex-grow">
@@ -57,9 +60,12 @@ export const TaskList: React.FC<TaskListProps> = ({
                 <div 
                     onClick={(e) => {
                         e.stopPropagation();
-                        // Only allow action if canAction is true
-                        if (canAction && !isCompleted && onRequestComplete) {
+                        // Only allow completion if in progress
+                        if (canAction && isInProgress && onRequestComplete) {
                             onRequestComplete(task);
+                        } else if (canAction && !isCompleted) {
+                            // If pending, open details to start
+                            onTaskClick(task);
                         }
                     }}
                     className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 transition-all ${
@@ -67,17 +73,28 @@ export const TaskList: React.FC<TaskListProps> = ({
                     } ${
                         isCompleted 
                         ? 'bg-emerald-50 text-emerald-500 cursor-default' 
-                        : isOverdue 
-                            ? 'bg-red-50 text-red-500 hover:bg-red-100' 
-                            : canAction ? 'bg-blue-50 text-blue-500 hover:bg-blue-600 hover:text-white' : ''
+                        : isInProgress
+                            ? 'bg-blue-100 text-blue-600 hover:bg-blue-200 hover:scale-105 shadow-sm'
+                            : isOverdue 
+                                ? 'bg-red-50 text-red-500 hover:bg-red-100' 
+                                : canAction ? 'bg-slate-100 text-slate-400 hover:bg-blue-50 hover:text-blue-500' : ''
                     }`}
+                    title={isInProgress ? "Завершить задачу" : "Открыть задачу"}
                 >
                   <span className="material-icons-round text-xl">
-                    {isCompleted ? 'check' : isOverdue ? 'priority_high' : 'check_circle_outline'}
+                    {isCompleted ? 'check' : isInProgress ? 'stop' : isOverdue ? 'priority_high' : 'play_arrow'}
                   </span>
                 </div>
 
                 <div className="min-w-0 flex-grow">
+                  <div className="flex items-center gap-2 mb-1">
+                    {isInProgress && (
+                        <span className="text-[10px] font-bold text-blue-600 bg-blue-100 px-2 py-0.5 rounded-md uppercase tracking-wider">В работе</span>
+                    )}
+                    {isOverdue && !isCompleted && (
+                        <span className="text-[10px] font-bold text-red-600 bg-red-100 px-2 py-0.5 rounded-md uppercase tracking-wider">Просрочено</span>
+                    )}
+                  </div>
                   <h4 className={`font-medium transition-colors truncate text-sm sm:text-base ${isCompleted ? 'text-slate-400 line-through' : 'text-slate-900 group-hover:text-blue-600'}`}>
                     {task.title}
                     {task.doc_link && <span className="material-icons-round text-sm ml-2 text-slate-300 align-middle">attach_file</span>}

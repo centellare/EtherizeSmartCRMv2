@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../../lib/supabase';
 import { Badge, Button } from '../../../ui';
 import { formatDate, getMinskISODate } from '../../../../lib/dateUtils';
+import { useQueryClient } from '@tanstack/react-query';
 
 interface TaskDetailsProps {
   task: any;
@@ -15,13 +16,28 @@ interface TaskDetailsProps {
   hideObjectLink?: boolean;
 }
 
+const formatDuration = (start: string, end: string) => {
+  const diff = new Date(end).getTime() - new Date(start).getTime();
+  if (diff < 0) return '0 мин.';
+  
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  
+  if (days > 0) return `${days} дн. ${hours} ч.`;
+  if (hours > 0) return `${hours} ч. ${minutes} мин.`;
+  return `${minutes} мин.`;
+};
+
 export const TaskDetails: React.FC<TaskDetailsProps> = ({ 
   task, profile, isAdmin, onEdit, onDelete, onClose, onNavigateToObject, hideObjectLink 
 }) => {
+  const queryClient = useQueryClient();
   // Local state for optimistic checklist updates
   const [checklist, setChecklist] = useState(task?.checklist || []);
   const [questions, setQuestions] = useState(task?.questions || []);
   const [reopenLoading, setReopenLoading] = useState(false);
+  const [startLoading, setStartLoading] = useState(false);
 
   // Sync state if task prop changes (important for Drawer persistence)
   useEffect(() => {
@@ -73,6 +89,26 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
     });
   };
 
+  const handleStartWork = async () => {
+    setStartLoading(true);
+    try {
+        const { error } = await supabase.from('tasks').update({
+            status: 'in_progress',
+            started_at: new Date().toISOString()
+        }).eq('id', task.id);
+
+        if (error) throw error;
+        
+        queryClient.invalidateQueries({ queryKey: ['tasks'] });
+        // We don't close the drawer, just update the UI via invalidation
+    } catch (e) {
+        console.error(e);
+        alert('Ошибка при начале работы');
+    } finally {
+        setStartLoading(false);
+    }
+  };
+
   const handleReopen = async () => {
       setReopenLoading(true);
       try {
@@ -81,12 +117,12 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
               completed_at: null,
               completion_comment: null,
               completion_doc_link: null,
-              completion_doc_name: null
+              completion_doc_name: null,
+              started_at: null // Reset start time on reopen? Or keep it? Let's reset for clean cycle.
           }).eq('id', task.id);
           
-          // Close drawer to refresh list or update UI
           onClose(); 
-          // Note: Realtime subscription in parent will handle the UI update
+          queryClient.invalidateQueries({ queryKey: ['tasks'] });
       } catch (e) {
           console.error(e);
           alert('Ошибка при возврате задачи');
@@ -105,15 +141,41 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
   // Determine if user can perform actions (Executor or Admin/Manager)
   const canAction = task.assigned_to === profile.id || isAdmin;
 
+  // Time Metrics
+  const waitTime = task.started_at ? formatDuration(task.created_at, task.started_at) : null;
+  const workTime = task.started_at 
+    ? (task.completed_at 
+        ? formatDuration(task.started_at, task.completed_at) 
+        : formatDuration(task.started_at, new Date().toISOString()))
+    : null;
+
   return (
     <div className="space-y-6">
         <div className="flex justify-between items-start">
             <h3 className="text-xl font-bold text-slate-900 leading-tight pr-4">{task.title}</h3>
-            <Badge color={task.status === 'completed' ? 'emerald' : 'blue'}>
-            {task.status === 'completed' ? 'ВЫПОЛНЕНО' : 'В РАБОТЕ'}
+            <Badge color={task.status === 'completed' ? 'emerald' : task.status === 'in_progress' ? 'blue' : 'slate'}>
+            {task.status === 'completed' ? 'ВЫПОЛНЕНО' : task.status === 'in_progress' ? 'В РАБОТЕ' : 'ОЖИДАЕТ'}
             </Badge>
         </div>
         
+        {/* Time Metrics Banner */}
+        {(waitTime || workTime) && (
+            <div className="flex gap-4 p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs">
+                {waitTime && (
+                    <div className="flex flex-col">
+                        <span className="text-slate-400 font-bold uppercase tracking-wider text-[10px]">Ожидание</span>
+                        <span className="font-mono font-medium text-slate-700">{waitTime}</span>
+                    </div>
+                )}
+                {workTime && (
+                    <div className="flex flex-col border-l border-slate-200 pl-4">
+                        <span className="text-blue-400 font-bold uppercase tracking-wider text-[10px]">В работе</span>
+                        <span className="font-mono font-medium text-blue-700">{workTime}</span>
+                    </div>
+                )}
+            </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4 py-4 border-y border-slate-100">
             <div>
                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Объект</p>
@@ -249,6 +311,19 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
         )}
 
         <div className="flex flex-wrap gap-2">
+            {/* Start Work Button */}
+            {task.status === 'pending' && canAction && (
+                <Button 
+                    variant="primary" 
+                    onClick={handleStartWork} 
+                    loading={startLoading}
+                    icon="play_arrow" 
+                    className="w-full h-12 mb-2"
+                >
+                    Принять в работу
+                </Button>
+            )}
+
             {canEditDelete() && task.status !== 'completed' && (
                 <>
                 <Button variant="tonal" onClick={onEdit} icon="edit" className="flex-1 min-w-[120px]">Изменить</Button>

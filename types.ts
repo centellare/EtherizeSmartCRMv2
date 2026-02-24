@@ -48,7 +48,8 @@ export interface Task {
   assigned_to: string;
   start_date: string | null;
   deadline: string | null;
-  status: 'pending' | 'completed';
+  status: 'pending' | 'in_progress' | 'completed';
+  started_at?: string | null; // NEW: Actual start time
   comment?: string | null;
   doc_link?: string | null;
   doc_name?: string | null;
