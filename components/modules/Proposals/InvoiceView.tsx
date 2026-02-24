@@ -17,6 +17,9 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
   const [settings, setSettings] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [statusLoading, setStatusLoading] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [preamble, setPreamble] = useState('');
+  const [footer, setFooter] = useState('');
   const toast = useToast();
   
   // Print Options
@@ -56,6 +59,14 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
         setInvoice(inv);
         setItems(invItems || []);
         
+        setPreamble(inv.preamble || '');
+        if (inv.footer) {
+            setFooter(inv.footer);
+        } else {
+            // Default footer if empty
+            setFooter(`1. Поставщик обязуется поставить Покупателю, а Покупатель обязуется принять и оплатить товар.\n2. Оплата 100% ${inv.due_date ? `в срок до ${formatDate(inv.due_date)}` : 'в течение 3 рабочих дней'}.\n3. Срок поставки до 20 рабочих дней.`);
+        }
+
         if (set) {
             setSettings({
                 company_name: set.company_name || defaultSettings.company_name,
@@ -274,6 +285,18 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
       }
   };
 
+  const handleSaveText = async () => {
+    try {
+        const { error } = await supabase.from('invoices').update({ preamble, footer }).eq('id', invoiceId);
+        if (error) throw error;
+        toast.success('Оформление сохранено');
+        setEditMode(false);
+        fetchData();
+    } catch (e: any) {
+        toast.error('Ошибка: ' + e.message);
+    }
+  };
+
   const handlePrint = () => {
     const content = document.getElementById('invoice-printable');
     if (!content) return;
@@ -335,6 +358,9 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                 {invoice.status === 'sent' && (
                     <Button onClick={() => handleStatusChange('paid')} loading={statusLoading} className="bg-emerald-600 hover:bg-emerald-700 text-white" icon="check_circle">Отметить оплату</Button>
                 )}
+                {invoice.status === 'draft' && (
+                    <Button variant="secondary" icon="edit_note" onClick={() => setEditMode(true)}>Оформление</Button>
+                )}
             </div>
             <div className="flex items-center gap-4">
                 <label className="flex items-center gap-2 cursor-pointer text-sm">
@@ -344,6 +370,38 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                 <Button icon="print" onClick={handlePrint}>Печать</Button>
             </div>
         </div>
+
+        {editMode && (
+            <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
+                <div className="bg-white rounded-[24px] p-6 w-full max-w-2xl shadow-xl flex flex-col max-h-[90vh]">
+                    <h3 className="text-lg font-bold mb-4">Редактирование оформления</h3>
+                    <div className="flex-grow overflow-y-auto space-y-6 pr-2">
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-2">Вступительный текст</label>
+                            <textarea 
+                                value={preamble}
+                                onChange={(e) => setPreamble(e.target.value)}
+                                className="w-full h-32 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 outline-none text-sm"
+                                placeholder="Текст перед таблицей..."
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-bold text-slate-700 mb-2">Условия / Подвал</label>
+                            <textarea 
+                                value={footer}
+                                onChange={(e) => setFooter(e.target.value)}
+                                className="w-full h-48 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 outline-none text-sm font-mono"
+                                placeholder="Условия поставки и оплаты..."
+                            />
+                        </div>
+                    </div>
+                    <div className="flex gap-2 mt-6 shrink-0">
+                        <Button className="flex-1" onClick={handleSaveText}>Сохранить</Button>
+                        <Button variant="ghost" className="flex-1" onClick={() => setEditMode(false)}>Отмена</Button>
+                    </div>
+                </div>
+            </div>
+        )}
 
         <div className="flex-grow overflow-y-auto p-4 md:p-8 flex justify-center">
             <div id="invoice-printable" className="bg-white w-[210mm] min-h-[297mm] p-[10mm] shadow-lg text-black font-serif relative">
@@ -390,6 +448,13 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                         )}
                     </div>
                 </div>
+
+                {/* PREAMBLE */}
+                {preamble && (
+                    <div className="mb-6 text-[11px] whitespace-pre-wrap leading-relaxed">
+                        {preamble}
+                    </div>
+                )}
 
                 <table className="w-full border-collapse border border-black text-[10px] mb-2">
                     <thead>
@@ -442,13 +507,9 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                     <p className="font-bold mt-1">в том числе сумма НДС: {calculatedTotalVat.toFixed(2)} <span className="font-normal">{sumInWords(calculatedTotalVat)}</span></p>
                 </div>
 
-                {/* TERMS (Static for now) */}
-                <div className="border border-black p-2 text-[9px] mb-6">
-                    <ol className="list-decimal list-inside space-y-1">
-                        <li>Поставщик обязуется поставить Покупателю, а Покупатель обязуется принять и оплатить товар.</li>
-                        <li>Оплата 100% {invoice.due_date ? `в срок до ${formatDate(invoice.due_date)}` : 'в течение 3 рабочих дней'}.</li>
-                        <li>Срок поставки до 20 рабочих дней.</li>
-                    </ol>
+                {/* TERMS / FOOTER */}
+                <div className="border border-black p-2 text-[9px] mb-6 whitespace-pre-wrap leading-relaxed">
+                    {footer}
                 </div>
 
                 {/* SIGNATURES */}

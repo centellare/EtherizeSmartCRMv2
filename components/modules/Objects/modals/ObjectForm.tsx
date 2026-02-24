@@ -57,7 +57,21 @@ export const ObjectForm: React.FC<ObjectFormProps> = ({
 
         // Notify responsible if changed
         if (initialData.responsible_id !== payload.responsible_id && payload.responsible_id && payload.responsible_id !== profile.id) {
-          await createNotification(payload.responsible_id, `Вам назначен объект: ${payload.name}`, `#objects/${initialData.id}`);
+          const clientName = clients.find(c => c.id === payload.client_id)?.name || 'Не указан';
+          const responsibleName = staff.find(s => s.id === payload.responsible_id)?.full_name || 'Сотрудник';
+          
+          const telegramMsg = `<b>🏠 Вам назначен объект</b>\n\n` +
+            `<b>🏗 Объект:</b> ${payload.name}\n` +
+            `<b>📍 Адрес:</b> ${payload.address || 'Не указан'}\n` +
+            `<b>👨‍💼 Кто назначил:</b> ${profile.full_name}\n` +
+            `<b>👤 Клиент:</b> ${clientName}`;
+
+          await createNotification(
+            payload.responsible_id, 
+            `Вам назначен объект: ${payload.name}`, 
+            `#objects/${initialData.id}`,
+            telegramMsg
+          );
         }
       } else {
         const { data: newObject, error: insertError } = await supabase.from('objects').insert([{ 
@@ -70,7 +84,21 @@ export const ObjectForm: React.FC<ObjectFormProps> = ({
 
         // Notify responsible
         if (newObject && payload.responsible_id && payload.responsible_id !== profile.id) {
-          await createNotification(payload.responsible_id, `Вам назначен новый объект: ${payload.name}`, `#objects/${newObject.id}`);
+          const clientName = clients.find(c => c.id === payload.client_id)?.name || 'Не указан';
+          const responsibleName = staff.find(s => s.id === payload.responsible_id)?.full_name || 'Сотрудник';
+          
+          const telegramMsg = `<b>🏠 Вам назначен новый объект</b>\n\n` +
+            `<b>🏗 Объект:</b> ${payload.name}\n` +
+            `<b>📍 Адрес:</b> ${payload.address || 'Не указан'}\n` +
+            `<b>👨‍💼 Кто назначил:</b> ${profile.full_name}\n` +
+            `<b>👤 Клиент:</b> ${clientName}`;
+
+          await createNotification(
+            payload.responsible_id, 
+            `Вам назначен новый объект: ${payload.name}`, 
+            `#objects/${newObject.id}`,
+            telegramMsg
+          );
         }
       }
       if (error) throw error;

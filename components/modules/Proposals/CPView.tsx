@@ -424,6 +424,13 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
               </div>
           </div>
 
+          {/* PREAMBLE */}
+          {data.preamble && (
+            <div className="mb-6 text-[11px] whitespace-pre-wrap leading-relaxed">
+              {data.preamble}
+            </div>
+          )}
+
           {/* TABLE */}
           <table className="w-full border-collapse border border-black text-[10px] mb-2">
               <thead>
@@ -470,6 +477,13 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
               <p className="font-bold">Всего к оплате: {totalSum.toFixed(2)} ({String(sumInWords(totalSum))})</p>
               {hasVat && <p className="font-bold mt-1">В том числе НДС (20%): {totalVatSum.toFixed(2)}</p>}
           </div>
+
+          {/* FOOTER */}
+          {data.footer && (
+            <div className="mb-8 text-[10px] whitespace-pre-wrap leading-relaxed border-t border-black pt-4">
+              {data.footer}
+            </div>
+          )}
 
           {/* SIGNATURES */}
           <div className="flex justify-between items-start text-[11px] mt-12">

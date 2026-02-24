@@ -87,7 +87,19 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
 
         // Notify manager if changed
         if (initialData.manager_id !== payload.manager_id && payload.manager_id && payload.manager_id !== profile.id) {
-          await createNotification(payload.manager_id, `Вам назначен клиент: ${payload.name}`, `#clients/${initialData.id}`);
+          const managerName = staff.find(s => s.id === payload.manager_id)?.full_name || 'Менеджер';
+          
+          const telegramMsg = `<b>👤 Вам назначен клиент</b>\n\n` +
+            `<b>🏢 Клиент:</b> ${payload.name}\n` +
+            `<b>👨‍💼 Кто назначил:</b> ${profile.full_name}\n` +
+            `<b>📞 Телефон:</b> ${payload.phone || 'Не указан'}`;
+
+          await createNotification(
+            payload.manager_id, 
+            `Вам назначен клиент: ${payload.name}`, 
+            `#clients/${initialData.id}`,
+            telegramMsg
+          );
         }
       } else {
         const { data, error } = await supabase.from('clients').insert([cleanPayload]).select('id').single();
@@ -95,7 +107,19 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
 
         // Notify manager
         if (payload.manager_id && payload.manager_id !== profile.id) {
-          await createNotification(payload.manager_id, `Вам назначен новый клиент: ${payload.name}`, `#clients/${data.id}`);
+          const managerName = staff.find(s => s.id === payload.manager_id)?.full_name || 'Менеджер';
+          
+          const telegramMsg = `<b>👤 Вам назначен новый клиент</b>\n\n` +
+            `<b>🏢 Клиент:</b> ${payload.name}\n` +
+            `<b>👨‍💼 Кто назначил:</b> ${profile.full_name}\n` +
+            `<b>📞 Телефон:</b> ${payload.phone || 'Не указан'}`;
+
+          await createNotification(
+            payload.manager_id, 
+            `Вам назначен новый клиент: ${payload.name}`, 
+            `#clients/${data.id}`,
+            telegramMsg
+          );
         }
       }
     },

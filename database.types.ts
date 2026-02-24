@@ -271,6 +271,8 @@ export type Database = {
           status: string | null
           title: string | null
           total_amount_byn: number | null
+          preamble: string | null
+          footer: string | null
         }
         Insert: {
           client_id?: string | null
@@ -287,6 +289,8 @@ export type Database = {
           status?: string | null
           title?: string | null
           total_amount_byn?: number | null
+          preamble?: string | null
+          footer?: string | null
         }
         Update: {
           client_id?: string | null
@@ -303,6 +307,8 @@ export type Database = {
           status?: string | null
           title?: string | null
           total_amount_byn?: number | null
+          preamble?: string | null
+          footer?: string | null
         }
         Relationships: [
           {
@@ -475,6 +481,9 @@ export type Database = {
           status: string | null
           total_amount: number | null
           updated_at: string | null
+          preamble: string | null
+          footer: string | null
+          due_date: string | null
         }
         Insert: {
           client_id?: string | null
@@ -489,6 +498,9 @@ export type Database = {
           status?: string | null
           total_amount?: number | null
           updated_at?: string | null
+          preamble?: string | null
+          footer?: string | null
+          due_date?: string | null
         }
         Update: {
           client_id?: string | null
@@ -503,6 +515,9 @@ export type Database = {
           status?: string | null
           total_amount?: number | null
           updated_at?: string | null
+          preamble?: string | null
+          footer?: string | null
+          due_date?: string | null
         }
         Relationships: [
           {

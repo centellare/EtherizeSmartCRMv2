@@ -40,6 +40,9 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
   const [selectedObjectId, setSelectedObjectId] = useState('');
   const [linkedClient, setLinkedClient] = useState<{id: string, name: string} | null>(null);
   const [hasVat, setHasVat] = useState(true);
+  const [preamble, setPreamble] = useState('');
+  const [footer, setFooter] = useState('');
+  const [activeTab, setActiveTab] = useState<'cart' | 'text'>('cart');
 
   // Cart
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -85,6 +88,8 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
             setLinkedClient(cpData.client);
             if (cpData.object_id) setSelectedObjectId(cpData.object_id);
             setHasVat(cpData.has_vat || false);
+            setPreamble(cpData.preamble || '');
+            setFooter(cpData.footer || '');
 
             const { data: items } = await supabase.from('cp_items').select('*').eq('cp_id', proposalId);
             if (items) {
@@ -337,7 +342,9 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
         exchange_rate: 1, 
         has_vat: hasVat,
         total_amount_byn: totals.total,
-        created_by: profile.id
+        created_by: profile.id,
+        preamble: preamble || null,
+        footer: footer || null
       };
 
       if (cpId) {
@@ -459,11 +466,52 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
           </label>
         </div>
         <div className="ml-auto flex gap-2">
+          <div className="flex bg-slate-100 rounded-lg p-1 mr-2">
+            <button 
+              onClick={() => setActiveTab('cart')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === 'cart' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Смета
+            </button>
+            <button 
+              onClick={() => setActiveTab('text')}
+              className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all ${activeTab === 'text' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Оформление
+            </button>
+          </div>
           <Button variant="ghost" onClick={onCancel}>Отмена</Button>
           <Button icon="save" onClick={handleSave} loading={loading}>Сохранить</Button>
         </div>
       </div>
 
+      {activeTab === 'text' ? (
+        <div className="flex-grow bg-white rounded-2xl border border-slate-200 p-8 overflow-y-auto">
+          <div className="max-w-3xl mx-auto space-y-8">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Вступительный текст</h3>
+              <p className="text-xs text-slate-500 mb-3">Этот текст будет отображаться перед таблицей товаров. Здесь можно указать приветствие, общие условия или описание проекта.</p>
+              <textarea 
+                value={preamble}
+                onChange={(e) => setPreamble(e.target.value)}
+                className="w-full h-48 p-4 bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm leading-relaxed"
+                placeholder="Уважаемый клиент..."
+              />
+            </div>
+            
+            <div className="border-t border-slate-100 pt-8">
+              <h3 className="text-lg font-bold text-slate-900 mb-2">Заключительный текст / Условия</h3>
+              <p className="text-xs text-slate-500 mb-3">Этот текст будет отображаться после итогов. Укажите здесь условия оплаты, сроки поставки, гарантийные обязательства.</p>
+              <textarea 
+                value={footer}
+                onChange={(e) => setFooter(e.target.value)}
+                className="w-full h-48 p-4 bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-100 outline-none transition-all text-sm leading-relaxed"
+                placeholder="1. Оплата производится в рублях по курсу НБРБ..."
+              />
+            </div>
+          </div>
+        </div>
+      ) : (
       <div className="flex-grow grid grid-cols-1 lg:grid-cols-10 gap-4 overflow-hidden h-full min-h-0">
         {/* Left: Catalog */}
         <div className="lg:col-span-5 bg-white rounded-2xl border border-slate-200 flex flex-col overflow-hidden h-full min-h-0">
@@ -672,6 +720,8 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
           </div>
         </div>
       </div>
+
+      )}
 
       <Drawer isOpen={!!viewingProduct} onClose={() => setViewingProduct(null)} title="Карточка товара" width="max-w-md">
         {viewingProduct && (

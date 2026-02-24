@@ -67,6 +67,23 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
   }
 ];
 
+export const MIGRATION_SQL_V10 = `
+-- SmartHome CRM: DOCUMENT CUSTOMIZATION (v10.0)
+-- Добавляет поля для кастомизации текста в КП и Счетах.
+
+BEGIN;
+
+-- 1. Add fields to commercial_proposals
+ALTER TABLE public.commercial_proposals ADD COLUMN IF NOT EXISTS preamble text;
+ALTER TABLE public.commercial_proposals ADD COLUMN IF NOT EXISTS footer text;
+
+-- 2. Add fields to invoices
+ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS preamble text;
+ALTER TABLE public.invoices ADD COLUMN IF NOT EXISTS footer text;
+
+COMMIT;
+`;
+
 export const MIGRATION_SQL_V9 = `
 -- SmartHome CRM: TELEGRAM NOTIFICATIONS (v9.0)
 -- Добавляет поле telegram_chat_id в таблицу профилей.
