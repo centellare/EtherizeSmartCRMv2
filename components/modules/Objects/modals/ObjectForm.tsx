@@ -60,7 +60,7 @@ export const ObjectForm: React.FC<ObjectFormProps> = ({
           const clientName = clients.find(c => c.id === payload.client_id)?.name || 'Не указан';
           const responsibleName = staff.find(s => s.id === payload.responsible_id)?.full_name || 'Сотрудник';
           
-          const telegramMsg = `<b>🏠 Вам назначен объект</b>\n\n` +
+          const telegramMsg = `${responsibleName}, 🏠 Вам назначен объект\n\n` +
             `<b>🏗 Объект:</b> ${payload.name}\n` +
             `<b>📍 Адрес:</b> ${payload.address || 'Не указан'}\n` +
             `<b>👨‍💼 Кто назначил:</b> ${profile.full_name}\n` +
@@ -87,7 +87,7 @@ export const ObjectForm: React.FC<ObjectFormProps> = ({
           const clientName = clients.find(c => c.id === payload.client_id)?.name || 'Не указан';
           const responsibleName = staff.find(s => s.id === payload.responsible_id)?.full_name || 'Сотрудник';
           
-          const telegramMsg = `<b>🏠 Вам назначен новый объект</b>\n\n` +
+          const telegramMsg = `${responsibleName}, 🏠 Вам назначен новый объект\n\n` +
             `<b>🏗 Объект:</b> ${payload.name}\n` +
             `<b>📍 Адрес:</b> ${payload.address || 'Не указан'}\n` +
             `<b>👨‍💼 Кто назначил:</b> ${profile.full_name}\n` +

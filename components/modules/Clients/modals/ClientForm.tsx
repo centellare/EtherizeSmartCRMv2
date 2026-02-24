@@ -89,7 +89,7 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
         if (initialData.manager_id !== payload.manager_id && payload.manager_id && payload.manager_id !== profile.id) {
           const managerName = staff.find(s => s.id === payload.manager_id)?.full_name || 'Менеджер';
           
-          const telegramMsg = `<b>👤 Вам назначен клиент</b>\n\n` +
+          const telegramMsg = `${managerName}, 👤 Вам назначен клиент\n\n` +
             `<b>🏢 Клиент:</b> ${payload.name}\n` +
             `<b>👨‍💼 Кто назначил:</b> ${profile.full_name}\n` +
             `<b>📞 Телефон:</b> ${payload.phone || 'Не указан'}`;
@@ -109,7 +109,7 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
         if (payload.manager_id && payload.manager_id !== profile.id) {
           const managerName = staff.find(s => s.id === payload.manager_id)?.full_name || 'Менеджер';
           
-          const telegramMsg = `<b>👤 Вам назначен новый клиент</b>\n\n` +
+          const telegramMsg = `${managerName}, 👤 Вам назначен новый клиент\n\n` +
             `<b>🏢 Клиент:</b> ${payload.name}\n` +
             `<b>👨‍💼 Кто назначил:</b> ${profile.full_name}\n` +
             `<b>📞 Телефон:</b> ${payload.phone || 'Не указан'}`;
