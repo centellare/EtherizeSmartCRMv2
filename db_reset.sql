@@ -313,11 +313,30 @@ CREATE POLICY "Profiles update own or admin" ON public.profiles FOR UPDATE USING
   auth.uid() = id OR get_my_role() IN ('admin', 'director')
 );
 
+CREATE OR REPLACE FUNCTION public.has_object_task(obj_id uuid, user_id uuid)
+RETURNS boolean AS $$
+BEGIN
+  RETURN EXISTS (SELECT 1 FROM public.tasks WHERE object_id = obj_id AND assigned_to = user_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.is_client_object(obj_id uuid, user_id uuid)
+RETURNS boolean AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.objects o
+    JOIN public.profiles p ON p.client_id = o.client_id
+    WHERE o.id = obj_id AND p.id = user_id
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- 4.2 OBJECTS
 CREATE POLICY "Objects view" ON public.objects FOR SELECT USING (
   get_my_role() IN ('admin', 'director', 'manager', 'storekeeper') OR 
   responsible_id = auth.uid() OR 
-  EXISTS (SELECT 1 FROM tasks WHERE object_id = objects.id AND assigned_to = auth.uid())
+  public.has_object_task(id, auth.uid()) OR
+  client_id = (SELECT p.client_id FROM profiles p WHERE p.id = auth.uid())
 );
 CREATE POLICY "Objects edit" ON public.objects FOR ALL USING (
   get_my_role() IN ('admin', 'director', 'manager')
@@ -326,7 +345,9 @@ CREATE POLICY "Objects edit" ON public.objects FOR ALL USING (
 -- 4.3 TASKS
 CREATE POLICY "Tasks view" ON public.tasks FOR SELECT USING (
   get_my_role() IN ('admin', 'director', 'manager') OR 
-  assigned_to = auth.uid() OR created_by = auth.uid()
+  assigned_to = auth.uid() OR 
+  created_by = auth.uid() OR
+  public.is_client_object(object_id, auth.uid())
 );
 CREATE POLICY "Tasks edit" ON public.tasks FOR ALL USING (
   get_my_role() IN ('admin', 'director', 'manager') OR 

@@ -7,11 +7,29 @@ ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'client';
 ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS client_id uuid REFERENCES public.clients(id) ON DELETE SET NULL;
 
 -- 3. Update RLS for objects so clients can see their own objects
+CREATE OR REPLACE FUNCTION public.has_object_task(obj_id uuid, user_id uuid)
+RETURNS boolean AS $$
+BEGIN
+  RETURN EXISTS (SELECT 1 FROM public.tasks WHERE object_id = obj_id AND assigned_to = user_id);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE OR REPLACE FUNCTION public.is_client_object(obj_id uuid, user_id uuid)
+RETURNS boolean AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM public.objects o
+    JOIN public.profiles p ON p.client_id = o.client_id
+    WHERE o.id = obj_id AND p.id = user_id
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 DROP POLICY IF EXISTS "Objects view" ON public.objects;
 CREATE POLICY "Objects view" ON public.objects FOR SELECT USING (
   get_my_role() IN ('admin', 'director', 'manager', 'storekeeper') OR 
   responsible_id = auth.uid() OR 
-  EXISTS (SELECT 1 FROM tasks WHERE object_id = objects.id AND assigned_to = auth.uid()) OR
+  public.has_object_task(id, auth.uid()) OR
   client_id = (SELECT p.client_id FROM profiles p WHERE p.id = auth.uid())
 );
 
@@ -19,12 +37,9 @@ CREATE POLICY "Objects view" ON public.objects FOR SELECT USING (
 DROP POLICY IF EXISTS "Tasks view" ON public.tasks;
 CREATE POLICY "Tasks view" ON public.tasks FOR SELECT USING (
   get_my_role() IN ('admin', 'director', 'manager') OR 
-  assigned_to = auth.uid() OR created_by = auth.uid() OR
-  EXISTS (
-    SELECT 1 FROM objects o 
-    WHERE o.id = tasks.object_id 
-    AND o.client_id = (SELECT p.client_id FROM profiles p WHERE p.id = auth.uid())
-  )
+  assigned_to = auth.uid() OR 
+  created_by = auth.uid() OR
+  public.is_client_object(object_id, auth.uid())
 );
 
 -- 5. Update RLS for invoices so clients can see their invoices
