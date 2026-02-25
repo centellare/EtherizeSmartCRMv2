@@ -1090,6 +1090,7 @@ export type Database = {
           telegram_chat_id: string | null
           updated_at: string | null
           updated_by: string | null
+          is_approved: boolean
         }
         Insert: {
           birth_date?: string | null
@@ -1108,6 +1109,7 @@ export type Database = {
           telegram_chat_id?: string | null
           updated_at?: string | null
           updated_by?: string | null
+          is_approved?: boolean
         }
         Update: {
           birth_date?: string | null
@@ -1126,6 +1128,7 @@ export type Database = {
           telegram_chat_id?: string | null
           updated_at?: string | null
           updated_by?: string | null
+          is_approved?: boolean
         }
         Relationships: []
       }
@@ -1574,6 +1577,10 @@ export type Database = {
     Functions: {
       admin_set_user_password: {
         Args: { new_password: string; target_user_id: string }
+        Returns: undefined
+      }
+      admin_update_user_credentials: {
+        Args: { target_user_id: string; new_email: string | null; new_password: string | null }
         Returns: undefined
       }
       create_task_safe:

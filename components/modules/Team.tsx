@@ -35,7 +35,8 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
     email: '', 
     role: 'specialist' as UserRole, 
     phone: '', 
-    birth_date: '' 
+    birth_date: '',
+    password: '' // New field
   });
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'director';
@@ -55,6 +56,9 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
     }
   });
 
+  const pendingMembers = useMemo(() => members.filter((m: any) => m.is_approved === false), [members]);
+  const activeMembers = useMemo(() => members.filter((m: any) => m.is_approved !== false), [members]);
+
   const { data: tasks = [] } = useQuery({
     queryKey: ['team_tasks_stats'],
     queryFn: async () => {
@@ -68,17 +72,38 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
   });
 
   const filteredMembers = useMemo(() => {
-    return members.filter(m => {
+    return activeMembers.filter((m: any) => {
       const matchesSearch = m.full_name.toLowerCase().includes(search.toLowerCase()) || 
                            m.email.toLowerCase().includes(search.toLowerCase());
       const matchesRole = roleFilter === 'all' || m.role === roleFilter;
       return matchesSearch && matchesRole;
     });
-  }, [members, search, roleFilter]);
+  }, [activeMembers, search, roleFilter]);
+
+  const handleApprove = async (memberId: string) => {
+    const { error } = await supabase.from('profiles').update({ is_approved: true }).eq('id', memberId);
+    if (!error) {
+      toast.success('Сотрудник подтвержден');
+      queryClient.invalidateQueries({ queryKey: ['team'] });
+    } else {
+      toast.error('Ошибка подтверждения');
+    }
+  };
+
+  const handleBlock = async (memberId: string) => {
+    if (!window.confirm('Заблокировать доступ этому сотруднику?')) return;
+    const { error } = await supabase.from('profiles').update({ is_approved: false }).eq('id', memberId);
+    if (!error) {
+      toast.success('Доступ заблокирован');
+      queryClient.invalidateQueries({ queryKey: ['team'] });
+    } else {
+      toast.error('Ошибка блокировки');
+    }
+  };
 
   const handleOpenCreate = () => {
     setSelectedMember(null);
-    setFormData({ full_name: '', email: '', role: 'specialist', phone: '', birth_date: '' });
+    setFormData({ full_name: '', email: '', role: 'specialist', phone: '', birth_date: '', password: '' });
     setIsEditModalOpen(true);
   };
 
@@ -90,7 +115,8 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
       email: member.email || '',
       role: (member.role as UserRole) || 'specialist',
       phone: member.phone || '',
-      birth_date: member.birth_date || ''
+      birth_date: member.birth_date || '',
+      password: ''
     });
     setIsEditModalOpen(true);
   };
@@ -107,16 +133,35 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
     };
 
     if (selectedMember) {
-      // Update
-      const { error } = await supabase.from('profiles').update(payload).eq('id', selectedMember.id);
+      // Update Profile
+      const { error: profileError } = await supabase.from('profiles').update(payload).eq('id', selectedMember.id);
       
-      if (!error) {
-        setIsEditModalOpen(false);
-        queryClient.invalidateQueries({ queryKey: ['team'] });
-        toast.success('Профиль обновлен');
-      } else {
+      if (profileError) {
         toast.error('Ошибка обновления профиля');
+        return;
       }
+
+      // Update Credentials (Email/Password) via RPC if changed
+      if (formData.email !== selectedMember.email || formData.password) {
+        const { error: credsError } = await supabase.rpc('admin_update_user_credentials', {
+          target_user_id: selectedMember.id,
+          new_email: formData.email !== selectedMember.email ? formData.email : null,
+          new_password: formData.password || null
+        });
+
+        if (credsError) {
+          console.error('Credentials update error:', credsError);
+          toast.error('Профиль обновлен, но не удалось изменить email/пароль');
+        } else {
+          toast.success('Профиль и данные входа обновлены');
+        }
+      } else {
+        toast.success('Профиль обновлен');
+      }
+
+      setIsEditModalOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['team'] });
+
     } else {
       // Invite Flow (Generate Link)
       const link = `${window.location.origin}/?mode=register&email=${encodeURIComponent(formData.email)}&name=${encodeURIComponent(formData.full_name)}`;
@@ -190,6 +235,40 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
         </div>
       </div>
 
+      {/* Pending Approvals Section */}
+      {isAdmin && pendingMembers.length > 0 && (
+        <div className="mb-8">
+          <h3 className="text-lg font-bold text-slate-900 mb-4 flex items-center gap-2">
+            <span className="material-icons-round text-amber-500">warning</span>
+            Ожидают подтверждения
+            <Badge color="amber">{pendingMembers.length}</Badge>
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {pendingMembers.map((member: any) => (
+              <div key={member.id} className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-amber-600 font-bold shadow-sm">
+                    {getUserInitials(member.full_name)}
+                  </div>
+                  <div>
+                    <p className="font-bold text-slate-900 text-sm">{member.full_name}</p>
+                    <p className="text-xs text-slate-500">{member.email}</p>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                   <Button variant="primary" onClick={() => handleApprove(member.id)} icon="check" className="h-8 text-xs">
+                     Принять
+                   </Button>
+                   <Button variant="secondary" className="bg-white h-8 text-xs" onClick={() => { setSelectedMember(member); setIsDeleteModalOpen(true); }} icon="close">
+                     Отклонить
+                   </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {filteredMembers.map(member => {
           const stats = getMemberStats(member.id);
@@ -255,16 +334,27 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
                     <button 
                       onClick={(e) => handleOpenEdit(member, e)}
                       className="flex-1 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 hover:bg-blue-50 hover:text-blue-600 transition-colors"
+                      title="Редактировать"
                     >
                       <span className="material-icons-round text-lg">edit</span>
                     </button>
                     {!isSelf && (
-                      <button 
-                        onClick={(e) => { e.stopPropagation(); setSelectedMember(member); setIsDeleteModalOpen(true); }}
-                        className="flex-1 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors"
-                      >
-                        <span className="material-icons-round text-lg">person_remove</span>
-                      </button>
+                      <>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); handleBlock(member.id); }}
+                          className="flex-1 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 hover:bg-amber-50 hover:text-amber-600 transition-colors"
+                          title="Заблокировать доступ"
+                        >
+                          <span className="material-icons-round text-lg">block</span>
+                        </button>
+                        <button 
+                          onClick={(e) => { e.stopPropagation(); setSelectedMember(member); setIsDeleteModalOpen(true); }}
+                          className="flex-1 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors"
+                          title="Уволить (удалить)"
+                        >
+                          <span className="material-icons-round text-lg">person_remove</span>
+                        </button>
+                      </>
                     )}
                   </>
                 )}
@@ -299,12 +389,21 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
             label="Email" 
             type="email" 
             required 
-            disabled={!!selectedMember}
             value={formData.email} 
             onChange={(e:any) => setFormData({...formData, email: e.target.value})} 
             icon="alternate_email" 
-            placeholder={selectedMember ? "" : "Будет логином для входа"}
+            placeholder={selectedMember ? "Изменить email" : "Будет логином для входа"}
           />
+          {selectedMember && (
+            <Input 
+              label="Новый пароль" 
+              type="password" 
+              value={formData.password} 
+              onChange={(e:any) => setFormData({...formData, password: e.target.value})} 
+              icon="lock" 
+              placeholder="Оставьте пустым, если не меняете"
+            />
+          )}
           <div className="grid grid-cols-2 gap-4">
             <Select 
               label="Роль в системе" 

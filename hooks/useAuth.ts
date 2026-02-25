@@ -8,10 +8,11 @@ export interface Profile {
   id: string;
   full_name: string;
   email: string;
-  role: 'admin' | 'director' | 'manager' | 'specialist' | 'storekeeper';
+  role: 'admin' | 'director' | 'manager' | 'specialist' | 'storekeeper' | 'client';
   phone?: string;
   birth_date?: string;
   deleted_at?: string | null;
+  is_approved?: boolean;
 }
 
 export const useAuth = () => {

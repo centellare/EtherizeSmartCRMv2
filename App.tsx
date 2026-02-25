@@ -10,6 +10,8 @@ import { isModuleAllowed } from './lib/access';
 
 import ClientPortal from './components/modules/ClientPortal';
 
+import PendingApproval from './components/PendingApproval';
+
 export type Module = 'dashboard' | 'clients' | 'objects' | 'tasks' | 'finances' | 'team' | 'inventory' | 'notifications' | 'trash' | 'database' | 'proposals' | 'partners';
 
 const App: React.FC = () => {
@@ -177,6 +179,11 @@ const App: React.FC = () => {
         </div>
       </div>
     );
+  }
+
+  // 3.5. Проверка подтверждения аккаунта
+  if (profile && profile.is_approved === false) {
+    return <PendingApproval onLogout={handleHardLogout} />;
   }
 
   // 4. Основной интерфейс
