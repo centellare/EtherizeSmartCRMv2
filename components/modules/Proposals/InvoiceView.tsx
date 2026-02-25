@@ -59,12 +59,12 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
         setInvoice(inv);
         setItems(invItems || []);
         
-        setPreamble(inv.preamble || '');
-        if (inv.footer) {
-            setFooter(inv.footer);
+        setPreamble((inv as any).preamble || '');
+        if ((inv as any).footer) {
+            setFooter((inv as any).footer);
         } else {
             // Default footer if empty
-            setFooter(`1. Поставщик обязуется поставить Покупателю, а Покупатель обязуется принять и оплатить товар.\n2. Оплата 100% ${inv.due_date ? `в срок до ${formatDate(inv.due_date)}` : 'в течение 3 рабочих дней'}.\n3. Срок поставки до 20 рабочих дней.`);
+            setFooter(`1. Поставщик обязуется поставить Покупателю, а Покупатель обязуется принять и оплатить товар.\n2. Оплата 100% ${(inv as any).due_date ? `в срок до ${formatDate((inv as any).due_date)}` : 'в течение 3 рабочих дней'}.\n3. Срок поставки до 20 рабочих дней.`);
         }
 
         if (set) {
@@ -287,7 +287,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
 
   const handleSaveText = async () => {
     try {
-        const { error } = await supabase.from('invoices').update({ preamble, footer }).eq('id', invoiceId);
+        const { error } = await supabase.from('invoices').update({ preamble, footer } as any).eq('id', invoiceId);
         if (error) throw error;
         toast.success('Оформление сохранено');
         setEditMode(false);

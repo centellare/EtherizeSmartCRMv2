@@ -8,6 +8,8 @@ import MainContent from './components/MainContent';
 import { Button, ToastProvider } from './components/ui';
 import { isModuleAllowed } from './lib/access';
 
+import ClientPortal from './components/modules/ClientPortal';
+
 export type Module = 'dashboard' | 'clients' | 'objects' | 'tasks' | 'finances' | 'team' | 'inventory' | 'notifications' | 'trash' | 'database' | 'proposals' | 'partners';
 
 const App: React.FC = () => {
@@ -178,6 +180,14 @@ const App: React.FC = () => {
   }
 
   // 4. Основной интерфейс
+  if (profile && profile.role === 'client' as any) {
+    return (
+      <ToastProvider>
+        <ClientPortal profile={profile} onLogout={handleHardLogout} />
+      </ToastProvider>
+    );
+  }
+
   return (
     <ToastProvider>
       <Layout 

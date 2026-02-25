@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../../../../lib/supabase';
-import { Button, Badge, Select } from '../../../ui';
+import { supabase, supabaseAdmin } from '../../../../lib/supabase';
+import { Button, Badge, Select, Input } from '../../../ui';
 
 const CopyButton: React.FC<{ text: string }> = ({ text }) => {
   const [copied, setCopied] = useState(false);
@@ -65,11 +65,55 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
   const [newConnData, setNewConnData] = useState({ target_id: '', type: 'neighbor' });
   const [loadingConn, setLoadingConn] = useState(false);
 
+  // Client Portal Access State
+  const [clientProfile, setClientProfile] = useState<any>(null);
+  const [isCreatingAccess, setIsCreatingAccess] = useState(false);
+  const [accessEmail, setAccessEmail] = useState('');
+  const [accessPassword, setAccessPassword] = useState('');
+  const [loadingAccess, setLoadingAccess] = useState(false);
+
   useEffect(() => {
       if (client?.id) {
           fetchConnections();
+          fetchClientProfile();
       }
   }, [client]);
+
+  const fetchClientProfile = async () => {
+      const { data } = await supabase
+          .from('profiles')
+          .select('id, email, full_name, role')
+          .eq('client_id', client.id)
+          .limit(1)
+          .maybeSingle();
+      setClientProfile(data);
+  };
+
+  const handleCreateAccess = async () => {
+      if (!accessEmail || !accessPassword) return alert('Введите email и пароль');
+      setLoadingAccess(true);
+      
+      const { data, error } = await supabaseAdmin.auth.signUp({
+          email: accessEmail,
+          password: accessPassword,
+          options: {
+              data: {
+                  role: 'client',
+                  client_id: client.id,
+                  full_name: client.name
+              }
+          }
+      });
+
+      if (error) {
+          alert('Ошибка при создании доступа: ' + error.message);
+      } else {
+          alert('Доступ успешно создан! Передайте данные для входа клиенту.');
+          setIsCreatingAccess(false);
+          fetchClientProfile();
+      }
+      setLoadingAccess(false);
+  };
 
   const fetchConnections = async () => {
       // 1. Referral Logic
@@ -209,6 +253,50 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
                 <span className="material-icons-round text-slate-400">support_agent</span>
                 <span className="text-sm text-slate-700 font-medium">{client.manager?.full_name || 'Не назначен'}</span>
             </div>
+            </div>
+
+            {/* CLIENT PORTAL ACCESS */}
+            <div>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">Доступ в личный кабинет</p>
+                <div className="bg-white p-4 rounded-2xl border border-slate-100 h-[68px] flex items-center justify-between">
+                    {clientProfile ? (
+                        <div className="flex items-center gap-3">
+                            <span className="material-icons-round text-emerald-500">verified_user</span>
+                            <div>
+                                <p className="text-sm text-slate-700 font-medium">Доступ открыт</p>
+                                <p className="text-[10px] text-slate-400">{clientProfile.email}</p>
+                            </div>
+                        </div>
+                    ) : isCreatingAccess ? (
+                        <div className="flex items-center gap-2 w-full">
+                            <Input 
+                                placeholder="Email" 
+                                value={accessEmail} 
+                                onChange={(e) => setAccessEmail(e.target.value)} 
+                                className="h-8 text-xs flex-1"
+                            />
+                            <Input 
+                                placeholder="Пароль" 
+                                type="password"
+                                value={accessPassword} 
+                                onChange={(e) => setAccessPassword(e.target.value)} 
+                                className="h-8 text-xs flex-1"
+                            />
+                            <Button className="h-8 px-2" onClick={handleCreateAccess} loading={loadingAccess} icon="check" />
+                            <Button variant="ghost" className="h-8 px-2 text-slate-400 hover:text-slate-600" onClick={() => setIsCreatingAccess(false)} icon="close" />
+                        </div>
+                    ) : (
+                        <div className="flex items-center justify-between w-full">
+                            <div className="flex items-center gap-3">
+                                <span className="material-icons-round text-slate-300">no_accounts</span>
+                                <span className="text-sm text-slate-500 font-medium">Нет доступа</span>
+                            </div>
+                            <Button variant="tonal" className="h-8 text-xs px-3" onClick={() => setIsCreatingAccess(true)}>
+                                Выдать доступ
+                            </Button>
+                        </div>
+                    )}
+                </div>
             </div>
         </div>
 

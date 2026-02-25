@@ -38,6 +38,15 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey, {
   }
 });
 
+// Secondary client for admin tasks (like creating users) without affecting the current session
+export const supabaseAdmin = createClient<Database>(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false
+  }
+});
+
 /**
  * Хелпер для замера времени выполнения запроса с защитой от AbortError.
  */

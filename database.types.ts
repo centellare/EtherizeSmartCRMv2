@@ -271,8 +271,6 @@ export type Database = {
           status: string | null
           title: string | null
           total_amount_byn: number | null
-          preamble: string | null
-          footer: string | null
         }
         Insert: {
           client_id?: string | null
@@ -289,8 +287,6 @@ export type Database = {
           status?: string | null
           title?: string | null
           total_amount_byn?: number | null
-          preamble?: string | null
-          footer?: string | null
         }
         Update: {
           client_id?: string | null
@@ -307,8 +303,6 @@ export type Database = {
           status?: string | null
           title?: string | null
           total_amount_byn?: number | null
-          preamble?: string | null
-          footer?: string | null
         }
         Relationships: [
           {
@@ -481,9 +475,6 @@ export type Database = {
           status: string | null
           total_amount: number | null
           updated_at: string | null
-          preamble: string | null
-          footer: string | null
-          due_date: string | null
         }
         Insert: {
           client_id?: string | null
@@ -498,9 +489,6 @@ export type Database = {
           status?: string | null
           total_amount?: number | null
           updated_at?: string | null
-          preamble?: string | null
-          footer?: string | null
-          due_date?: string | null
         }
         Update: {
           client_id?: string | null
@@ -515,9 +503,6 @@ export type Database = {
           status?: string | null
           total_amount?: number | null
           updated_at?: string | null
-          preamble?: string | null
-          footer?: string | null
-          due_date?: string | null
         }
         Relationships: [
           {
@@ -1090,6 +1075,7 @@ export type Database = {
       profiles: {
         Row: {
           birth_date: string | null
+          client_id: string | null
           created_at: string | null
           created_by: string | null
           deleted_at: string | null
@@ -1107,6 +1093,7 @@ export type Database = {
         }
         Insert: {
           birth_date?: string | null
+          client_id?: string | null
           created_at?: string | null
           created_by?: string | null
           deleted_at?: string | null
@@ -1124,6 +1111,7 @@ export type Database = {
         }
         Update: {
           birth_date?: string | null
+          client_id?: string | null
           created_at?: string | null
           created_by?: string | null
           deleted_at?: string | null
@@ -1688,7 +1676,7 @@ export type Database = {
         | "commissioning"
         | "programming"
         | "support"
-      user_role: "admin" | "director" | "manager" | "specialist" | "storekeeper"
+      user_role: "admin" | "director" | "manager" | "specialist" | "storekeeper" | "client"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1836,7 +1824,7 @@ export const Constants = {
         "programming",
         "support",
       ],
-      user_role: ["admin", "director", "manager", "specialist", "storekeeper"],
+      user_role: ["admin", "director", "manager", "specialist", "storekeeper", "client"],
     },
   },
 } as const
