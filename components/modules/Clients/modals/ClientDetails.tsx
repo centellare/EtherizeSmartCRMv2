@@ -99,24 +99,40 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
       if (!accessEmail || !accessPassword) return alert('Введите email и пароль');
       setLoadingAccess(true);
       
-      const { data, error } = await supabaseAdmin.auth.signUp({
-          email: accessEmail,
-          password: accessPassword,
-          options: {
-              data: {
-                  role: 'client',
-                  client_id: client.id,
-                  full_name: client.name
-              }
-          }
-      });
+      try {
+        const { data, error } = await supabaseAdmin.auth.signUp({
+            email: accessEmail,
+            password: accessPassword,
+            options: {
+                data: {
+                    full_name: client.name,
+                    client_id: client.id
+                    // We DO NOT pass role here anymore. Trigger will create 'specialist'.
+                    // We will update it to 'client' via RPC immediately.
+                }
+            }
+        });
 
-      if (error) {
-          alert('Ошибка при создании доступа: ' + error.message);
-      } else {
-          alert('Доступ успешно создан! Передайте данные для входа клиенту.');
-          setIsCreatingAccess(false);
-          fetchClientProfile();
+        if (error) {
+            alert('Ошибка при создании доступа: ' + error.message);
+        } else if (data.user) {
+            // Immediately promote to client role and approve
+            const { error: rpcError } = await supabase.rpc('admin_update_profile', {
+                target_user_id: data.user.id,
+                new_role: 'client',
+                new_approval_status: true
+            });
+
+            if (rpcError) {
+                alert('Пользователь создан, но ошибка при назначении роли клиента: ' + rpcError.message);
+            } else {
+                alert('Доступ успешно создан! Передайте данные для входа клиенту.');
+                setIsCreatingAccess(false);
+                fetchClientProfile();
+            }
+        }
+      } catch (err: any) {
+          alert('Критическая ошибка: ' + err.message);
       }
       setLoadingAccess(false);
   };
@@ -152,17 +168,15 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
       if (!window.confirm('Вы уверены? Клиент потеряет доступ к личному кабинету.')) return;
 
       setLoadingAccess(true);
-      const { error } = await supabaseAdmin.auth.admin.deleteUser(clientProfile.id);
+      
+      // Use RPC function instead of direct admin API call
+      const { error } = await supabase.rpc('admin_delete_user', {
+          user_id: clientProfile.id
+      });
 
       if (error) {
           alert('Ошибка при удалении доступа: ' + error.message);
       } else {
-          // Also remove client_id link from profile if it still exists (though deleteUser cascades usually)
-          // But profiles table has ON DELETE CASCADE usually? Let's check. 
-          // Actually profiles is linked to auth.users. So deleting auth user deletes profile.
-          // But we want to keep the client record. Client record is in 'clients' table.
-          // 'profiles' table is for users. So deleting user from auth deletes profile.
-          // The 'clients' table record remains.
           alert('Доступ закрыт.');
           setClientProfile(null);
           setIsEditingAccess(false);

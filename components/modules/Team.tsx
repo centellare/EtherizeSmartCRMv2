@@ -163,11 +163,62 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
       queryClient.invalidateQueries({ queryKey: ['team'] });
 
     } else {
-      // Invite Flow (Generate Link)
-      const link = `${window.location.origin}/?mode=register&email=${encodeURIComponent(formData.email)}&name=${encodeURIComponent(formData.full_name)}`;
-      setInviteLink(link);
-      setIsEditModalOpen(false);
-      setIsInviteModalOpen(true);
+      // Create New User (Admin Flow)
+      if (!formData.password) {
+        toast.error('Для создания пользователя необходим пароль');
+        return;
+      }
+
+      // 1. Create User in Auth (using secondary client to avoid logout)
+      // We use a trick: createClient with persistSession: false is needed.
+      // But we don't have service_role key on client.
+      // However, we can use signUp. Since we are admin, we can just signUp a new user?
+      // No, signUp logs you in.
+      // We need to use the secondary client (supabaseAdmin) defined in lib/supabase.ts
+      
+      // Import supabaseAdmin dynamically or use the one from props/context if available.
+      // Actually we need to import it at top level.
+      
+      try {
+        // We need to import supabaseAdmin from lib/supabase
+        const { supabaseAdmin } = await import('../../lib/supabase');
+        
+        const { data: authData, error: authError } = await supabaseAdmin.auth.signUp({
+          email: formData.email,
+          password: formData.password,
+          options: {
+            data: {
+              full_name: formData.full_name,
+              // We DON'T pass role here to avoid security issues with the trigger.
+              // The trigger will create a 'specialist' / 'unapproved' profile.
+            }
+          }
+        });
+
+        if (authError) {
+          toast.error('Ошибка создания пользователя: ' + authError.message);
+          return;
+        }
+
+        if (authData.user) {
+          // 2. Immediately update profile to set correct role and approve
+          const { error: rpcError } = await supabase.rpc('admin_update_profile', {
+            target_user_id: authData.user.id,
+            new_role: formData.role,
+            new_approval_status: true
+          });
+
+          if (rpcError) {
+             toast.error('Пользователь создан, но ошибка при назначении роли: ' + rpcError.message);
+          } else {
+             toast.success('Сотрудник успешно создан и подтвержден');
+             setIsEditModalOpen(false);
+             queryClient.invalidateQueries({ queryKey: ['team'] });
+          }
+        }
+      } catch (err: any) {
+        toast.error('Критическая ошибка: ' + err.message);
+      }
     }
   };
 
@@ -375,7 +426,7 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
       <Modal 
         isOpen={isEditModalOpen} 
         onClose={() => setIsEditModalOpen(false)} 
-        title={selectedMember ? "Редактирование сотрудника" : "Приглашение сотрудника"}
+        title={selectedMember ? "Редактирование сотрудника" : "Добавление сотрудника"}
       >
         <form onSubmit={handleSave} className="space-y-4">
           <Input 
@@ -394,16 +445,15 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
             icon="alternate_email" 
             placeholder={selectedMember ? "Изменить email" : "Будет логином для входа"}
           />
-          {selectedMember && (
-            <Input 
-              label="Новый пароль" 
-              type="password" 
-              value={formData.password} 
-              onChange={(e:any) => setFormData({...formData, password: e.target.value})} 
-              icon="lock" 
-              placeholder="Оставьте пустым, если не меняете"
-            />
-          )}
+          <Input 
+            label="Пароль" 
+            type="password" 
+            required={!selectedMember}
+            value={formData.password} 
+            onChange={(e:any) => setFormData({...formData, password: e.target.value})} 
+            icon="lock" 
+            placeholder={selectedMember ? "Оставьте пустым, если не меняете" : "Обязательно для нового сотрудника"}
+          />
           <div className="grid grid-cols-2 gap-4">
             <Select 
               label="Роль в системе" 
@@ -429,13 +479,13 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
           />
           
           <div className="pt-4">
-            <Button type="submit" className="w-full h-14" loading={false} icon={selectedMember ? "save" : "link"}>
-              {selectedMember ? 'Сохранить изменения' : 'Сформировать приглашение'}
+            <Button type="submit" className="w-full h-14" loading={false} icon={selectedMember ? "save" : "person_add"}>
+              {selectedMember ? 'Сохранить изменения' : 'Создать сотрудника'}
             </Button>
           </div>
           {!selectedMember && (
             <p className="text-[10px] text-slate-400 italic text-center px-4">
-              Будет создана ссылка для самостоятельной регистрации сотрудника.
+              Сотрудник будет создан сразу с подтвержденным доступом.
             </p>
           )}
         </form>

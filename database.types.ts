@@ -1579,8 +1579,16 @@ export type Database = {
         Args: { new_password: string; target_user_id: string }
         Returns: undefined
       }
+      admin_update_profile: {
+        Args: { target_user_id: string; new_role: string; new_approval_status: boolean }
+        Returns: undefined
+      }
       admin_update_user_credentials: {
         Args: { target_user_id: string; new_email: string | null; new_password: string | null }
+        Returns: undefined
+      }
+      admin_delete_user: {
+        Args: { user_id: string }
         Returns: undefined
       }
       create_task_safe:

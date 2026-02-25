@@ -67,6 +67,328 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
   }
 ];
 
+export const MIGRATION_SQL_V17 = `
+-- SmartHome CRM: ADMIN MANAGE USER FUNCTION (v17.0)
+-- Позволяет администраторам управлять ролями и статусом пользователей через RPC.
+
+BEGIN;
+
+-- 1. Create function to update user profile (role, approval)
+CREATE OR REPLACE FUNCTION public.admin_update_profile(
+  target_user_id uuid,
+  new_role text,
+  new_approval_status boolean
+)
+RETURNS void
+SECURITY DEFINER
+SET search_path = public
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  -- Check if executing user is admin or director
+  IF NOT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role IN ('admin', 'director')
+  ) THEN
+    RAISE EXCEPTION 'Access denied';
+  END IF;
+
+  -- Update profile
+  UPDATE public.profiles
+  SET 
+    role = new_role,
+    is_approved = new_approval_status,
+    updated_at = now()
+  WHERE id = target_user_id;
+  
+  -- Also update metadata in auth.users to keep it in sync (optional but good for debugging)
+  UPDATE auth.users
+  SET raw_user_meta_data = 
+    COALESCE(raw_user_meta_data, '{}'::jsonb) || 
+    jsonb_build_object('role', new_role)
+  WHERE id = target_user_id;
+
+END;
+$$;
+
+-- 2. Revert trigger to "dumb" mode (ignore metadata roles for security)
+-- This ensures that even if someone calls signUp with role='admin', 
+-- the trigger will force them to be 'specialist' and 'unapproved'.
+-- Only the admin_update_profile function (which checks permissions) can promote them.
+
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger 
+SECURITY DEFINER
+SET search_path = public
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_client_id uuid;
+BEGIN
+  -- Extract client_id if present (for linking profile to client record)
+  IF new.raw_user_meta_data->>'client_id' IS NOT NULL THEN
+    v_client_id := (new.raw_user_meta_data->>'client_id')::uuid;
+  END IF;
+
+  -- ALWAYS insert as specialist / unapproved initially.
+  -- The Admin UI will immediately call admin_update_profile to fix this.
+  INSERT INTO public.profiles (id, full_name, email, role, is_approved, client_id)
+  VALUES (
+    new.id, 
+    COALESCE(new.raw_user_meta_data->>'full_name', new.email, 'New User'), 
+    new.email, 
+    'specialist', -- Default safe role
+    false,        -- Default unapproved
+    v_client_id
+  )
+  ON CONFLICT (id) DO NOTHING;
+
+  RETURN new;
+END;
+$$;
+
+COMMIT;
+`;
+
+export const MIGRATION_SQL_V16 = `
+-- SmartHome CRM: ADMIN DELETE USER FUNCTION (v16.0)
+-- Позволяет администраторам удалять пользователей через RPC.
+
+BEGIN;
+
+-- 1. Create function to delete user by ID
+CREATE OR REPLACE FUNCTION public.admin_delete_user(user_id uuid)
+RETURNS void
+SECURITY DEFINER
+SET search_path = public
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  -- Check if executing user is admin or director
+  IF NOT EXISTS (
+    SELECT 1 FROM public.profiles
+    WHERE id = auth.uid() AND role IN ('admin', 'director')
+  ) THEN
+    RAISE EXCEPTION 'Access denied';
+  END IF;
+
+  -- Delete from auth.users (cascade will handle profile)
+  DELETE FROM auth.users WHERE id = user_id;
+END;
+$$;
+
+COMMIT;
+`;
+
+export const MIGRATION_SQL_V15 = `
+-- SmartHome CRM: CLIENT REGISTRATION FIX (v15.0)
+-- Исправляет конфликт регистрации клиентов с системой подтверждения.
+
+BEGIN;
+
+-- 1. Drop existing trigger and function
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP FUNCTION IF EXISTS public.handle_new_user();
+
+-- 2. Create smarter handle_new_user
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger 
+SECURITY DEFINER
+SET search_path = public
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_role text;
+  v_approved boolean;
+  v_client_id uuid;
+BEGIN
+  -- Extract role from metadata, default to 'specialist'
+  -- Clients created via admin panel usually have role='client' in metadata
+  v_role := COALESCE(new.raw_user_meta_data->>'role', 'specialist');
+  
+  -- Extract client_id if present (for linking profile to client record)
+  IF new.raw_user_meta_data->>'client_id' IS NOT NULL THEN
+    v_client_id := (new.raw_user_meta_data->>'client_id')::uuid;
+  END IF;
+
+  -- Determine approval status
+  -- If role is 'client', they are created by admin, so AUTO-APPROVE.
+  -- If role is 'specialist', they need approval (default false).
+  IF v_role = 'client' THEN
+    v_approved := true;
+  ELSE
+    v_approved := false;
+  END IF;
+
+  INSERT INTO public.profiles (id, full_name, email, role, is_approved, client_id)
+  VALUES (
+    new.id, 
+    COALESCE(new.raw_user_meta_data->>'full_name', new.email, 'New User'), 
+    new.email, 
+    v_role,
+    v_approved,
+    v_client_id
+  )
+  ON CONFLICT (id) DO NOTHING;
+
+  RETURN new;
+END;
+$$;
+
+-- 3. Recreate Trigger
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+COMMIT;
+`;
+
+export const MIGRATION_SQL_V14 = `
+-- SmartHome CRM: REGISTRATION FIX FINAL (v14.0)
+-- Максимальное упрощение триггера регистрации для устранения блокировок.
+
+BEGIN;
+
+-- 1. Drop everything related to the trigger
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP FUNCTION IF EXISTS public.handle_new_user();
+
+-- 2. Create a DEAD SIMPLE handler (No SELECTs, No Logic, Just Insert)
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger 
+SECURITY DEFINER
+SET search_path = public
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  INSERT INTO public.profiles (id, full_name, email, role, is_approved)
+  VALUES (
+    new.id, 
+    COALESCE(new.raw_user_meta_data->>'full_name', new.email, 'New User'), 
+    new.email, 
+    'specialist', -- Default role
+    false         -- Default approval status (safety first)
+  )
+  ON CONFLICT (id) DO NOTHING;
+
+  RETURN new;
+END;
+$$;
+
+-- 3. Recreate Trigger
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+-- 4. Add explicit INSERT policy for profiles (Backup)
+DROP POLICY IF EXISTS "Profiles insert self" ON public.profiles;
+CREATE POLICY "Profiles insert self" ON public.profiles FOR INSERT WITH CHECK (auth.uid() = id);
+
+COMMIT;
+`;
+
+export const MIGRATION_SQL_V13 = `
+-- SmartHome CRM: REGISTRATION RECOVERY (v13.0)
+-- Экстренное исправление регистрации. Отключает уведомления и проверяет структуру.
+
+BEGIN;
+
+-- 1. Ensure is_approved column exists
+ALTER TABLE public.profiles ADD COLUMN IF NOT EXISTS is_approved boolean DEFAULT false;
+
+-- 2. Drop existing trigger and function
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP FUNCTION IF EXISTS public.handle_new_user();
+
+-- 3. Create minimal handle_new_user (NO NOTIFICATIONS)
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+DECLARE
+  is_first_user boolean;
+BEGIN
+  -- Check if this is the first user
+  SELECT NOT EXISTS (SELECT 1 FROM public.profiles) INTO is_first_user;
+
+  -- Insert Profile
+  INSERT INTO public.profiles (id, full_name, email, role, is_approved)
+  VALUES (
+    new.id, 
+    COALESCE(new.raw_user_meta_data->>'full_name', new.email, 'New User'), 
+    new.email, 
+    CASE WHEN is_first_user THEN 'director' ELSE 'specialist' END,
+    CASE WHEN is_first_user THEN true ELSE false END
+  )
+  ON CONFLICT (id) DO NOTHING;
+
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 4. Recreate Trigger
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+COMMIT;
+`;
+
+export const MIGRATION_SQL_V12 = `
+-- SmartHome CRM: REGISTRATION FIX (v12.0)
+-- Исправляет ошибку при регистрации нового пользователя.
+
+BEGIN;
+
+-- 1. Drop existing trigger and function to ensure clean slate
+DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
+DROP FUNCTION IF EXISTS public.handle_new_user();
+
+-- 2. Recreate handle_new_user with robust error handling
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger AS $$
+DECLARE
+  is_first_user boolean;
+BEGIN
+  -- Check if this is the first user in the system
+  SELECT NOT EXISTS (SELECT 1 FROM public.profiles) INTO is_first_user;
+
+  -- Insert Profile
+  INSERT INTO public.profiles (id, full_name, email, role, is_approved)
+  VALUES (
+    new.id, 
+    COALESCE(new.raw_user_meta_data->>'full_name', new.email, 'New User'), 
+    new.email, 
+    -- First user is director, others are specialist
+    CASE WHEN is_first_user THEN 'director' ELSE 'specialist' END,
+    -- First user is auto-approved, others need approval
+    CASE WHEN is_first_user THEN true ELSE false END
+  )
+  ON CONFLICT (id) DO NOTHING;
+
+  -- Notify admins (wrapped in block to prevent registration failure if notification fails)
+  IF NOT is_first_user THEN
+    BEGIN
+      INSERT INTO public.notifications (profile_id, content, link)
+      SELECT id, 'Новая регистрация: Пользователь ' || new.email || ' ожидает подтверждения.', '/team'
+      FROM public.profiles 
+      WHERE role IN ('admin', 'director');
+    EXCEPTION WHEN OTHERS THEN
+      -- Log error but allow user creation to proceed
+      RAISE WARNING 'Failed to create notification for new user: %', SQLERRM;
+    END;
+  END IF;
+
+  RETURN new;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 3. Recreate Trigger
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW EXECUTE PROCEDURE public.handle_new_user();
+
+COMMIT;
+`;
+
 export const MIGRATION_SQL_V11 = `
 -- SmartHome CRM: SECURITY & APPROVALS (v11.0)
 -- Добавляет систему подтверждения регистрации и функции администрирования.

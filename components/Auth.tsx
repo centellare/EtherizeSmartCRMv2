@@ -160,14 +160,7 @@ const Auth: React.FC = () => {
               <Input label="Рабочий Email" type="email" required value={email} onChange={(e: any) => setEmail(e.target.value)} icon="email" />
               <div className="space-y-1">
                 <Input label="Пароль" type="password" required value={password} onChange={(e: any) => setPassword(e.target.value)} icon="lock" />
-                <div className="flex justify-between items-center">
-                  <button 
-                    type="button" 
-                    onClick={() => { setMode('register'); setError(null); setSuccessMessage(null); }}
-                    className="text-[11px] font-bold text-[#005ac1] uppercase tracking-wider hover:underline px-2 py-1"
-                  >
-                    Регистрация
-                  </button>
+                <div className="flex justify-end items-center">
                   <button 
                     type="button" 
                     onClick={() => { setMode('reset'); setError(null); setSuccessMessage(null); }}
