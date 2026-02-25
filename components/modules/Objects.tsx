@@ -65,7 +65,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
   const { data: staff = [] } = useQuery({
     queryKey: ['staff'],
     queryFn: async () => {
-      const { data } = await supabase.from('profiles').select('id, full_name, role').is('deleted_at', null).order('full_name');
+      const { data } = await supabase.from('profiles').select('id, full_name, role').is('deleted_at', null).neq('role', 'client').order('full_name');
       return data || [];
     },
     staleTime: 1000 * 60 * 5

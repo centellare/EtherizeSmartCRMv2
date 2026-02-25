@@ -11,6 +11,7 @@ export const useStaff = () => {
         .from('profiles')
         .select('*')
         .is('deleted_at', null)
+        .neq('role', 'client')
         .order('full_name');
 
       if (error) throw error;

@@ -68,9 +68,15 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
   // Client Portal Access State
   const [clientProfile, setClientProfile] = useState<any>(null);
   const [isCreatingAccess, setIsCreatingAccess] = useState(false);
+  const [isEditingAccess, setIsEditingAccess] = useState(false);
   const [accessEmail, setAccessEmail] = useState('');
   const [accessPassword, setAccessPassword] = useState('');
   const [loadingAccess, setLoadingAccess] = useState(false);
+  
+  // Object Summary State
+  const [expandedObjectId, setExpandedObjectId] = useState<string | null>(null);
+  const [objectStats, setObjectStats] = useState<any>(null);
+  const [loadingStats, setLoadingStats] = useState(false);
 
   useEffect(() => {
       if (client?.id) {
@@ -113,6 +119,121 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
           fetchClientProfile();
       }
       setLoadingAccess(false);
+  };
+
+  const handleUpdateAccess = async () => {
+      if (!clientProfile?.id) return;
+      if (!accessEmail && !accessPassword) return alert('Введите новые данные');
+      
+      setLoadingAccess(true);
+      const updates: any = {};
+      if (accessEmail) updates.email = accessEmail;
+      if (accessPassword) updates.password = accessPassword;
+
+      const { error } = await supabaseAdmin.auth.admin.updateUserById(
+          clientProfile.id,
+          updates
+      );
+
+      if (error) {
+          alert('Ошибка при обновлении: ' + error.message);
+      } else {
+          alert('Данные доступа обновлены');
+          setIsEditingAccess(false);
+          setAccessEmail('');
+          setAccessPassword('');
+          fetchClientProfile();
+      }
+      setLoadingAccess(false);
+  };
+
+  const handleRevokeAccess = async () => {
+      if (!clientProfile?.id) return;
+      if (!window.confirm('Вы уверены? Клиент потеряет доступ к личному кабинету.')) return;
+
+      setLoadingAccess(true);
+      const { error } = await supabaseAdmin.auth.admin.deleteUser(clientProfile.id);
+
+      if (error) {
+          alert('Ошибка при удалении доступа: ' + error.message);
+      } else {
+          // Also remove client_id link from profile if it still exists (though deleteUser cascades usually)
+          // But profiles table has ON DELETE CASCADE usually? Let's check. 
+          // Actually profiles is linked to auth.users. So deleting auth user deletes profile.
+          // But we want to keep the client record. Client record is in 'clients' table.
+          // 'profiles' table is for users. So deleting user from auth deletes profile.
+          // The 'clients' table record remains.
+          alert('Доступ закрыт.');
+          setClientProfile(null);
+          setIsEditingAccess(false);
+      }
+      setLoadingAccess(false);
+  };
+
+  const handleExpandObject = async (objId: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (expandedObjectId === objId) {
+          setExpandedObjectId(null);
+          return;
+      }
+      setExpandedObjectId(objId);
+      setLoadingStats(true);
+
+      // Fetch stats
+      // 1. Money: Fetch all income transactions
+      const { data: transactions } = await supabase
+          .from('transactions')
+          .select('amount, fact_amount, type, category, planned_date, status, payments:transaction_payments(amount)')
+          .eq('object_id', objId)
+          .eq('type', 'income');
+      
+      let totalPlanned = 0;
+      let totalPaid = 0;
+      let nextPaymentDate: string | null = null;
+      let nextPaymentAmount = 0;
+
+      if (transactions) {
+          transactions.forEach((t: any) => {
+              const planned = Number(t.amount) || 0;
+              let fact = Number(t.fact_amount) || 0;
+              
+              // If payments exist, use them for fact
+              if (t.payments && t.payments.length > 0) {
+                  fact = t.payments.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+              }
+
+              totalPlanned += planned;
+              totalPaid += fact;
+
+              const remaining = planned - fact;
+              if (remaining > 1) { // Tolerance for floating point
+                  if (t.planned_date) {
+                      if (!nextPaymentDate || t.planned_date < nextPaymentDate) {
+                          nextPaymentDate = t.planned_date;
+                          nextPaymentAmount = remaining;
+                      }
+                  }
+              }
+          });
+      }
+
+      // 2. History: Last 3 stages
+      const { data: history } = await supabase
+          .from('object_history')
+          .select('created_at, action_text')
+          .eq('object_id', objId)
+          .order('created_at', { ascending: false })
+          .limit(3);
+
+      setObjectStats({
+          totalPlanned,
+          totalPaid,
+          remaining: totalPlanned - totalPaid,
+          nextPaymentDate,
+          nextPaymentAmount,
+          history: history || []
+      });
+      setLoadingStats(false);
   };
 
   const fetchConnections = async () => {
@@ -259,13 +380,56 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">Доступ в личный кабинет</p>
             <div className="bg-white p-4 rounded-2xl border border-slate-100">
                 {clientProfile ? (
-                    <div className="flex items-center gap-3">
-                        <span className="material-icons-round text-emerald-500">verified_user</span>
-                        <div>
-                            <p className="text-sm text-slate-700 font-medium">Доступ открыт</p>
-                            <p className="text-[10px] text-slate-400">{clientProfile.email}</p>
+                    isEditingAccess ? (
+                        <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <span className="material-icons-round text-slate-300">manage_accounts</span>
+                                    <span className="text-sm text-slate-700 font-medium">Редактирование доступа</span>
+                                </div>
+                                <Button variant="ghost" className="h-8 w-8 p-0 text-slate-400 hover:text-slate-600 rounded-full" onClick={() => setIsEditingAccess(false)}>
+                                    <span className="material-icons-round text-lg">close</span>
+                                </Button>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <Input 
+                                    placeholder="Новый Email" 
+                                    value={accessEmail} 
+                                    onChange={(e) => setAccessEmail(e.target.value)} 
+                                    className="text-sm"
+                                />
+                                <Input 
+                                    placeholder="Новый Пароль" 
+                                    type="password"
+                                    value={accessPassword} 
+                                    onChange={(e) => setAccessPassword(e.target.value)} 
+                                    className="text-sm"
+                                />
+                            </div>
+                            <div className="flex gap-2">
+                                <Button className="flex-1" onClick={handleUpdateAccess} loading={loadingAccess}>
+                                    Сохранить
+                                </Button>
+                                <Button variant="ghost" className="text-red-500 hover:text-red-600 hover:bg-red-50" onClick={handleRevokeAccess} loading={loadingAccess}>
+                                    Закрыть доступ
+                                </Button>
+                            </div>
                         </div>
-                    </div>
+                    ) : (
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <span className="material-icons-round text-emerald-500">verified_user</span>
+                                <div>
+                                    <p className="text-sm text-slate-700 font-medium">Доступ открыт</p>
+                                    <p className="text-[10px] text-slate-400">{clientProfile.email}</p>
+                                </div>
+                            </div>
+                            <Button variant="ghost" className="h-8 w-8 p-0 text-slate-400 hover:text-slate-600 rounded-full" onClick={() => setIsEditingAccess(true)}>
+                                <span className="material-icons-round text-lg">settings</span>
+                            </Button>
+                        </div>
+                    )
                 ) : isCreatingAccess ? (
                     <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
                         <div className="flex items-center justify-between">
@@ -453,14 +617,81 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
                     client.objects.filter((o:any) => !o.is_deleted).map((obj: any) => (
                     <div 
                         key={obj.id}
-                        onClick={() => onNavigateToObject(obj.id)}
-                        className="flex items-center justify-between p-4 bg-[#f7f9fc] rounded-2xl hover:bg-[#d3e4ff] cursor-pointer transition-colors border border-transparent hover:border-[#005ac1] group/obj"
+                        onClick={(e) => handleExpandObject(obj.id, e)}
+                        className={`p-4 bg-[#f7f9fc] rounded-2xl cursor-pointer transition-all border ${
+                            expandedObjectId === obj.id ? 'border-[#005ac1] bg-blue-50/50' : 'border-transparent hover:border-[#005ac1] hover:bg-[#d3e4ff]'
+                        } group/obj`}
                     >
-                        <div className="flex items-center gap-3">
-                        <span className="material-icons-round text-slate-400 group-hover/obj:text-[#005ac1]">home_work</span>
-                        <span className="text-sm font-medium">{obj.name}</span>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <span className={`material-icons-round ${expandedObjectId === obj.id ? 'text-[#005ac1]' : 'text-slate-400 group-hover/obj:text-[#005ac1]'}`}>home_work</span>
+                                <span className="text-sm font-medium">{obj.name}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <Button 
+                                    variant="ghost" 
+                                    className="h-8 w-8 p-0 rounded-full text-slate-400 hover:text-[#005ac1] hover:bg-blue-100"
+                                    onClick={(e) => { e.stopPropagation(); onNavigateToObject(obj.id); }}
+                                    title="Перейти к объекту"
+                                >
+                                    <span className="material-icons-round text-lg">arrow_forward</span>
+                                </Button>
+                            </div>
                         </div>
-                        <span className="material-icons-round text-[#005ac1] opacity-0 group-hover/obj:opacity-100 transition-opacity">arrow_forward</span>
+
+                        {expandedObjectId === obj.id && (
+                            <div className="mt-4 pt-4 border-t border-blue-100 animate-in fade-in slide-in-from-top-1">
+                                {loadingStats ? (
+                                    <div className="flex justify-center py-4">
+                                        <span className="material-icons-round animate-spin text-slate-400">refresh</span>
+                                    </div>
+                                ) : objectStats ? (
+                                    <div className="space-y-4">
+                                        <div className="grid grid-cols-2 gap-3">
+                                            <div className="bg-white p-3 rounded-xl border border-blue-100">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Оплачено</p>
+                                                <p className="text-lg font-bold text-emerald-600">
+                                                    {new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'BYN' }).format(objectStats.totalPaid)}
+                                                </p>
+                                                <p className="text-[10px] text-slate-400 mt-1">
+                                                    из {new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'BYN', maximumFractionDigits: 0 }).format(objectStats.totalPlanned)}
+                                                </p>
+                                            </div>
+                                            <div className="bg-white p-3 rounded-xl border border-blue-100">
+                                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Остаток</p>
+                                                <p className="text-lg font-bold text-slate-700">
+                                                    {new Intl.NumberFormat('ru-RU', { style: 'currency', currency: 'BYN' }).format(objectStats.remaining)}
+                                                </p>
+                                                {objectStats.nextPaymentDate && (
+                                                    <p className="text-[10px] text-red-500 font-medium mt-1">
+                                                        до {new Date(objectStats.nextPaymentDate).toLocaleDateString('ru-RU')}
+                                                    </p>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase mb-2">История этапов</p>
+                                            <div className="space-y-2 relative pl-4 border-l border-slate-200 ml-2">
+                                                {objectStats.history.length > 0 ? (
+                                                    objectStats.history.map((h: any, idx: number) => (
+                                                        <div key={idx} className="relative">
+                                                            <div className="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full bg-white border-2 border-slate-300"></div>
+                                                            <p className="text-xs text-slate-600">{h.action_text}</p>
+                                                            <p className="text-[10px] text-slate-400">
+                                                                {new Date(h.created_at).toLocaleDateString('ru-RU')}
+                                                            </p>
+                                                        </div>
+                                                    ))
+                                                ) : (
+                                                    <p className="text-xs text-slate-400 italic">Нет записей</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ) : null}
+                            </div>
+                        )}
                     </div>
                     ))
                 ) : (

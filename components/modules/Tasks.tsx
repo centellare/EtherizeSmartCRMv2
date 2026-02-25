@@ -56,7 +56,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
   const { data: staff = [] } = useQuery({
     queryKey: ['staff'],
     queryFn: async () => {
-      const { data } = await supabase.from('profiles').select('id, full_name, role').is('deleted_at', null);
+      const { data } = await supabase.from('profiles').select('id, full_name, role').is('deleted_at', null).neq('role', 'client');
       return data || [];
     },
     staleTime: 1000 * 60 * 5 // 5 minutes
