@@ -121,8 +121,8 @@ BEGIN
 
   -- If it's a new unapproved user, notify existing admins/directors
   IF NOT is_first_user THEN
-    INSERT INTO public.notifications (profile_id, type, title, message, link)
-    SELECT id, 'info', 'Новая регистрация', 'Пользователь ' || new.email || ' ожидает подтверждения.', '/team'
+    INSERT INTO public.notifications (profile_id, content, link)
+    SELECT id, 'Новая регистрация: Пользователь ' || new.email || ' ожидает подтверждения.', '/team'
     FROM public.profiles 
     WHERE role IN ('admin', 'director');
   END IF;
