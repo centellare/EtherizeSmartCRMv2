@@ -246,57 +246,68 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
             </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
+        <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">Ответственный менеджер</p>
             <div className="bg-white p-4 rounded-2xl border border-slate-100 flex items-center gap-3">
                 <span className="material-icons-round text-slate-400">support_agent</span>
                 <span className="text-sm text-slate-700 font-medium">{client.manager?.full_name || 'Не назначен'}</span>
             </div>
-            </div>
+        </div>
 
-            {/* CLIENT PORTAL ACCESS */}
-            <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">Доступ в личный кабинет</p>
-                <div className="bg-white p-4 rounded-2xl border border-slate-100 h-[68px] flex items-center justify-between">
-                    {clientProfile ? (
-                        <div className="flex items-center gap-3">
-                            <span className="material-icons-round text-emerald-500">verified_user</span>
-                            <div>
-                                <p className="text-sm text-slate-700 font-medium">Доступ открыт</p>
-                                <p className="text-[10px] text-slate-400">{clientProfile.email}</p>
-                            </div>
+        {/* CLIENT PORTAL ACCESS */}
+        <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1 ml-1">Доступ в личный кабинет</p>
+            <div className="bg-white p-4 rounded-2xl border border-slate-100">
+                {clientProfile ? (
+                    <div className="flex items-center gap-3">
+                        <span className="material-icons-round text-emerald-500">verified_user</span>
+                        <div>
+                            <p className="text-sm text-slate-700 font-medium">Доступ открыт</p>
+                            <p className="text-[10px] text-slate-400">{clientProfile.email}</p>
                         </div>
-                    ) : isCreatingAccess ? (
-                        <div className="flex items-center gap-2 w-full">
-                            <Input 
+                    </div>
+                ) : isCreatingAccess ? (
+                    <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+                        <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                <span className="material-icons-round text-slate-300">vpn_key</span>
+                                <span className="text-sm text-slate-700 font-medium">Создание доступа</span>
+                            </div>
+                            <Button variant="ghost" className="h-8 w-8 p-0 text-slate-400 hover:text-slate-600 rounded-full" onClick={() => setIsCreatingAccess(false)}>
+                                <span className="material-icons-round text-lg">close</span>
+                            </Button>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <Input 
                                 placeholder="Email" 
                                 value={accessEmail} 
                                 onChange={(e) => setAccessEmail(e.target.value)} 
-                                className="h-8 text-xs flex-1"
+                                className="text-sm"
                             />
-                            <Input 
+                                <Input 
                                 placeholder="Пароль" 
                                 type="password"
                                 value={accessPassword} 
                                 onChange={(e) => setAccessPassword(e.target.value)} 
-                                className="h-8 text-xs flex-1"
+                                className="text-sm"
                             />
-                            <Button className="h-8 px-2" onClick={handleCreateAccess} loading={loadingAccess} icon="check" />
-                            <Button variant="ghost" className="h-8 px-2 text-slate-400 hover:text-slate-600" onClick={() => setIsCreatingAccess(false)} icon="close" />
                         </div>
-                    ) : (
-                        <div className="flex items-center justify-between w-full">
-                            <div className="flex items-center gap-3">
-                                <span className="material-icons-round text-slate-300">no_accounts</span>
-                                <span className="text-sm text-slate-500 font-medium">Нет доступа</span>
-                            </div>
-                            <Button variant="tonal" className="h-8 text-xs px-3" onClick={() => setIsCreatingAccess(true)}>
-                                Выдать доступ
-                            </Button>
+                        <Button className="w-full" onClick={handleCreateAccess} loading={loadingAccess}>
+                            Создать доступ
+                        </Button>
+                    </div>
+                ) : (
+                    <div className="flex items-center justify-between w-full">
+                        <div className="flex items-center gap-3">
+                            <span className="material-icons-round text-slate-300">no_accounts</span>
+                            <span className="text-sm text-slate-500 font-medium">Нет доступа</span>
                         </div>
-                    )}
-                </div>
+                        <Button variant="tonal" className="h-8 text-xs px-3" onClick={() => setIsCreatingAccess(true)}>
+                            Выдать доступ
+                        </Button>
+                    </div>
+                )}
             </div>
         </div>
 
