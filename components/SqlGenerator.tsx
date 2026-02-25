@@ -1,13 +1,14 @@
 
 import React, { useState } from 'react';
 import { TableSchema } from '../types';
-import { MIGRATION_SQL_V10, MIGRATION_SQL_V11, MIGRATION_SQL_V12, MIGRATION_SQL_V13, MIGRATION_SQL_V14, MIGRATION_SQL_V15, MIGRATION_SQL_V16, MIGRATION_SQL_V17 } from '../constants';
+import { MIGRATION_SQL_V10, MIGRATION_SQL_V11, MIGRATION_SQL_V12, MIGRATION_SQL_V13, MIGRATION_SQL_V14, MIGRATION_SQL_V15, MIGRATION_SQL_V16, MIGRATION_SQL_V17, MIGRATION_SQL_V18 } from '../constants';
 
 interface SqlGeneratorProps { 
   schemas: TableSchema[]; 
 }
 
 const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
+  const [copiedV18, setCopiedV18] = useState(false);
   const [copiedV17, setCopiedV17] = useState(false);
   const [copiedV16, setCopiedV16] = useState(false);
   const [copiedV15, setCopiedV15] = useState(false);
@@ -16,6 +17,12 @@ const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
   const [copiedV12, setCopiedV12] = useState(false);
   const [copiedV11, setCopiedV11] = useState(false);
   const [copiedV10, setCopiedV10] = useState(false);
+
+  const handleCopyV18 = () => {
+    navigator.clipboard.writeText(MIGRATION_SQL_V18);
+    setCopiedV18(true);
+    setTimeout(() => setCopiedV18(false), 2000);
+  };
 
   const handleCopyV17 = () => {
     navigator.clipboard.writeText(MIGRATION_SQL_V17);
@@ -67,8 +74,40 @@ const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
 
   return (
     <div className="space-y-6">
+      {/* V18 Fix Role Casting */}
+      <div className="bg-gradient-to-br from-emerald-50 to-teal-50 p-6 rounded-[24px] border border-emerald-200 shadow-sm">
+        <h3 className="text-lg font-bold text-emerald-900 mb-2 flex items-center gap-2">
+          <span className="material-icons-round text-emerald-600">bug_report</span>
+          Исправление ошибки типов (v18.0)
+        </h3>
+        <div className="text-sm text-emerald-800 mb-4 leading-relaxed bg-white/50 p-4 rounded-xl border border-emerald-100">
+          <p className="font-bold mb-2">Исправляет ошибку "column role is of type user_role but expression is of type text":</p>
+          <ul className="list-disc list-inside space-y-1 ml-1">
+            <li>Обновляет функцию <code>admin_update_profile</code> с явным приведением типов (CAST).</li>
+            <li>Теперь назначение ролей (в том числе 'client') будет работать корректно.</li>
+          </ul>
+        </div>
+        
+        <div className="relative group">
+          <div className="absolute top-4 right-4 z-10">
+            <button 
+              onClick={handleCopyV18}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-full text-xs font-bold transition-all shadow-lg flex items-center gap-2 hover:bg-emerald-700 hover:scale-105 active:scale-95"
+            >
+              <span className="material-icons-round text-sm">{copiedV18 ? 'check' : 'content_copy'}</span>
+              {copiedV18 ? 'СКОПИРОВАНО' : 'КОПИРОВАТЬ SQL'}
+            </button>
+          </div>
+          <div className="bg-[#1e1e1e] p-6 rounded-[20px] border border-slate-800 overflow-hidden shadow-inner">
+            <pre className="overflow-x-auto text-[#e9d5ff] font-mono text-xs leading-relaxed scrollbar-hide whitespace-pre-wrap max-h-[400px]">
+              {MIGRATION_SQL_V18}
+            </pre>
+          </div>
+        </div>
+      </div>
+
       {/* V17 Admin Manage User */}
-      <div className="bg-gradient-to-br from-purple-50 to-fuchsia-50 p-6 rounded-[24px] border border-purple-200 shadow-sm">
+      <div className="bg-gradient-to-br from-purple-50 to-fuchsia-50 p-6 rounded-[24px] border border-purple-200 shadow-sm opacity-75 hover:opacity-100 transition-opacity">
         <h3 className="text-lg font-bold text-purple-900 mb-2 flex items-center gap-2">
           <span className="material-icons-round text-purple-600">admin_panel_settings</span>
           Управление пользователями (v17.0)
