@@ -49,13 +49,35 @@ export const ObjectList: React.FC<ObjectListProps> = ({
             
             <div>
               <div className="flex justify-between items-start mb-4">
-                <Badge color={
-                  obj.current_status === 'completed' ? 'emerald' : 
-                  obj.current_status === 'on_pause' ? 'amber' : 
-                  obj.current_status === 'review_required' ? 'red' : 'blue'
-                }>
-                  {STATUS_MAP[obj.current_status] || obj.current_status?.toUpperCase()}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <Badge color={
+                    obj.current_status === 'completed' ? 'emerald' : 
+                    obj.current_status === 'on_pause' ? 'amber' : 
+                    obj.current_status === 'review_required' ? 'red' : 'blue'
+                  }>
+                    {STATUS_MAP[obj.current_status] || obj.current_status?.toUpperCase()}
+                  </Badge>
+                  
+                  {(() => {
+                    const activeTasksCount = obj.tasks?.filter((t: any) => !t.is_deleted && t.status !== 'completed').length || 0;
+                    if (activeTasksCount > 0) {
+                      return (
+                        <div className="flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-full text-[10px] font-bold text-slate-600 border border-slate-200" title={`Активных задач: ${activeTasksCount}`}>
+                          <span className="material-icons-round text-[12px]">assignment</span>
+                          {activeTasksCount}
+                        </div>
+                      );
+                    } else if (obj.current_status !== 'completed' && obj.current_status !== 'frozen') {
+                      return (
+                        <div className="flex items-center gap-1 bg-red-50 px-2 py-0.5 rounded-full text-[10px] font-bold text-red-600 border border-red-100" title="Нет активных задач">
+                          <span className="material-icons-round text-[12px]">assignment_late</span>
+                          0
+                        </div>
+                      );
+                    }
+                    return null;
+                  })()}
+                </div>
                 
                 <div className="flex items-center gap-1">
                   {isCritical && (

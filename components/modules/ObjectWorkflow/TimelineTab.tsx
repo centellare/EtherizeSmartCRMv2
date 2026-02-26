@@ -45,7 +45,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ object, profile }) => 
         { data: transactions },
         { data: stages }
       ] = await Promise.all([
-        supabase.from('tasks').select('id, title, created_at, completed_at, creator:profiles!created_by(full_name), executor:profiles!assigned_to(full_name)').eq('object_id', object.id).is('is_deleted', false),
+        supabase.from('tasks').select('id, title, created_at, completed_at, completion_comment, creator:profiles!created_by(full_name), executor:profiles!assigned_to(full_name)').eq('object_id', object.id).is('is_deleted', false),
         supabase.from('inventory_history').select('*, profile:profiles(full_name), item:inventory_items(product:products(name, unit))').eq('to_object_id', object.id).eq('action_type', 'deploy'),
         supabase.from('transactions').select('*, creator:profiles!transactions_created_by_fkey(full_name)').eq('object_id', object.id).is('deleted_at', null),
         supabase.from('object_stages').select('*').eq('object_id', object.id)
@@ -78,6 +78,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ object, profile }) => 
 
       // Process History (System + Notes)
       historyWithProfiles.forEach((h: any) => {
+          if (h.action_text.startsWith('Завершена задача:')) return; // Skip to avoid duplication with tasks
           timeline.push({
               id: `hist-${h.id}`,
               date: new Date(h.created_at),
@@ -109,6 +110,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ object, profile }) => 
                   date: new Date(t.completed_at),
                   type: 'task',
                   title: `Выполнена задача: ${t.title}`,
+                  description: t.completion_comment || undefined,
                   user_name: t.executor?.full_name, // Assuming executor completed it
                   icon: 'task_alt',
                   color: 'emerald'
@@ -287,7 +289,12 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ object, profile }) => 
                                                 <span className="text-[10px] text-slate-400">{event.date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}</span>
                                             </div>
                                             <p className="text-sm font-medium text-slate-800 leading-snug">{event.title}</p>
-                                            {event.description && <p className="text-xs text-slate-500 mt-1">{event.description}</p>}
+                                            {event.description && (
+                                                <div className={`mt-2 ${event.type === 'task' && event.title.startsWith('Выполнена') ? 'bg-emerald-50 p-3 rounded-xl border border-emerald-100' : ''}`}>
+                                                    {event.type === 'task' && event.title.startsWith('Выполнена') && <span className="text-[10px] font-bold text-emerald-700 uppercase tracking-widest block mb-1">Результат выполнения</span>}
+                                                    <p className={`text-xs whitespace-pre-wrap ${event.type === 'task' && event.title.startsWith('Выполнена') ? 'text-emerald-900 italic' : 'text-slate-500'}`}>{event.description}</p>
+                                                </div>
+                                            )}
                                             {event.user_name && (
                                                 <div className="mt-3 flex items-center gap-1.5">
                                                     <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px] text-slate-500 font-bold">

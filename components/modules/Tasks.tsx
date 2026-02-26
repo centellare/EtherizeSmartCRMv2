@@ -362,10 +362,20 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
       <Modal isOpen={modalMode === 'completion'} onClose={handleCloseModal} title="Отчет о выполнении">
         <TaskCompletionModal 
             task={selectedTask} 
-            onSuccess={() => {
+            onSuccess={(createNew, completionComment) => {
                 handleCloseModal();
                 toast.success('Задача завершена');
                 queryClient.invalidateQueries({ queryKey: ['tasks'] });
+                
+                if (createNew && selectedTask) {
+                    const contextText = `--- Контекст из задачи: ${selectedTask.title} ---\nЗадача: ${selectedTask.comment || 'Нет описания'}\nРезультат: ${completionComment || 'Нет отчета'}\n--------------------------------------------------------\n\n`;
+                    setSelectedTask({
+                        object_id: selectedTask.object_id,
+                        client_id: selectedTask.client_id,
+                        comment: contextText
+                    });
+                    setModalMode('create');
+                }
             }} 
         />
       </Modal>

@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
 import { Input, Button } from './ui';
 
-type AuthMode = 'login' | 'reset' | 'register' | 'update_password' | 'verify';
+type AuthMode = 'login' | 'reset' | 'update_password' | 'verify';
 
 const Auth: React.FC = () => {
   const [loading, setLoading] = useState(false);
@@ -28,7 +28,6 @@ const Auth: React.FC = () => {
     const emailParam = params.get('email');
     const nameParam = params.get('name');
 
-    if (modeParam === 'register') setMode('register');
     if (emailParam) setEmail(emailParam);
     if (nameParam) setFullName(nameParam);
 
@@ -42,31 +41,6 @@ const Auth: React.FC = () => {
     setSuccessMessage(null);
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) setError(error.message);
-    setLoading(false);
-  };
-
-  const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setSuccessMessage(null);
-
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          full_name: fullName,
-        }
-      }
-    });
-
-    if (error) {
-      setError(error.message);
-    } else {
-      setSuccessMessage('Регистрация успешна! Пожалуйста, проверьте почту для подтверждения (если это настроено) или войдите.');
-      setMode('login');
-    }
     setLoading(false);
   };
 
@@ -137,13 +111,11 @@ const Auth: React.FC = () => {
             </span>
           </div>
           <h1 className="text-2xl font-medium text-[#1c1b1f] tracking-tight">
-            {mode === 'login' ? 'SmartHome CRM' : mode === 'register' ? 'Регистрация' : mode === 'update_password' ? 'Новый пароль' : mode === 'verify' ? 'Ввод кода' : 'Восстановление доступа'}
+            {mode === 'login' ? 'SmartHome CRM' : mode === 'update_password' ? 'Новый пароль' : mode === 'verify' ? 'Ввод кода' : 'Восстановление доступа'}
           </h1>
           <p className="text-sm text-slate-500 mt-2">
             {mode === 'login' 
               ? 'Войдите в систему для начала работы' 
-              : mode === 'register'
-              ? 'Создайте новый аккаунт'
               : mode === 'update_password'
               ? 'Введите новый пароль для вашего аккаунта'
               : mode === 'verify'
@@ -172,27 +144,6 @@ const Auth: React.FC = () => {
               </div>
             </div>
             <Button type="submit" loading={loading} className="w-full h-12" icon="login">Войти</Button>
-          </form>
-        ) : mode === 'register' ? (
-          <form onSubmit={handleRegister} className="space-y-6">
-            {error && <div className="bg-[#ffdad6] text-[#410002] p-4 rounded-xl text-sm">{error}</div>}
-            <div className="space-y-4">
-              <Input label="ФИО" type="text" required value={fullName} onChange={(e: any) => setFullName(e.target.value)} icon="person" />
-              <Input label="Рабочий Email" type="email" required value={email} onChange={(e: any) => setEmail(e.target.value)} icon="email" />
-              <Input label="Пароль" type="password" required value={password} onChange={(e: any) => setPassword(e.target.value)} icon="lock" />
-            </div>
-            <div className="space-y-3">
-              <Button type="submit" loading={loading} className="w-full h-12" icon="person_add">Зарегистрироваться</Button>
-              <Button 
-                variant="ghost" 
-                onClick={() => { setMode('login'); setError(null); setSuccessMessage(null); }}
-                className="w-full h-12" 
-                icon="arrow_back"
-                disabled={loading}
-              >
-                Вернуться к входу
-              </Button>
-            </div>
           </form>
         ) : mode === 'update_password' ? (
           <form onSubmit={handleUpdatePassword} className="space-y-6">

@@ -35,6 +35,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [responsibleFilter, setResponsibleFilter] = useState('all');
+  const [taskFilter, setTaskFilter] = useState('all');
   const toast = useToast();
   
   // Update: Managers allowed to create objects
@@ -45,7 +46,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
   const { data: objects = [], isLoading: isObjectsLoading } = useQuery({
     queryKey: ['objects'],
     queryFn: async () => {
-      const { data } = await supabase.from('objects').select('*, client:clients(name), responsible:profiles!responsible_id(full_name)').is('is_deleted', false).order('created_at', { ascending: false });
+      const { data } = await supabase.from('objects').select('*, client:clients(name), responsible:profiles!responsible_id(full_name), tasks(id, status, is_deleted)').is('is_deleted', false).order('created_at', { ascending: false });
       return data || [];
     },
     enabled: !!profile?.id,
@@ -118,9 +119,14 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
       const matchesStatus = statusFilter === 'all' || o.current_status === statusFilter;
       const matchesResponsible = responsibleFilter === 'all' || o.responsible_id === responsibleFilter;
       
-      return matchesSearch && matchesStatus && matchesResponsible;
+      const activeTasksCount = o.tasks?.filter((t: any) => !t.is_deleted && t.status !== 'completed').length || 0;
+      const matchesTaskFilter = taskFilter === 'all' || 
+                               (taskFilter === 'no_tasks' && activeTasksCount === 0) ||
+                               (taskFilter === 'has_tasks' && activeTasksCount > 0);
+      
+      return matchesSearch && matchesStatus && matchesResponsible && matchesTaskFilter;
     });
-  }, [objects, searchQuery, statusFilter, responsibleFilter]);
+  }, [objects, searchQuery, statusFilter, responsibleFilter, taskFilter]);
 
   const handleCloseModal = () => {
       setModalMode('none');
@@ -153,11 +159,11 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
         {canCreate && <Button onClick={() => { setSelectedObject(null); setModalMode('create'); }} icon="add_business">Создать объект</Button>}
       </div>
 
-      <div className="mb-8 bg-white p-4 rounded-3xl border border-[#e1e2e1] flex flex-col md:flex-row gap-4 shadow-sm">
-        <div className="flex-grow">
+      <div className="mb-8 bg-white p-4 rounded-3xl border border-[#e1e2e1] flex flex-col md:flex-row gap-4 shadow-sm flex-wrap">
+        <div className="flex-grow min-w-[200px]">
           <Input placeholder="Поиск по названию или адресу..." value={searchQuery} onChange={(e: any) => setSearchQuery(e.target.value)} icon="search" />
         </div>
-        <div className="w-full md:w-56">
+        <div className="w-full md:w-48">
           <Select 
             value={statusFilter} 
             onChange={(e: any) => setStatusFilter(e.target.value)}
@@ -168,7 +174,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
             icon="filter_list"
           />
         </div>
-        <div className="w-full md:w-64">
+        <div className="w-full md:w-56">
           <Select 
             value={responsibleFilter} 
             onChange={(e: any) => setResponsibleFilter(e.target.value)}
@@ -177,6 +183,18 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
               ...staff.map((s: any) => ({ value: s.id, label: s.full_name }))
             ]}
             icon="support_agent"
+          />
+        </div>
+        <div className="w-full md:w-48">
+          <Select 
+            value={taskFilter} 
+            onChange={(e: any) => setTaskFilter(e.target.value)}
+            options={[
+              { value: 'all', label: 'Все задачи' },
+              { value: 'has_tasks', label: 'Есть задачи' },
+              { value: 'no_tasks', label: 'Нет активных задач' }
+            ]}
+            icon="assignment"
           />
         </div>
       </div>

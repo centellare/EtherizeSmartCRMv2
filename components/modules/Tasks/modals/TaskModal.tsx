@@ -47,15 +47,15 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
         questions: initialData.questions?.map((q: any) => ({ id: q.id, question: q.question, answer: q.answer })) || []
       });
     } else {
-      // Reset for create mode
+      // Reset for create mode, but allow pre-fills from initialData
       setFormData({
         id: '', 
-        object_id: objects.length === 1 ? objects[0].id : '', // Auto-select if only 1 object
-        title: '', 
-        assigned_to: '', 
+        object_id: initialData?.object_id || (objects.length === 1 ? objects[0].id : ''), 
+        title: initialData?.title || '', 
+        assigned_to: initialData?.assigned_to || '', 
         start_date: getMinskISODate(), 
         deadline: '', 
-        comment: '', 
+        comment: initialData?.comment || '', 
         doc_link: '', 
         doc_name: '', 
         checklist: [],

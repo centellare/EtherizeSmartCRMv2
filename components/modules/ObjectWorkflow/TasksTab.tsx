@@ -5,6 +5,7 @@ import { Button, Modal, Input, Select, ConfirmModal, Badge, useToast } from '../
 import { formatDate, getMinskISODate } from '../../../lib/dateUtils';
 import { TaskModal } from '../Tasks/modals/TaskModal';
 import { TaskDetails } from '../Tasks/modals/TaskDetails';
+import { TaskCompletionModal } from '../Tasks/modals/TaskCompletionModal';
 
 const STAGES = [
   { id: 'negotiation', label: 'Переговоры' },
@@ -57,7 +58,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({
   const [loading, setLoading] = useState(false);
   const toast = useToast();
   
-  const [closeForm, setCloseForm] = useState({ comment: '', link: '', doc_name: '' });
   const [checklists, setChecklists] = useState<Record<string, any[]>>({});
   const [questions, setQuestions] = useState<Record<string, any[]>>({});
 
@@ -159,44 +159,6 @@ export const TasksTab: React.FC<TasksTabProps> = ({
       await refreshData();
     }
     setLoading(false);
-  };
-
-  const handleCloseTask = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedTask) return;
-    setLoading(true);
-    
-    try {
-        const { data, error } = await supabase.from('tasks').update({
-          status: 'completed',
-          completed_at: new Date().toISOString(),
-          completed_by: profile.id, // Explicitly set who completed it
-          completion_comment: closeForm.comment,
-          completion_doc_link: closeForm.link,
-          completion_doc_name: closeForm.doc_name
-        })
-        .eq('id', selectedTask.id)
-        .select(); // IMPORTANT: Select to check if row was actually updated
-        
-        if (error) throw error;
-
-        // RLS Check: If no data returned, it means permission denied silently
-        if (!data || data.length === 0) {
-            throw new Error('Нет прав на завершение этой задачи (только исполнитель или админ)');
-        }
-        
-        setIsTaskCloseModalOpen(false);
-        setIsTaskDetailsModalOpen(false);
-        setCloseForm({ comment: '', link: '', doc_name: '' });
-        toast.success('Задача завершена');
-        await refreshData();
-    } catch (e: any) {
-        console.error(e);
-        // Show the error in UI instead of silent failure
-        toast.error(e.message || 'Ошибка при завершении задачи');
-    } finally {
-        setLoading(false);
-    }
   };
 
   const canEditDelete = (task: any) => {
@@ -392,12 +354,26 @@ export const TasksTab: React.FC<TasksTabProps> = ({
 
       {/* Task Completion Modal */}
       <Modal isOpen={isTaskCloseModalOpen} onClose={() => setIsTaskCloseModalOpen(false)} title="Отчет о выполнении">
-        <form onSubmit={handleCloseTask} className="space-y-4">
-          <textarea required className="w-full bg-white border border-slate-200 rounded-xl p-4 text-sm outline-none focus:border-blue-500 shadow-inner" rows={3} value={closeForm.comment} onChange={(e:any) => setCloseForm({...closeForm, comment: e.target.value})} placeholder="Что было сделано..." />
-          <Input label="Ссылка на результат" value={closeForm.link} onChange={(e:any) => setCloseForm({...closeForm, link: e.target.value})} />
-          <Input label="Название документа" value={closeForm.doc_name} onChange={(e:any) => setCloseForm({...closeForm, doc_name: e.target.value})} />
-          <Button type="submit" className="w-full h-12" loading={loading} variant="primary">Завершить задачу</Button>
-        </form>
+        <TaskCompletionModal 
+            task={selectedTask} 
+            onSuccess={(createNew, completionComment) => {
+                setIsTaskCloseModalOpen(false);
+                setIsTaskDetailsModalOpen(false);
+                toast.success('Задача завершена');
+                refreshData();
+                
+                if (createNew && selectedTask) {
+                    const contextText = `--- Контекст из задачи: ${selectedTask.title} ---\nЗадача: ${selectedTask.comment || 'Нет описания'}\nРезультат: ${completionComment || 'Нет отчета'}\n--------------------------------------------------------\n\n`;
+                    setSelectedTask({
+                        object_id: selectedTask.object_id,
+                        client_id: selectedTask.client_id,
+                        comment: contextText
+                    });
+                    setIsEditMode(false);
+                    setIsTaskModalOpen(true);
+                }
+            }} 
+        />
       </Modal>
 
       <ConfirmModal isOpen={deleteConfirm.open} onClose={() => setDeleteConfirm({ open: false, id: null })} onConfirm={handleDeleteConfirm} title="Удаление задачи" message="Вы уверены? Действие нельзя отменить." loading={loading} />
