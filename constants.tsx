@@ -114,6 +114,241 @@ $$;
 COMMIT;
 `;
 
+export const MIGRATION_SQL_V19 = `
+-- SmartHome CRM: SECURITY HARDENING (v19.0)
+-- Добавляет проверки прав доступа в критические функции (RPC).
+
+BEGIN;
+
+-- 1. Secure create_task_safe
+CREATE OR REPLACE FUNCTION public.create_task_safe(
+    p_object_id uuid,
+    p_title text,
+    p_assigned_to uuid,
+    p_start_date date,
+    p_deadline date,
+    p_comment text,
+    p_doc_link text,
+    p_doc_name text,
+    p_user_id uuid
+)
+RETURNS uuid AS $$
+DECLARE
+    v_task_id uuid;
+    v_stage text;
+    v_role text;
+    v_is_responsible boolean;
+BEGIN
+    -- Get current user role and responsibility
+    v_role := public.get_my_role();
+    
+    -- Check permissions
+    -- Admin/Director/Manager: Allow
+    -- Specialist: Allow ONLY if responsible for the object
+    IF v_role NOT IN ('admin', 'director', 'manager') THEN
+        SELECT (responsible_id = auth.uid()) INTO v_is_responsible FROM public.objects WHERE id = p_object_id;
+        IF v_is_responsible IS NOT TRUE THEN
+            RAISE EXCEPTION 'Access denied: Only managers or responsible specialist can create tasks';
+        END IF;
+    END IF;
+
+    SELECT current_stage INTO v_stage FROM public.objects WHERE id = p_object_id;
+
+    INSERT INTO public.tasks (
+        object_id, title, assigned_to, start_date, deadline, 
+        comment, doc_link, doc_name, created_by, stage_id, status
+    ) VALUES (
+        p_object_id, p_title, p_assigned_to, p_start_date, p_deadline,
+        p_comment, p_doc_link, p_doc_name, p_user_id, v_stage, 'pending'
+    ) RETURNING id INTO v_task_id;
+
+    RETURN v_task_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 2. Secure transition_object_stage
+CREATE OR REPLACE FUNCTION public.transition_object_stage(
+    p_object_id uuid,
+    p_next_stage text,
+    p_responsible_id uuid,
+    p_deadline timestamptz,
+    p_user_id uuid
+)
+RETURNS void AS $$
+DECLARE
+    v_current_stage text;
+BEGIN
+    -- Permission check: Only Admin, Director, Manager
+    IF public.get_my_role() NOT IN ('admin', 'director', 'manager') THEN
+        RAISE EXCEPTION 'Access denied: Only management can change stages';
+    END IF;
+
+    SELECT current_stage INTO v_current_stage FROM public.objects WHERE id = p_object_id;
+
+    UPDATE public.object_stages 
+    SET status = 'completed', completed_at = now() 
+    WHERE object_id = p_object_id AND stage_name = v_current_stage AND status = 'active';
+
+    INSERT INTO public.object_stages (
+        object_id, stage_name, status, started_at, responsible_id, deadline
+    ) VALUES (
+        p_object_id, p_next_stage, 'active', now(), p_responsible_id, p_deadline
+    );
+
+    UPDATE public.objects 
+    SET current_stage = p_next_stage, 
+        responsible_id = p_responsible_id,
+        current_status = 'in_work',
+        updated_at = now(),
+        updated_by = p_user_id
+    WHERE id = p_object_id;
+
+    INSERT INTO public.object_history (object_id, profile_id, action_text)
+    VALUES (p_object_id, p_user_id, 'Переход на этап: ' || p_next_stage);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 3. Secure rollback_object_stage
+CREATE OR REPLACE FUNCTION public.rollback_object_stage(
+    p_object_id uuid,
+    p_target_stage text,
+    p_reason text,
+    p_responsible_id uuid,
+    p_user_id uuid
+)
+RETURNS void AS $$
+DECLARE
+    v_current_stage text;
+BEGIN
+    -- Permission check
+    IF public.get_my_role() NOT IN ('admin', 'director', 'manager') THEN
+        RAISE EXCEPTION 'Access denied';
+    END IF;
+
+    SELECT current_stage INTO v_current_stage FROM public.objects WHERE id = p_object_id;
+
+    UPDATE public.object_stages 
+    SET status = 'rolled_back', completed_at = now()
+    WHERE object_id = p_object_id AND stage_name = v_current_stage AND status = 'active';
+
+    INSERT INTO public.object_stages (
+        object_id, stage_name, status, started_at, responsible_id
+    ) VALUES (
+        p_object_id, p_target_stage, 'active', now(), p_responsible_id
+    );
+
+    UPDATE public.objects 
+    SET current_stage = p_target_stage,
+        rolled_back_from = v_current_stage,
+        responsible_id = p_responsible_id,
+        current_status = 'review_required',
+        updated_at = now(),
+        updated_by = p_user_id
+    WHERE id = p_object_id;
+
+    INSERT INTO public.object_history (object_id, profile_id, action_text)
+    VALUES (p_object_id, p_user_id, 'Возврат этапа: ' || p_reason);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 4. Secure restore_object_stage
+CREATE OR REPLACE FUNCTION public.restore_object_stage(
+    p_object_id uuid,
+    p_user_id uuid
+)
+RETURNS void AS $$
+DECLARE
+    v_rolled_from text;
+BEGIN
+    -- Permission check
+    IF public.get_my_role() NOT IN ('admin', 'director', 'manager') THEN
+        RAISE EXCEPTION 'Access denied';
+    END IF;
+
+    SELECT rolled_back_from INTO v_rolled_from FROM public.objects WHERE id = p_object_id;
+    
+    IF v_rolled_from IS NULL THEN
+        RAISE EXCEPTION 'Нет информации для восстановления этапа';
+    END IF;
+
+    UPDATE public.object_stages 
+    SET status = 'completed', completed_at = now()
+    WHERE object_id = p_object_id AND status = 'active';
+
+    INSERT INTO public.object_stages (
+        object_id, stage_name, status, started_at
+    ) VALUES (
+        p_object_id, v_rolled_from, 'active', now()
+    );
+
+    UPDATE public.objects 
+    SET current_stage = v_rolled_from,
+        rolled_back_from = NULL,
+        current_status = 'in_work',
+        updated_at = now(),
+        updated_by = p_user_id
+    WHERE id = p_object_id;
+
+    INSERT INTO public.object_history (object_id, profile_id, action_text)
+    VALUES (p_object_id, p_user_id, 'Восстановление этапа после доработки');
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 5. Secure finalize_project
+CREATE OR REPLACE FUNCTION public.finalize_project(
+    p_object_id uuid,
+    p_user_id uuid
+)
+RETURNS void AS $$
+BEGIN
+    -- Permission check
+    IF public.get_my_role() NOT IN ('admin', 'director', 'manager') THEN
+        RAISE EXCEPTION 'Access denied';
+    END IF;
+
+    UPDATE public.objects 
+    SET current_status = 'completed',
+        updated_at = now(),
+        updated_by = p_user_id
+    WHERE id = p_object_id;
+
+    UPDATE public.object_stages 
+    SET status = 'completed', completed_at = now() 
+    WHERE object_id = p_object_id AND status = 'active';
+
+    INSERT INTO public.object_history (object_id, profile_id, action_text)
+    VALUES (p_object_id, p_user_id, 'Проект успешно завершен');
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+COMMIT;
+`;
+export const MIGRATION_SQL_V20 = `
+-- SmartHome CRM: PRIVACY HARDENING (v20.0)
+-- Ограничивает видимость данных клиентов и профилей.
+
+BEGIN;
+
+-- 1. Profiles Privacy
+DROP POLICY IF EXISTS "Profiles viewable by everyone" ON public.profiles;
+CREATE POLICY "Profiles viewable by staff and self" ON public.profiles
+FOR SELECT USING (
+  (public.get_my_role() IN ('admin', 'director', 'manager', 'specialist', 'storekeeper')) 
+  OR 
+  (id = auth.uid())
+);
+
+-- 2. Clients Privacy
+DROP POLICY IF EXISTS "Clients view" ON public.clients;
+CREATE POLICY "Clients viewable by staff and self" ON public.clients
+FOR SELECT USING (
+  (public.get_my_role() IN ('admin', 'director', 'manager', 'specialist', 'storekeeper')) 
+  OR 
+  (id = (SELECT client_id FROM public.profiles WHERE id = auth.uid()))
+);
+
+COMMIT;
+`;
 export const MIGRATION_SQL_V17 = `
 -- SmartHome CRM: ADMIN MANAGE USER FUNCTION (v17.0)
 -- Позволяет администраторам управлять ролями и статусом пользователей через RPC.
