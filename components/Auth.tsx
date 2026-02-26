@@ -105,10 +105,14 @@ const Auth: React.FC = () => {
     <div className="min-h-screen flex items-center justify-center bg-[#f7f9fc] p-4">
       <div className="max-w-md w-full bg-white p-8 rounded-[28px] shadow-sm border border-[#e1e2e1] animate-in fade-in zoom-in-95 duration-300">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 bg-[#d3e4ff] text-[#001d3d] rounded-2xl mb-6 shadow-sm">
-            <span className="material-icons-round text-3xl">
-              {mode === 'login' ? 'home_max' : mode === 'update_password' ? 'lock_open' : 'lock_reset'}
-            </span>
+          <div className={`inline-flex items-center justify-center w-16 h-16 rounded-2xl mb-6 shadow-sm ${mode === 'login' ? 'bg-white border border-blue-50 p-2' : 'bg-[#d3e4ff] text-[#001d3d]'}`}>
+            {mode === 'login' ? (
+              <img src="/logo.svg" alt="SmartHome CRM" className="w-full h-full object-contain" />
+            ) : (
+              <span className="material-icons-round text-3xl">
+                {mode === 'update_password' ? 'lock_open' : 'lock_reset'}
+              </span>
+            )}
           </div>
           <h1 className="text-2xl font-medium text-[#1c1b1f] tracking-tight">
             {mode === 'login' ? 'SmartHome CRM' : mode === 'update_password' ? 'Новый пароль' : mode === 'verify' ? 'Ввод кода' : 'Восстановление доступа'}

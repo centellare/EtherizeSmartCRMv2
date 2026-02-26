@@ -262,8 +262,8 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
       `}>
         <div className="p-6 mb-2 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-[#005ac1] rounded-xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
-              <span className="material-icons-round">home_max</span>
+            <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-lg shadow-blue-100 border border-blue-50 overflow-hidden p-1">
+              <img src="/logo.svg" alt="SmartCRM Logo" className="w-full h-full object-contain" />
             </div>
             <h2 className="text-xl font-bold text-[#1c1b1f] tracking-tight">SmartCRM</h2>
           </div>
