@@ -3,6 +3,7 @@ import React, { useMemo } from 'react';
 import { Badge, Button } from '../ui';
 import { formatDate, getMinskISODate } from '../../lib/dateUtils';
 import { TeamGantt } from './Dashboard/TeamGantt';
+import { RecentEvents } from './Dashboard/RecentEvents';
 import { useTasks } from '../../hooks/useTasks';
 import { useObjects } from '../../hooks/useObjects';
 import { useTransactions } from '../../hooks/useTransactions';
@@ -335,9 +336,8 @@ const DirectorView: React.FC<{ tasks: any[], objects: any[], transactions: any[]
          <div>
             <PipelineValue objects={objects} proposals={[]} />
          </div>
-         {/* Removed redundant efficiency table since we have Gantt now */}
-         <div className="lg:col-span-2 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm flex items-center justify-center opacity-50">
-            <p className="text-sm text-slate-400">Здесь можно добавить виджет "Последние события" или "Логи"</p>
+         <div className="lg:col-span-2 h-full">
+            <RecentEvents tasks={tasks} transactions={transactions} objects={objects} staff={staff} />
          </div>
       </div>
     </div>
