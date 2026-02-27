@@ -345,6 +345,63 @@ const Finances: React.FC<{ profile: any; initialTransactionId?: string | null }>
       setEndDate(d.end);
   };
 
+  const handleExportExcel = () => {
+    // Define headers
+    const headers = [
+      'Дата',
+      'Тип',
+      'Объект',
+      'Категория',
+      'Раздел',
+      'Сумма (План)',
+      'Сумма (Факт)',
+      'Статус',
+      'Комментарий',
+      'Документ'
+    ];
+
+    // Map data
+    const rows = filteredTransactions.map((t: any) => {
+      const objectName = objects.find(o => o.id === t.object_id)?.name || 'Неизвестно';
+      const type = t.type === 'income' ? 'Приход' : 'Расход';
+      const status = t.status === 'approved' ? 'Утвержден' : 
+                     t.status === 'rejected' ? 'Отклонен' : 
+                     t.status === 'pending' ? 'Ожидание' : 
+                     t.status === 'partial' ? 'Частично' : t.status;
+      
+      const docInfo = t.payments?.map((p: any) => p.doc_number ? `№${p.doc_number} от ${formatDate(p.doc_date)}` : '').filter(Boolean).join('; ') || '';
+
+      return [
+        formatDate(t.created_at),
+        type,
+        objectName,
+        t.category || '',
+        t.section || '',
+        t.amount || 0,
+        t.fact_amount || 0,
+        status,
+        t.description || '', // Comment field
+        docInfo
+      ];
+    });
+
+    // Create CSV content
+    const csvContent = [
+      headers.join(';'),
+      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(';'))
+    ].join('\n');
+
+    // Create blob and download
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `finances_export_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="animate-in fade-in duration-500">
       
@@ -417,6 +474,10 @@ const Finances: React.FC<{ profile: any; initialTransactionId?: string | null }>
              <div className="flex gap-1">
                   <button onClick={handleResetDates} className="px-3 h-10 rounded-xl bg-slate-100 text-slate-500 text-[10px] font-bold uppercase hover:bg-slate-200 transition-colors">Все время</button>
                   <button onClick={handleSetMonth} className="px-3 h-10 rounded-xl bg-blue-50 text-blue-600 text-[10px] font-bold uppercase hover:bg-blue-100 transition-colors">Этот месяц</button>
+                  <button onClick={handleExportExcel} className="px-3 h-10 rounded-xl bg-emerald-50 text-emerald-600 text-[10px] font-bold uppercase hover:bg-emerald-100 transition-colors flex items-center gap-1">
+                      <span className="material-icons-round text-sm">download</span>
+                      XLS
+                  </button>
              </div>
           </div>
 
