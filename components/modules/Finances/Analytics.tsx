@@ -127,6 +127,29 @@ export const Analytics: React.FC<AnalyticsProps> = ({ transactions, objects, for
         .sort((a, b) => b.value - a.value); // Sort descending
   }, [filteredTransactions, selectedYear, selectedMonth]);
 
+  // 4. Prepare Income Pie Chart Data (Income by Category)
+  const incomePieChartData = useMemo(() => {
+    const categories: Record<string, number> = {};
+    
+    filteredTransactions.forEach(t => {
+        const date = new Date(t.created_at);
+        // Filter by selected period
+        if (date.getFullYear() === selectedYear) {
+            if (selectedMonth !== null && date.getMonth() !== selectedMonth) return;
+            
+            // Only count income
+            if (t.type === 'income') {
+                const cat = t.category || 'Без категории';
+                categories[cat] = (categories[cat] || 0) + (t.fact_amount || 0);
+            }
+        }
+    });
+
+    return Object.entries(categories)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value); // Sort descending
+  }, [filteredTransactions, selectedYear, selectedMonth]);
+
   // 3. Totals for Current View
   const totals = useMemo(() => {
       const inc = chartData.reduce((s, d) => s + d.income, 0);
@@ -370,6 +393,70 @@ export const Analytics: React.FC<AnalyticsProps> = ({ transactions, objects, for
                     <div className="flex-grow flex flex-col items-center justify-center text-slate-300">
                         <span className="material-icons-round text-4xl mb-2">donut_large</span>
                         <p className="text-sm font-medium">Нет данных о расходах</p>
+                    </div>
+                )}
+            </div>
+
+            {/* Pie Chart (Income by Category) */}
+            <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm min-h-[400px] flex flex-col">
+                <h4 className="font-bold text-slate-800 mb-4">Приходы по категориям</h4>
+                {incomePieChartData.length > 0 ? (
+                    <div className="flex-grow flex flex-col sm:flex-row items-center gap-6">
+                        {/* Chart Container */}
+                        <div className="relative w-full sm:w-1/2 h-[250px] sm:h-[300px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={incomePieChartData}
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius="60%"
+                                        outerRadius="80%"
+                                        paddingAngle={5}
+                                        dataKey="value"
+                                    >
+                                        {incomePieChartData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip 
+                                        formatter={(value: number | undefined) => formatCurrency(value || 0)}
+                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+                            {/* Center Text */}
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <div className="text-center bg-white/80 backdrop-blur-sm p-2 rounded-xl">
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold">Всего</p>
+                                    <p className="text-sm font-bold text-slate-800">{formatCurrency(totals.income)}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Custom Legend */}
+                        <div className="w-full sm:w-1/2 flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-2">
+                            {incomePieChartData.map((entry, index) => {
+                                const percent = (entry.value / totals.income) * 100;
+                                return (
+                                    <div key={index} className="flex items-center justify-between text-xs group p-2 hover:bg-slate-50 rounded-xl transition-colors cursor-default">
+                                        <div className="flex items-center gap-3 overflow-hidden">
+                                            <div className="w-3 h-3 rounded-full flex-shrink-0 shadow-sm" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="text-slate-700 font-bold truncate" title={entry.name}>{entry.name}</span>
+                                                <span className="text-[10px] text-slate-400">{percent.toFixed(1)}%</span>
+                                            </div>
+                                        </div>
+                                        <span className="font-bold text-slate-800 whitespace-nowrap ml-2">{formatCurrency(entry.value)}</span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex-grow flex flex-col items-center justify-center text-slate-300">
+                        <span className="material-icons-round text-4xl mb-2">donut_large</span>
+                        <p className="text-sm font-medium">Нет данных о приходах</p>
                     </div>
                 )}
             </div>
