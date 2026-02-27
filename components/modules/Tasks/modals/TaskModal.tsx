@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
-import { Button, Input, Select } from '../../../ui';
+import { Button, Input, Select, MultiSelect } from '../../../ui';
 import { getMinskISODate } from '../../../../lib/dateUtils';
 import { createNotification } from '../../../../lib/notifications';
 
@@ -22,6 +22,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
     object_id: '', 
     title: '', 
     assigned_to: '', 
+    assigned_to_multiple: [] as string[],
     start_date: getMinskISODate(), 
     deadline: '', 
     comment: '', 
@@ -38,6 +39,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
         object_id: initialData.object_id,
         title: initialData.title,
         assigned_to: initialData.assigned_to,
+        assigned_to_multiple: [initialData.assigned_to],
         start_date: initialData.start_date ? getMinskISODate(initialData.start_date) : getMinskISODate(),
         deadline: initialData.deadline ? getMinskISODate(initialData.deadline) : '',
         comment: initialData.comment || '',
@@ -53,6 +55,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
         object_id: initialData?.object_id || (objects.length === 1 ? objects[0].id : ''), 
         title: initialData?.title || '', 
         assigned_to: initialData?.assigned_to || '', 
+        assigned_to_multiple: initialData?.assigned_to ? [initialData.assigned_to] : [],
         start_date: getMinskISODate(), 
         deadline: '', 
         comment: initialData?.comment || '', 
@@ -108,11 +111,11 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
     mutationFn: async () => {
       if (!formData.object_id) throw new Error('Выберите объект');
       if (!formData.title.trim()) throw new Error('Введите название задачи');
-      if (!formData.assigned_to) throw new Error('Выберите исполнителя');
 
-      let taskId = formData.id;
-      
       if (mode === 'edit') {
+        if (!formData.assigned_to) throw new Error('Выберите исполнителя');
+        
+        let taskId = formData.id;
         const { error } = await supabase.from('tasks').update({
           object_id: formData.object_id,
           title: formData.title,
@@ -149,65 +152,19 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
           );
         }
 
-      } else {
-        // Find current stage from objects list
-        const selectedObject = objects.find(o => o.id === formData.object_id);
-        const currentStage = selectedObject?.current_stage || null;
-
-        const { data: newTask, error } = await supabase.from('tasks').insert([{
-            object_id: formData.object_id,
-            title: formData.title,
-            assigned_to: formData.assigned_to,
-            start_date: formData.start_date,
-            deadline: formData.deadline || null,
-            comment: formData.comment,
-            doc_link: formData.doc_link || null,
-            doc_name: formData.doc_name || null,
-            created_by: profile.id,
-            stage_id: currentStage,
-            status: 'pending'
-        }]).select('id').single();
-
-        if (error) throw error;
-        if (newTask) taskId = newTask.id;
-
-        // Notify assignee
-        if (formData.assigned_to !== profile.id) {
-          const assignedToName = staff.find(s => s.id === formData.assigned_to)?.full_name || 'Сотрудник';
-          const objectName = selectedObject?.name || 'Объект';
-          const deadlineStr = formData.deadline ? new Date(formData.deadline).toLocaleDateString('ru-RU') : 'Не указан';
-          
-          const telegramMsg = `<b>📋 Вам назначена новая задача</b>\n\n` +
-            `<b>👤 Кому:</b> ${assignedToName}\n` +
-            `<b>👨‍💼 От кого:</b> ${profile.full_name}\n` +
-            `<b>🏠 Объект:</b> ${objectName}\n` +
-            `<b>📅 Дедлайн:</b> ${deadlineStr}\n` +
-            `<b>📝 Задача:</b> ${formData.title}`;
-
-          await createNotification(
-            formData.assigned_to, 
-            `Вам назначена новая задача: ${formData.title}`, 
-            `#tasks/${taskId}`,
-            telegramMsg
-          );
+        // Update checklists and questions for edit mode
+        const currentIds = formData.checklist.filter(c => c.id).map(c => c.id);
+        if (currentIds.length > 0) {
+          await supabase.from('task_checklists').delete().eq('task_id', taskId).not('id', 'in', `(${currentIds.join(',')})`);
+        } else {
+          await supabase.from('task_checklists').delete().eq('task_id', taskId);
         }
-      }
 
-      if (taskId) {
-        if (mode === 'edit') {
-          const currentIds = formData.checklist.filter(c => c.id).map(c => c.id);
-          if (currentIds.length > 0) {
-            await supabase.from('task_checklists').delete().eq('task_id', taskId).not('id', 'in', `(${currentIds.join(',')})`);
-          } else {
-            await supabase.from('task_checklists').delete().eq('task_id', taskId);
-          }
-
-          const currentQIds = formData.questions.filter(q => q.id).map(q => q.id);
-          if (currentQIds.length > 0) {
-            await supabase.from('task_questions').delete().eq('task_id', taskId).not('id', 'in', `(${currentQIds.join(',')})`);
-          } else {
-            await supabase.from('task_questions').delete().eq('task_id', taskId);
-          }
+        const currentQIds = formData.questions.filter(q => q.id).map(q => q.id);
+        if (currentQIds.length > 0) {
+          await supabase.from('task_questions').delete().eq('task_id', taskId).not('id', 'in', `(${currentQIds.join(',')})`);
+        } else {
+          await supabase.from('task_questions').delete().eq('task_id', taskId);
         }
 
         const itemsToUpsert = formData.checklist
@@ -238,6 +195,82 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
           const { error: qError } = await supabase.from('task_questions').upsert(questionsToUpsert);
           if (qError) throw qError;
         }
+
+      } else {
+        // CREATE MODE
+        if (formData.assigned_to_multiple.length === 0) throw new Error('Выберите хотя бы одного исполнителя');
+
+        const selectedObject = objects.find(o => o.id === formData.object_id);
+        const currentStage = selectedObject?.current_stage || null;
+
+        for (const assigneeId of formData.assigned_to_multiple) {
+          const { data: newTask, error } = await supabase.from('tasks').insert([{
+              object_id: formData.object_id,
+              title: formData.title,
+              assigned_to: assigneeId,
+              start_date: formData.start_date,
+              deadline: formData.deadline || null,
+              comment: formData.comment,
+              doc_link: formData.doc_link || null,
+              doc_name: formData.doc_name || null,
+              created_by: profile.id,
+              stage_id: currentStage,
+              status: 'pending'
+          }]).select('id').single();
+
+          if (error) throw error;
+          const taskId = newTask.id;
+
+          // Notify assignee
+          if (assigneeId !== profile.id) {
+            const assignedToName = staff.find(s => s.id === assigneeId)?.full_name || 'Сотрудник';
+            const objectName = selectedObject?.name || 'Объект';
+            const deadlineStr = formData.deadline ? new Date(formData.deadline).toLocaleDateString('ru-RU') : 'Не указан';
+            
+            const telegramMsg = `<b>📋 Вам назначена новая задача</b>\n\n` +
+              `<b>👤 Кому:</b> ${assignedToName}\n` +
+              `<b>👨‍💼 От кого:</b> ${profile.full_name}\n` +
+              `<b>🏠 Объект:</b> ${objectName}\n` +
+              `<b>📅 Дедлайн:</b> ${deadlineStr}\n` +
+              `<b>📝 Задача:</b> ${formData.title}`;
+
+            await createNotification(
+              assigneeId, 
+              `Вам назначена новая задача: ${formData.title}`, 
+              `#tasks/${taskId}`,
+              telegramMsg
+            );
+          }
+
+          // Insert checklists for this task
+          const itemsToInsert = formData.checklist
+            .filter(c => c.content.trim() !== '')
+            .map(c => ({
+              task_id: taskId,
+              content: c.content,
+              is_completed: false
+            }));
+
+          if (itemsToInsert.length > 0) {
+            const { error: chkError } = await supabase.from('task_checklists').insert(itemsToInsert);
+            if (chkError) throw chkError;
+          }
+
+          // Insert questions for this task
+          const questionsToInsert = formData.questions
+            .filter(q => q.question.trim() !== '')
+            .map(q => ({
+              task_id: taskId,
+              question: q.question,
+              answer: null,
+              created_by: profile.id
+            }));
+
+          if (questionsToInsert.length > 0) {
+            const { error: qError } = await supabase.from('task_questions').insert(questionsToInsert);
+            if (qError) throw qError;
+          }
+        }
       }
     },
     onSuccess: () => {
@@ -258,7 +291,25 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
     <form onSubmit={handleSubmit} className="space-y-4">
         <Input label="Что нужно сделать?" required value={formData.title} onChange={(e:any) => setFormData({...formData, title: e.target.value})} />
         <Select label="Объект" required value={formData.object_id} onChange={(e:any) => setFormData({...formData, object_id: e.target.value})} options={[{value: '', label: 'Выберите объект'}, ...objects.map(o => ({value: o.id, label: o.name}))]} />
-        <Select label="Исполнитель" required value={formData.assigned_to} onChange={(e:any) => setFormData({...formData, assigned_to: e.target.value})} options={[{value: '', label: 'Выбрать исполнителя'}, ...staff.map(s => ({value: s.id, label: s.full_name}))]} />
+        
+        {mode === 'create' ? (
+          <MultiSelect 
+            label="Исполнители" 
+            value={formData.assigned_to_multiple} 
+            onChange={(vals) => setFormData({...formData, assigned_to_multiple: vals})} 
+            options={staff.map(s => ({value: s.id, label: s.full_name}))} 
+            placeholder="Выберите исполнителей..."
+          />
+        ) : (
+          <Select 
+            label="Исполнитель" 
+            required 
+            value={formData.assigned_to} 
+            onChange={(e:any) => setFormData({...formData, assigned_to: e.target.value})} 
+            options={[{value: '', label: 'Выбрать исполнителя'}, ...staff.map(s => ({value: s.id, label: s.full_name}))]} 
+          />
+        )}
+
         <div className="grid grid-cols-2 gap-4">
         <Input label="Начало" type="date" required value={formData.start_date} onChange={(e:any) => setFormData({...formData, start_date: e.target.value})} />
         <Input label="Дедлайн" type="date" value={formData.deadline} onChange={(e:any) => setFormData({...formData, deadline: e.target.value})} />
