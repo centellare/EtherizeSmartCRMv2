@@ -311,43 +311,59 @@ export const Analytics: React.FC<AnalyticsProps> = ({ transactions, objects, for
             </div>
 
             {/* Pie Chart (Expenses by Category) */}
-            <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm h-[400px] flex flex-col">
+            <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm min-h-[400px] flex flex-col">
                 <h4 className="font-bold text-slate-800 mb-4">Расходы по категориям</h4>
                 {pieChartData.length > 0 ? (
-                    <div className="flex-grow relative">
-                        <ResponsiveContainer width="100%" height="100%">
-                            <PieChart>
-                                <Pie
-                                    data={pieChartData}
-                                    cx="50%"
-                                    cy="50%"
-                                    innerRadius={60}
-                                    outerRadius={80}
-                                    paddingAngle={5}
-                                    dataKey="value"
-                                >
-                                    {pieChartData.map((entry, index) => (
-                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                    ))}
-                                </Pie>
-                                <Tooltip 
-                                    formatter={(value: number | undefined) => formatCurrency(value || 0)}
-                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
-                                />
-                                <Legend 
-                                    layout="vertical" 
-                                    verticalAlign="middle" 
-                                    align="right"
-                                    wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b' }}
-                                />
-                            </PieChart>
-                        </ResponsiveContainer>
-                        {/* Center Text */}
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none pr-20">
-                            <div className="text-center">
-                                <p className="text-[10px] text-slate-400 uppercase font-bold">Всего</p>
-                                <p className="text-sm font-bold text-slate-800">{formatCurrency(totals.expense)}</p>
+                    <div className="flex-grow flex flex-col sm:flex-row items-center gap-6">
+                        {/* Chart Container */}
+                        <div className="relative w-full sm:w-1/2 h-[250px] sm:h-[300px]">
+                            <ResponsiveContainer width="100%" height="100%">
+                                <PieChart>
+                                    <Pie
+                                        data={pieChartData}
+                                        cx="50%"
+                                        cy="50%"
+                                        innerRadius="60%"
+                                        outerRadius="80%"
+                                        paddingAngle={5}
+                                        dataKey="value"
+                                    >
+                                        {pieChartData.map((entry, index) => (
+                                            <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                        ))}
+                                    </Pie>
+                                    <Tooltip 
+                                        formatter={(value: number | undefined) => formatCurrency(value || 0)}
+                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                    />
+                                </PieChart>
+                            </ResponsiveContainer>
+                            {/* Center Text */}
+                            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                                <div className="text-center bg-white/80 backdrop-blur-sm p-2 rounded-xl">
+                                    <p className="text-[10px] text-slate-400 uppercase font-bold">Всего</p>
+                                    <p className="text-sm font-bold text-slate-800">{formatCurrency(totals.expense)}</p>
+                                </div>
                             </div>
+                        </div>
+
+                        {/* Custom Legend */}
+                        <div className="w-full sm:w-1/2 flex flex-col gap-3 max-h-[300px] overflow-y-auto pr-2">
+                            {pieChartData.map((entry, index) => {
+                                const percent = (entry.value / totals.expense) * 100;
+                                return (
+                                    <div key={index} className="flex items-center justify-between text-xs group p-2 hover:bg-slate-50 rounded-xl transition-colors cursor-default">
+                                        <div className="flex items-center gap-3 overflow-hidden">
+                                            <div className="w-3 h-3 rounded-full flex-shrink-0 shadow-sm" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                                            <div className="flex flex-col min-w-0">
+                                                <span className="text-slate-700 font-bold truncate" title={entry.name}>{entry.name}</span>
+                                                <span className="text-[10px] text-slate-400">{percent.toFixed(1)}%</span>
+                                            </div>
+                                        </div>
+                                        <span className="font-bold text-slate-800 whitespace-nowrap ml-2">{formatCurrency(entry.value)}</span>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 ) : (
