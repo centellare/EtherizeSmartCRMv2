@@ -1,5 +1,5 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { formatDate } from '../../../lib/dateUtils';
 
 interface TeamGanttProps {
@@ -8,12 +8,14 @@ interface TeamGanttProps {
 }
 
 export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
-  // Настройки диапазона (сегодня - 2 дня ... сегодня + 14 дней)
+  const [offsetDays, setOffsetDays] = useState(0);
+
+  // Настройки диапазона (сегодня - 2 дня + offset ... сегодня + 14 дней + offset)
   const rangeConfig = useMemo(() => {
     const start = new Date();
-    start.setDate(start.getDate() - 2); // Показываем немного прошлого
+    start.setDate(start.getDate() - 2 + offsetDays);
     const end = new Date();
-    end.setDate(end.getDate() + 14); // Показываем 2 недели вперед
+    end.setDate(end.getDate() + 14 + offsetDays);
     
     const days = [];
     let curr = new Date(start);
@@ -22,10 +24,9 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
       curr.setDate(curr.getDate() + 1);
     }
     return { start, end, days };
-  }, []);
+  }, [offsetDays]);
 
   // Сортировка и подготовка списка сотрудников
-  // Показываем всех переданных в props, но сортируем по роли для удобства
   const sortedStaff = useMemo(() => {
     const rolePriority: Record<string, number> = {
       'specialist': 1,
@@ -43,8 +44,8 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
     });
   }, [staff]);
 
-  // Хелпер для позиционирования
-  const getTaskStyle = (task: any) => {
+  // Хелпер для позиционирования и цвета
+  const getTaskStyleInfo = (task: any) => {
     const taskStart = task.start_date ? new Date(task.start_date) : new Date();
     const taskEnd = task.deadline ? new Date(task.deadline) : new Date(taskStart);
     
@@ -79,8 +80,35 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
     return {
       left: `${left}%`,
       width: `${width}%`,
-      className: colorClass
+      className: colorClass,
+      tStart,
+      tEnd
     };
+  };
+
+  // Алгоритм "укладки" задач, чтобы они не слипались
+  const getStackedTasks = (memberTasks: any[]) => {
+    const styledTasks = memberTasks
+      .map(task => ({ task, style: getTaskStyleInfo(task) }))
+      .filter(item => item.style !== null); // Только те, что попадают в экран
+
+    // Сортируем по дате начала
+    styledTasks.sort((a, b) => a.style!.tStart - b.style!.tStart);
+
+    const lanes: number[] = [];
+    const stacked = styledTasks.map(item => {
+      // Ищем первую свободную линию (где конец предыдущей задачи < начала текущей)
+      let laneIndex = lanes.findIndex(laneEnd => laneEnd < item.style!.tStart);
+      if (laneIndex === -1) {
+        laneIndex = lanes.length;
+        lanes.push(item.style!.tEnd);
+      } else {
+        lanes[laneIndex] = item.style!.tEnd;
+      }
+      return { ...item, laneIndex };
+    });
+
+    return { stacked, totalLanes: Math.max(1, lanes.length) };
   };
 
   return (
@@ -91,12 +119,25 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
                 <span className="material-icons-round text-indigo-600">calendar_month</span>
                 Загрузка команды
             </h4>
-            <p className="text-xs text-slate-500 mt-1">График выполнения задач на ближайшие 2 недели</p>
+            <p className="text-xs text-slate-500 mt-1">График выполнения задач</p>
         </div>
-        <div className="flex gap-4 text-[10px] font-bold uppercase">
-            <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div>Просрочено</div>
-            <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-blue-500"></div>В работе</div>
-            <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-slate-300"></div>План</div>
+        <div className="flex items-center gap-6">
+            <div className="flex gap-4 text-[10px] font-bold uppercase">
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-red-500"></div>Просрочено</div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-blue-500"></div>В работе</div>
+                <div className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-slate-300"></div>План</div>
+            </div>
+            <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-xl border border-slate-200">
+                <button onClick={() => setOffsetDays(prev => prev - 7)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white hover:shadow-sm text-slate-500 transition-all" title="На неделю назад">
+                    <span className="material-icons-round text-sm">chevron_left</span>
+                </button>
+                <button onClick={() => setOffsetDays(0)} className="px-3 h-8 flex items-center justify-center rounded-lg hover:bg-white hover:shadow-sm text-slate-600 text-[10px] font-bold uppercase transition-all">
+                    Сегодня
+                </button>
+                <button onClick={() => setOffsetDays(prev => prev + 7)} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-white hover:shadow-sm text-slate-500 transition-all" title="На неделю вперед">
+                    <span className="material-icons-round text-sm">chevron_right</span>
+                </button>
+            </div>
         </div>
       </div>
 
@@ -130,12 +171,13 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
             <div className="space-y-4 relative z-10">
                 {sortedStaff.map(member => {
                     const memberTasks = tasks.filter(t => t.assigned_to === member.id && t.status !== 'completed');
+                    const { stacked, totalLanes } = getStackedTasks(memberTasks);
                     
                     // Show row even if no tasks, to see availability
                     return (
-                        <div key={member.id} className="flex items-center group hover:bg-slate-50 rounded-xl transition-colors py-2">
+                        <div key={member.id} className="flex items-start group hover:bg-slate-50 rounded-xl transition-colors py-2">
                             {/* User Info */}
-                            <div className="w-48 shrink-0 flex items-center gap-3 pl-2">
+                            <div className="w-48 shrink-0 flex items-center gap-3 pl-2 mt-1">
                                 <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500">
                                     {member.full_name.charAt(0)}
                                 </div>
@@ -146,7 +188,10 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
                             </div>
 
                             {/* Timeline Lane */}
-                            <div className="flex-grow relative h-8 bg-slate-50/50 rounded-lg mr-2">
+                            <div 
+                                className="flex-grow relative bg-slate-50/50 rounded-lg mr-2 transition-all"
+                                style={{ height: `${Math.max(32, totalLanes * 24 + 8)}px` }}
+                            >
                                 {/* Grid Lines Background */}
                                 <div className="absolute inset-0 flex pointer-events-none">
                                     {rangeConfig.days.map((_, i) => (
@@ -155,17 +200,21 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
                                 </div>
 
                                 {/* Task Bars */}
-                                {memberTasks.map((task: any) => {
-                                    const style = getTaskStyle(task);
-                                    if (!style) return null;
-
+                                {stacked.map(({ task, style, laneIndex }) => {
                                     return (
                                         <div
                                             key={task.id}
-                                            className={`absolute top-1.5 h-5 rounded-md shadow-sm border border-white/20 cursor-pointer hover:brightness-110 hover:z-20 transition-all group/task ${style.className}`}
-                                            style={{ left: style.left, width: style.width }}
+                                            className={`absolute h-5 rounded-md shadow-sm border border-white/20 cursor-pointer hover:brightness-110 hover:z-20 transition-all group/task flex items-center px-2 overflow-hidden ${style!.className}`}
+                                            style={{ 
+                                                left: style!.left, 
+                                                width: style!.width,
+                                                top: `${laneIndex * 24 + 4}px`
+                                            }}
                                             onClick={() => window.location.hash = task.object_id ? `objects/${task.object_id}` : 'tasks'}
                                         >
+                                            <span className="text-[9px] font-bold text-white truncate drop-shadow-sm pointer-events-none">
+                                                {task.title}
+                                            </span>
                                             {/* Tooltip */}
                                             <div className="opacity-0 group-hover/task:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-slate-800 text-white text-[10px] p-2 rounded shadow-lg whitespace-nowrap z-50 pointer-events-none transition-opacity">
                                                 <p className="font-bold">{task.title}</p>
