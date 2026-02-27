@@ -67,6 +67,33 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
   }
 ];
 
+export const MIGRATION_SQL_V21 = `
+-- SmartHome CRM: FINANCIAL ANALYTICS (v21.0)
+-- Добавляет поля для структурированной аналитики финансов.
+
+BEGIN;
+
+-- 1. Add section column to transactions
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS section text;
+
+-- 2. Ensure description column exists (renaming UI concept 'Category' -> 'Comment')
+-- If description doesn't exist, create it.
+ALTER TABLE public.transactions ADD COLUMN IF NOT EXISTS description text;
+
+-- 3. Optional: Migrate old 'category' data to 'description' if description is empty
+-- This preserves old free-text categories as comments.
+UPDATE public.transactions 
+SET description = category 
+WHERE description IS NULL AND category IS NOT NULL;
+
+-- 4. Clear old category column to prepare for new structured data?
+-- No, let's keep it. We will just overwrite it with new dropdown values.
+-- But for historical data, it might be messy. 
+-- Let's leave it as is. The UI will show 'Other' or custom if not in list.
+
+COMMIT;
+`;
+
 export const MIGRATION_SQL_V18 = `
 -- SmartHome CRM: FIX ROLE CASTING (v18.0)
 -- Исправляет ошибку типов при назначении роли (text -> user_role).

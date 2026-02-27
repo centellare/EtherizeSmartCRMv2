@@ -1,22 +1,32 @@
 
 import React, { useState, useMemo } from 'react';
 import { Transaction } from '../../../types';
-import { Button } from '../../ui';
+import { Button, Select } from '../../ui';
+import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 interface AnalyticsProps {
   transactions: Transaction[];
+  objects: any[];
   formatCurrency: (val: number) => string;
 }
 
-export const Analytics: React.FC<AnalyticsProps> = ({ transactions, formatCurrency }) => {
+const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ffc658', '#8dd1e1', '#a4de6c', '#d0ed57', '#ffc0cb', '#e91e63', '#9c27b0', '#673ab7', '#3f51b5', '#2196f3', '#03a9f4', '#00bcd4', '#009688', '#4caf50'];
+
+export const Analytics: React.FC<AnalyticsProps> = ({ transactions, objects, formatCurrency }) => {
   const currentYear = new Date().getFullYear();
   const [selectedYear, setSelectedYear] = useState(currentYear);
   const [selectedMonth, setSelectedMonth] = useState<number | null>(null); // 0-11 or null
+  const [selectedObjectId, setSelectedObjectId] = useState<string>('');
 
   const monthNames = [
     'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
     'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
   ];
+
+  const filteredTransactions = useMemo(() => {
+    if (!selectedObjectId) return transactions;
+    return transactions.filter(t => t.object_id === selectedObjectId);
+  }, [transactions, selectedObjectId]);
 
   // 1. Calculate Opening Balance dynamically based on current View
   // If Year View: Balance before Jan 1st of selectedYear
@@ -26,7 +36,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ transactions, formatCurren
         ? new Date(selectedYear, 0, 1) // Jan 1st
         : new Date(selectedYear, selectedMonth, 1); // 1st of selected month
 
-    return transactions.reduce((sum, t) => {
+    return filteredTransactions.reduce((sum, t) => {
         const tDate = new Date(t.created_at);
         if (tDate < cutoffDate) {
             const income = t.type === 'income' ? (t.fact_amount || 0) : 0;
@@ -35,7 +45,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ transactions, formatCurren
         }
         return sum;
     }, 0);
-  }, [transactions, selectedYear, selectedMonth]);
+  }, [filteredTransactions, selectedYear, selectedMonth]);
 
   // 2. Prepare Chart Data (Either 12 months OR Weeks of specific month)
   const chartData = useMemo(() => {
@@ -49,7 +59,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ transactions, formatCurren
             expense: 0
         }));
 
-        transactions.forEach(t => {
+        filteredTransactions.forEach(t => {
             const date = new Date(t.created_at);
             if (date.getFullYear() === selectedYear) {
                 const mIndex = date.getMonth();
@@ -72,7 +82,7 @@ export const Analytics: React.FC<AnalyticsProps> = ({ transactions, formatCurren
             { index: 4, label: '29+', income: 0, expense: 0 },
         ];
 
-        transactions.forEach(t => {
+        filteredTransactions.forEach(t => {
             const date = new Date(t.created_at);
             if (date.getFullYear() === selectedYear && date.getMonth() === selectedMonth) {
                 const day = date.getDate();
@@ -92,7 +102,30 @@ export const Analytics: React.FC<AnalyticsProps> = ({ transactions, formatCurren
         });
         return weeks;
     }
-  }, [transactions, selectedYear, selectedMonth]);
+  }, [filteredTransactions, selectedYear, selectedMonth]);
+
+  // 3. Prepare Pie Chart Data (Expenses by Category)
+  const pieChartData = useMemo(() => {
+    const categories: Record<string, number> = {};
+    
+    filteredTransactions.forEach(t => {
+        const date = new Date(t.created_at);
+        // Filter by selected period
+        if (date.getFullYear() === selectedYear) {
+            if (selectedMonth !== null && date.getMonth() !== selectedMonth) return;
+            
+            // Only count approved expenses
+            if (t.type === 'expense' && t.status === 'approved') {
+                const cat = t.category || 'Без категории';
+                categories[cat] = (categories[cat] || 0) + t.amount;
+            }
+        }
+    });
+
+    return Object.entries(categories)
+        .map(([name, value]) => ({ name, value }))
+        .sort((a, b) => b.value - a.value); // Sort descending
+  }, [filteredTransactions, selectedYear, selectedMonth]);
 
   // 3. Totals for Current View
   const totals = useMemo(() => {
@@ -118,16 +151,31 @@ export const Analytics: React.FC<AnalyticsProps> = ({ transactions, formatCurren
     <div className="space-y-6 animate-in fade-in duration-500">
         {/* Header & Navigation */}
         <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-            <div className="bg-slate-100 p-1 rounded-2xl flex gap-1">
-                {[currentYear - 2, currentYear - 1, currentYear, currentYear + 1].map(year => (
-                    <button 
-                        key={year}
-                        onClick={() => { setSelectedYear(year); setSelectedMonth(null); }}
-                        className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${selectedYear === year ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-                    >
-                        {year}
-                    </button>
-                ))}
+            <div className="flex flex-col md:flex-row gap-4 items-center w-full md:w-auto">
+                <div className="bg-slate-100 p-1 rounded-2xl flex gap-1">
+                    {[currentYear - 2, currentYear - 1, currentYear, currentYear + 1].map(year => (
+                        <button 
+                            key={year}
+                            onClick={() => { setSelectedYear(year); setSelectedMonth(null); }}
+                            className={`px-4 py-2 rounded-xl text-sm font-bold transition-all ${selectedYear === year ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                        >
+                            {year}
+                        </button>
+                    ))}
+                </div>
+                
+                <div className="w-[200px]">
+                    <Select 
+                        value={selectedObjectId} 
+                        onChange={(e:any) => setSelectedObjectId(e.target.value)}
+                        options={[
+                            {value: '', label: 'Все объекты'},
+                            ...objects.map(o => ({value: o.id, label: o.name}))
+                        ]}
+                        icon="business"
+                        className="!h-10 !py-2 !text-xs bg-white border-slate-200"
+                    />
+                </div>
             </div>
 
             {selectedMonth !== null && (
@@ -182,82 +230,132 @@ export const Analytics: React.FC<AnalyticsProps> = ({ transactions, formatCurren
             </div>
         </div>
 
-        {/* Dynamic Chart */}
-        <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm h-[400px] flex flex-col relative overflow-hidden">
-            <div className="flex justify-between items-center mb-6 z-10">
-                <div>
-                    <h4 className="font-bold text-slate-800 flex items-center gap-2">
-                        {selectedMonth === null ? 'Динамика по месяцам' : 'Разбивка по неделям (дни)'}
-                        {selectedMonth === null && <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded-lg uppercase tracking-wide">Кликабельно</span>}
-                    </h4>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Dynamic Chart (Bar) */}
+            <div className="lg:col-span-2 bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm h-[400px] flex flex-col relative overflow-hidden">
+                <div className="flex justify-between items-center mb-6 z-10">
+                    <div>
+                        <h4 className="font-bold text-slate-800 flex items-center gap-2">
+                            {selectedMonth === null ? 'Динамика по месяцам' : 'Разбивка по неделям (дни)'}
+                            {selectedMonth === null && <span className="text-[10px] bg-blue-50 text-blue-600 px-2 py-1 rounded-lg uppercase tracking-wide">Кликабельно</span>}
+                        </h4>
+                    </div>
+                    <div className="flex gap-4 text-[10px] font-bold uppercase">
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-400"></div>Приход</div>
+                        <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-400"></div>Расход</div>
+                    </div>
                 </div>
-                <div className="flex gap-4 text-[10px] font-bold uppercase">
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-400"></div>Приход</div>
-                    <div className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-red-400"></div>Расход</div>
+                
+                <div className="flex-grow flex items-end justify-between gap-2 md:gap-4 pb-2 z-10">
+                    {chartData.map((d) => {
+                        const isZero = d.income === 0 && d.expense === 0;
+                        return (
+                            <div 
+                                key={d.index} 
+                                onClick={() => handleBarClick(d.index)}
+                                className={`flex-1 flex flex-col justify-end items-center h-full group relative ${selectedMonth === null ? 'cursor-pointer hover:bg-slate-50 rounded-xl transition-colors' : ''}`}
+                            >
+                                {/* Tooltip */}
+                                <div className="absolute bottom-full mb-2 bg-slate-800 text-white text-[10px] p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-xl">
+                                    <p className="font-bold mb-1 border-b border-slate-600 pb-1">{selectedMonth === null ? (d as any).fullName : `Дни: ${d.label}`}</p>
+                                    <div className="text-emerald-300">+{formatCurrency(d.income)}</div>
+                                    <div className="text-red-300">-{formatCurrency(d.expense)}</div>
+                                    <div className="mt-1 pt-1 border-t border-slate-600 text-slate-400">Сальдо: {formatCurrency(d.income - d.expense)}</div>
+                                </div>
+
+                                <div className="w-full flex gap-1 items-end justify-center h-full pb-1 px-1">
+                                    {/* Income Bar */}
+                                    <div className="w-1/2 flex flex-col justify-end h-full">
+                                        <div 
+                                            className="w-full bg-emerald-400 rounded-t-sm transition-all duration-500 hover:bg-emerald-500 relative group/bar"
+                                            style={{ height: `${(d.income / maxVal) * 85}%`, minHeight: d.income > 0 ? '4px' : '0' }}
+                                        >
+                                            {d.income > 0 && (
+                                                <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[9px] font-bold text-slate-500 opacity-0 group-hover/bar:opacity-100 transition-opacity">
+                                                    {formatCurrency(d.income)}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    {/* Expense Bar */}
+                                    <div className="w-1/2 flex flex-col justify-end h-full">
+                                        <div 
+                                            className="w-full bg-red-400 rounded-t-sm transition-all duration-500 hover:bg-red-500 relative group/bar"
+                                            style={{ height: `${(d.expense / maxVal) * 85}%`, minHeight: d.expense > 0 ? '4px' : '0' }}
+                                        >
+                                            {d.expense > 0 && (
+                                                <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[9px] font-bold text-slate-500 opacity-0 group-hover/bar:opacity-100 transition-opacity">
+                                                    {formatCurrency(d.expense)}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div className="h-[1px] w-full bg-slate-200 mt-1 mb-2"></div>
+                                <span className={`text-[10px] font-bold uppercase transition-colors ${isZero ? 'text-slate-300' : 'text-slate-500 group-hover:text-blue-600'}`}>
+                                    {d.label}
+                                </span>
+                            </div>
+                        );
+                    })}
+                </div>
+
+                {/* Background Grid Lines (Optional visual) */}
+                <div className="absolute inset-0 top-16 bottom-8 left-0 right-0 pointer-events-none flex flex-col justify-between opacity-10 px-6">
+                    <div className="border-t border-slate-400 w-full"></div>
+                    <div className="border-t border-slate-400 w-full"></div>
+                    <div className="border-t border-slate-400 w-full"></div>
+                    <div className="border-t border-slate-400 w-full"></div>
                 </div>
             </div>
-            
-            <div className="flex-grow flex items-end justify-between gap-2 md:gap-4 pb-2 z-10">
-                {chartData.map((d) => {
-                    const isZero = d.income === 0 && d.expense === 0;
-                    return (
-                        <div 
-                            key={d.index} 
-                            onClick={() => handleBarClick(d.index)}
-                            className={`flex-1 flex flex-col justify-end items-center h-full group relative ${selectedMonth === null ? 'cursor-pointer hover:bg-slate-50 rounded-xl transition-colors' : ''}`}
-                        >
-                            {/* Tooltip */}
-                            <div className="absolute bottom-full mb-2 bg-slate-800 text-white text-[10px] p-2 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-50 shadow-xl">
-                                <p className="font-bold mb-1 border-b border-slate-600 pb-1">{selectedMonth === null ? (d as any).fullName : `Дни: ${d.label}`}</p>
-                                <div className="text-emerald-300">+{formatCurrency(d.income)}</div>
-                                <div className="text-red-300">-{formatCurrency(d.expense)}</div>
-                                <div className="mt-1 pt-1 border-t border-slate-600 text-slate-400">Сальдо: {formatCurrency(d.income - d.expense)}</div>
-                            </div>
 
-                            <div className="w-full flex gap-1 items-end justify-center h-full pb-1 px-1">
-                                {/* Income Bar */}
-                                <div className="w-1/2 flex flex-col justify-end h-full">
-                                    <div 
-                                        className="w-full bg-emerald-400 rounded-t-sm transition-all duration-500 hover:bg-emerald-500 relative group/bar"
-                                        style={{ height: `${(d.income / maxVal) * 85}%`, minHeight: d.income > 0 ? '4px' : '0' }}
-                                    >
-                                        {d.income > 0 && (
-                                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[9px] font-bold text-slate-500 opacity-0 group-hover/bar:opacity-100 transition-opacity">
-                                                {formatCurrency(d.income)}
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
-                                {/* Expense Bar */}
-                                <div className="w-1/2 flex flex-col justify-end h-full">
-                                    <div 
-                                        className="w-full bg-red-400 rounded-t-sm transition-all duration-500 hover:bg-red-500 relative group/bar"
-                                        style={{ height: `${(d.expense / maxVal) * 85}%`, minHeight: d.expense > 0 ? '4px' : '0' }}
-                                    >
-                                        {d.expense > 0 && (
-                                            <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[9px] font-bold text-slate-500 opacity-0 group-hover/bar:opacity-100 transition-opacity">
-                                                {formatCurrency(d.expense)}
-                                            </span>
-                                        )}
-                                    </div>
-                                </div>
+            {/* Pie Chart (Expenses by Category) */}
+            <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm h-[400px] flex flex-col">
+                <h4 className="font-bold text-slate-800 mb-4">Расходы по категориям</h4>
+                {pieChartData.length > 0 ? (
+                    <div className="flex-grow relative">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={pieChartData}
+                                    cx="50%"
+                                    cy="50%"
+                                    innerRadius={60}
+                                    outerRadius={80}
+                                    paddingAngle={5}
+                                    dataKey="value"
+                                >
+                                    {pieChartData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip 
+                                    formatter={(value: number | undefined) => formatCurrency(value || 0)}
+                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                                />
+                                <Legend 
+                                    layout="vertical" 
+                                    verticalAlign="middle" 
+                                    align="right"
+                                    wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', color: '#64748b' }}
+                                />
+                            </PieChart>
+                        </ResponsiveContainer>
+                        {/* Center Text */}
+                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none pr-20">
+                            <div className="text-center">
+                                <p className="text-[10px] text-slate-400 uppercase font-bold">Всего</p>
+                                <p className="text-sm font-bold text-slate-800">{formatCurrency(totals.expense)}</p>
                             </div>
-                            
-                            <div className="h-[1px] w-full bg-slate-200 mt-1 mb-2"></div>
-                            <span className={`text-[10px] font-bold uppercase transition-colors ${isZero ? 'text-slate-300' : 'text-slate-500 group-hover:text-blue-600'}`}>
-                                {d.label}
-                            </span>
                         </div>
-                    );
-                })}
-            </div>
-
-            {/* Background Grid Lines (Optional visual) */}
-            <div className="absolute inset-0 top-16 bottom-8 left-0 right-0 pointer-events-none flex flex-col justify-between opacity-10 px-6">
-                <div className="border-t border-slate-400 w-full"></div>
-                <div className="border-t border-slate-400 w-full"></div>
-                <div className="border-t border-slate-400 w-full"></div>
-                <div className="border-t border-slate-400 w-full"></div>
+                    </div>
+                ) : (
+                    <div className="flex-grow flex flex-col items-center justify-center text-slate-300">
+                        <span className="material-icons-round text-4xl mb-2">donut_large</span>
+                        <p className="text-sm font-medium">Нет данных о расходах</p>
+                    </div>
+                )}
             </div>
         </div>
     </div>

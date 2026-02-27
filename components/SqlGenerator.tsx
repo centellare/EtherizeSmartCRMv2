@@ -1,13 +1,14 @@
 
 import React, { useState } from 'react';
 import { TableSchema } from '../types';
-import { MIGRATION_SQL_V10, MIGRATION_SQL_V11, MIGRATION_SQL_V12, MIGRATION_SQL_V13, MIGRATION_SQL_V14, MIGRATION_SQL_V15, MIGRATION_SQL_V16, MIGRATION_SQL_V17, MIGRATION_SQL_V18, MIGRATION_SQL_V19, MIGRATION_SQL_V20 } from '../constants';
+import { MIGRATION_SQL_V10, MIGRATION_SQL_V11, MIGRATION_SQL_V12, MIGRATION_SQL_V13, MIGRATION_SQL_V14, MIGRATION_SQL_V15, MIGRATION_SQL_V16, MIGRATION_SQL_V17, MIGRATION_SQL_V18, MIGRATION_SQL_V19, MIGRATION_SQL_V20, MIGRATION_SQL_V21 } from '../constants';
 
 interface SqlGeneratorProps { 
   schemas: TableSchema[]; 
 }
 
 const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
+  const [copiedV21, setCopiedV21] = useState(false);
   const [copiedV20, setCopiedV20] = useState(false);
   const [copiedV19, setCopiedV19] = useState(false);
   const [copiedV18, setCopiedV18] = useState(false);
@@ -19,6 +20,12 @@ const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
   const [copiedV12, setCopiedV12] = useState(false);
   const [copiedV11, setCopiedV11] = useState(false);
   const [copiedV10, setCopiedV10] = useState(false);
+
+  const handleCopyV21 = () => {
+    navigator.clipboard.writeText(MIGRATION_SQL_V21);
+    setCopiedV21(true);
+    setTimeout(() => setCopiedV21(false), 2000);
+  };
 
   const handleCopyV20 = () => {
     navigator.clipboard.writeText(MIGRATION_SQL_V20);
@@ -88,6 +95,39 @@ const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
 
   return (
     <div className="space-y-6">
+      {/* V21 Financial Analytics */}
+      <div className="bg-gradient-to-br from-emerald-50 to-green-50 p-6 rounded-[24px] border border-emerald-200 shadow-sm">
+        <h3 className="text-lg font-bold text-emerald-900 mb-2 flex items-center gap-2">
+          <span className="material-icons-round text-emerald-600">pie_chart</span>
+          Финансовая аналитика (v21.0)
+        </h3>
+        <div className="text-sm text-emerald-800 mb-4 leading-relaxed bg-white/50 p-4 rounded-xl border border-emerald-100">
+          <p className="font-bold mb-2">Обновление структуры финансов:</p>
+          <ul className="list-disc list-inside space-y-1 ml-1">
+            <li>Добавляет поля <b>section</b> и <b>description</b> в транзакции.</li>
+            <li>Позволяет вести учет по категориям и разделам (для диаграмм).</li>
+            <li>Мигрирует старые категории в комментарии.</li>
+          </ul>
+        </div>
+        
+        <div className="relative group">
+          <div className="absolute top-4 right-4 z-10">
+            <button 
+              onClick={handleCopyV21}
+              className="px-4 py-2 bg-emerald-600 text-white rounded-full text-xs font-bold transition-all shadow-lg flex items-center gap-2 hover:bg-emerald-700 hover:scale-105 active:scale-95"
+            >
+              <span className="material-icons-round text-sm">{copiedV21 ? 'check' : 'content_copy'}</span>
+              {copiedV21 ? 'СКОПИРОВАНО' : 'КОПИРОВАТЬ SQL'}
+            </button>
+          </div>
+          <div className="bg-[#1e1e1e] p-6 rounded-[20px] border border-slate-800 overflow-hidden shadow-inner">
+            <pre className="overflow-x-auto text-[#a5f3fc] font-mono text-xs leading-relaxed scrollbar-hide whitespace-pre-wrap max-h-[400px]">
+              {MIGRATION_SQL_V21}
+            </pre>
+          </div>
+        </div>
+      </div>
+
       {/* V20 Privacy Hardening */}
       <div className="bg-gradient-to-br from-cyan-50 to-sky-50 p-6 rounded-[24px] border border-cyan-200 shadow-sm">
         <h3 className="text-lg font-bold text-cyan-900 mb-2 flex items-center gap-2">

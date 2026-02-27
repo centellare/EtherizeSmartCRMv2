@@ -377,7 +377,7 @@ const Finances: React.FC<{ profile: any; initialTransactionId?: string | null }>
       </div>
 
       {activeTab === 'analytics' ? (
-        <Analytics transactions={transactions} formatCurrency={formatCurrency} />
+        <Analytics transactions={transactions} objects={objects} formatCurrency={formatCurrency} />
       ) : (
         <>
           {/* Controls visible only in Journal mode */}

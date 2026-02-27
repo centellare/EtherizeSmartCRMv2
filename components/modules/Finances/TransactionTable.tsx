@@ -51,7 +51,8 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
               <th className="p-4 w-10"></th>
               <th className="p-5 text-xs font-medium text-slate-500">Тип / Создано</th>
               <th className="p-5 text-xs font-medium text-slate-500">План. дата</th>
-              <th className="p-5 text-xs font-medium text-slate-500">Объект / Описание</th>
+              <th className="p-5 text-xs font-medium text-slate-500">Объект / Комментарий</th>
+              <th className="p-5 text-xs font-medium text-slate-500">Категория / Раздел</th>
               <th className="p-5 text-xs font-medium text-slate-500 w-10 text-center">Файл</th>
               <th className="p-5 text-xs font-medium text-slate-500">Сумма</th>
               <th className="p-5 text-xs font-medium text-slate-500">Факт</th>
@@ -95,7 +96,11 @@ export const TransactionTable: React.FC<TransactionTableProps> = ({
                       </td>
                       <td className="p-5 cursor-pointer" onClick={() => onRowClick(t)}>
                         <p className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors">{t.objects?.name || '—'}</p>
-                        <p className="text-xs text-slate-500 line-clamp-1">{t.description || t.category}</p>
+                        <p className="text-xs text-slate-500 line-clamp-1">{t.description || '—'}</p>
+                      </td>
+                      <td className="p-5">
+                        <p className="font-medium text-slate-800 text-xs">{t.category || '—'}</p>
+                        {t.section && <p className="text-[10px] text-slate-500">{t.section}</p>}
                       </td>
                       <td className="p-5 text-center">
                         {t.doc_link && <a href={t.doc_link} target="_blank" onClick={(e) => e.stopPropagation()} className="text-blue-500 hover:text-blue-700"><span className="material-icons-round">attach_file</span></a>}

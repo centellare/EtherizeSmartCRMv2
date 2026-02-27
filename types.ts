@@ -94,6 +94,7 @@ export interface Transaction {
   fact_amount?: number | null;
   status: TransactionStatus;
   category: string | null;
+  section?: string | null; // NEW: Sub-category
   description: string | null;
   doc_link?: string | null;
   doc_name?: string | null;
