@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../components/ui';
+import { ObjectDTO } from '../types/dto';
 
 export const useObjectsList = (profileId?: string) => {
   const queryClient = useQueryClient();
@@ -9,12 +11,14 @@ export const useObjectsList = (profileId?: string) => {
   const { data: objects = [], isLoading } = useQuery({
     queryKey: ['objects'],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('objects')
         .select('*, client:clients(name), responsible:profiles!responsible_id(full_name), tasks(id, status, is_deleted)')
         .is('is_deleted', false)
         .order('created_at', { ascending: false });
-      return data || [];
+      
+      if (error) throw error;
+      return data as unknown as ObjectDTO[];
     },
     enabled: !!profileId,
     refetchInterval: 5000, // Poll every 5 seconds
@@ -24,9 +28,9 @@ export const useObjectsList = (profileId?: string) => {
   const deleteObject = useMutation({
     mutationFn: async ({ id, profileId }: { id: string, profileId: string }) => {
       const now = new Date().toISOString();
-      const { error: objError } = await supabase.from('objects').update({ is_deleted: true, deleted_at: now, updated_by: profileId }).eq('id', id);
-      if (objError) throw objError;
+      await api.softDelete('objects', id, profileId);
       
+      // Cascade soft delete (manual for now, ideally should be DB trigger or separate service method)
       const { error: taskError } = await supabase.from('tasks').update({ is_deleted: true, deleted_at: now }).eq('object_id', id);
       if (taskError) throw taskError;
 

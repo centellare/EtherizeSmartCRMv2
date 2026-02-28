@@ -19,6 +19,10 @@ export interface Object {
   updated_by: string | null;
   is_deleted: boolean;
   deleted_at?: string | null;
+  
+  // Joins
+  client?: { id: string; name: string } | null;
+  responsible?: { id: string; full_name: string } | null;
 }
 
 export interface TaskChecklistItem {

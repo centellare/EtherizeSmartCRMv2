@@ -1,9 +1,11 @@
 
 import React, { useState, useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '../../../lib/supabase';
+import { useQueryClient } from '@tanstack/react-query';
 import { Badge, Input, Select, ConfirmModal, useToast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
+import { useProposals } from '../../../hooks/useProposals';
+import { useProposalMutations } from '../../../hooks/useProposalMutations';
+import { ProposalDTO } from '../../../types/dto';
 
 interface ProposalListProps {
   onView: (id: string) => void;
@@ -24,34 +26,16 @@ const ProposalList: React.FC<ProposalListProps> = ({ onView, onEdit, onViewInvoi
 
   // --- QUERIES ---
 
-  const { data: list = [], isLoading } = useQuery({
-    queryKey: ['proposals'],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('commercial_proposals')
-        .select('*, client:clients(name), creator:profiles(full_name), invoices(id, number, status)')
-        .order('created_at', { ascending: false });
-      return data || [];
-    }
-  });
+  const { data: list = [], isLoading } = useProposals();
+  const { deleteProposal } = useProposalMutations();
 
   const handleDelete = async () => {
     if (!deleteConfirm.id) return;
     try {
-      // 1. Delete items first (manual cascade if not set in DB)
-      await supabase.from('cp_items').delete().eq('cp_id', deleteConfirm.id);
-      
-      // 2. Delete proposal header
-      const { error } = await supabase.from('commercial_proposals').delete().eq('id', deleteConfirm.id);
-      
-      if (error) throw error;
-      
-      toast.success('КП удалено');
-      
-      queryClient.invalidateQueries({ queryKey: ['proposals'] });
+      await deleteProposal.mutateAsync(deleteConfirm.id);
     } catch (e: any) {
       console.error(e);
-      toast.error('Ошибка удаления: ' + e.message);
+      // Toast is handled in mutation
     } finally {
       setDeleteConfirm({ open: false, id: null });
     }

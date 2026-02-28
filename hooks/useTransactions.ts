@@ -1,7 +1,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { Transaction } from '../types';
+import { TransactionDTO } from '../types/dto';
 
 export const useTransactions = (options: { 
   objectId?: string; 
@@ -44,7 +44,7 @@ export const useTransactions = (options: {
         payments: (t.payments || []).sort((a: any, b: any) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime()),
         created_by_name: t.creator?.full_name || 'Система',
         processor_name: t.processor?.full_name || null
-      })) as Transaction[];
+      })) as unknown as TransactionDTO[];
     },
     staleTime: 1000 * 60 * 2, // 2 minutes
     refetchInterval: 1000 * 30, // 30 seconds

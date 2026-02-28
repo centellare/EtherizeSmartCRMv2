@@ -1,11 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '../../../../lib/supabase';
+import { useQueryClient } from '@tanstack/react-query';
 import { Button, Input, Select } from '../../../ui';
 import { getMinskISODate } from '../../../../lib/dateUtils';
-import { notifyRole } from '../../../../lib/notifications';
 import { FINANCE_CATEGORIES } from '../../../../constants/categories';
+import { useFinanceMutations } from '../../../../hooks/useFinanceMutations';
 
 interface TransactionFormProps {
   mode: 'create' | 'edit';
@@ -16,8 +14,8 @@ interface TransactionFormProps {
 }
 
 export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialData, objects, profile, onSuccess }) => {
-  const queryClient = useQueryClient();
   const isSpecialist = profile.role === 'specialist';
+  const { createTransaction, updateTransaction } = useFinanceMutations(profile.id);
   
   const [formData, setFormData] = useState({ 
     object_id: '', 
@@ -59,33 +57,6 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialD
     }
   }, [mode, initialData, objects]);
 
-  const mutation = useMutation({
-    mutationFn: async (payload: any) => {
-      if (mode === 'edit' && initialData) {
-          const { error } = await supabase.from('transactions').update(payload).eq('id', initialData.id);
-          if (error) throw error;
-      } else {
-          const { data, error } = await supabase.from('transactions').insert([{
-              ...payload,
-              status: 'pending',
-              created_by: profile.id
-          }]).select().single();
-          if (error) throw error;
-
-          if (payload.type === 'expense' && data) {
-            await notifyRole(['admin', 'director'], `Новый запрос на расход: ${payload.amount} BYN (${payload.category})`, `#finances/${data.id}`);
-          }
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      onSuccess();
-    },
-    onError: (error: any) => {
-      alert('Ошибка: ' + error.message);
-    }
-  });
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const amount = parseFloat(formData.amount);
@@ -110,8 +81,25 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialD
         doc_name: formData.doc_name || null
     };
 
-    mutation.mutate(payload);
+    if (mode === 'edit') {
+      updateTransaction.mutate({
+        id: initialData.id,
+        ...payload,
+        updated_by: profile.id
+      }, {
+        onSuccess: onSuccess
+      });
+    } else {
+      createTransaction.mutate({
+        ...payload,
+        created_by: profile.id
+      }, {
+        onSuccess: onSuccess
+      });
+    }
   };
+
+  const isPending = createTransaction.isPending || updateTransaction.isPending;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -181,7 +169,7 @@ export const TransactionForm: React.FC<TransactionFormProps> = ({ mode, initialD
             </div>
         </div>
         
-        <Button type="submit" className="w-full h-14" loading={mutation.isPending} icon="save">{mode === 'edit' ? 'Сохранить изменения' : 'Создать запись'}</Button>
+        <Button type="submit" className="w-full h-14" loading={isPending} icon="save">{mode === 'edit' ? 'Сохранить изменения' : 'Создать запись'}</Button>
     </form>
   );
 };

@@ -1,9 +1,11 @@
 import React, { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { supabase } from '../../lib/supabase';
-import { Button, Input, Modal, Badge, useToast } from '../ui';
-import { Partner } from '../../types';
-import { PartnerStats } from './Partners/PartnerStats'; // NEW
+import { useQueryClient } from '@tanstack/react-query';
+import { Button, Modal, Badge, useToast } from '../ui';
+import { PartnerDTO } from '../../types/dto';
+import { PartnerStats } from './Partners/PartnerStats';
+import { usePartners } from '../../hooks/usePartners';
+import { usePartnerMutations } from '../../hooks/usePartnerMutations';
+import { PartnerForm } from './Partners/modals/PartnerForm';
 
 interface PartnersProps {
   profile: any;
@@ -17,94 +19,21 @@ const Partners: React.FC<PartnersProps> = ({ profile }) => {
   const [activeTab, setActiveTab] = useState<'list' | 'stats'>('list');
 
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingPartner, setEditingPartner] = useState<Partner | null>(null);
-  const [formData, setFormData] = useState<Partial<Partner>>({
-    name: '',
-    contact_person: '',
-    phone: '',
-    email: '',
-    default_commission_percent: 10,
-    status: 'active',
-    notes: ''
-  });
+  const [editingPartner, setEditingPartner] = useState<PartnerDTO | null>(null);
 
   // Fetch Partners
-  const { data: partners = [], isLoading } = useQuery({
-    queryKey: ['partners'],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('partners')
-        .select('*, clients(count)')
-        .order('name');
-      
-      if (error) throw error;
-      return data.map(p => ({
-        ...p,
-        total_clients: (p.clients?.[0] as any)?.count || 0,
-        clients: [], // Initialize as empty array to match type
-        created_at: p.created_at || new Date().toISOString(),
-        updated_at: p.updated_at || new Date().toISOString()
-      }));
-    }
-  });
+  const { data: partners = [], isLoading } = usePartners();
+  const { deletePartner } = usePartnerMutations();
 
-  // Create/Update Mutation
-  const mutation = useMutation({
-    mutationFn: async (data: Partial<Partner>) => {
-      if (editingPartner) {
-        const { error } = await supabase
-          .from('partners')
-          .update(data)
-          .eq('id', editingPartner.id);
-        if (error) throw error;
-      } else {
-        // Ensure name is present for insert
-        if (!data.name) throw new Error('Name is required');
-        
-        const { error } = await supabase
-          .from('partners')
-          .insert([data as any]); // Cast to any to bypass strict type check for now
-        if (error) throw error;
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['partners'] });
-      setIsModalOpen(false);
-      setEditingPartner(null);
-      setFormData({
-        name: '',
-        contact_person: '',
-        phone: '',
-        email: '',
-        default_commission_percent: 10,
-        status: 'active',
-        notes: ''
-      });
-      toast.success(editingPartner ? 'Партнер обновлен' : 'Партнер создан');
-    },
-    onError: (error: any) => {
-      toast.error('Ошибка: ' + error.message);
-    }
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formData.name) return toast.error('Введите название');
-    mutation.mutate(formData);
+  const handleEdit = (partner: PartnerDTO) => {
+    setEditingPartner(partner);
+    setIsModalOpen(true);
   };
 
-  const handleEdit = (partner: Partner) => {
-    setEditingPartner(partner);
-    setFormData({
-      name: partner.name,
-      contact_person: partner.contact_person || '',
-      phone: partner.phone || '',
-      email: partner.email || '',
-      default_commission_percent: partner.default_commission_percent,
-      status: partner.status,
-      notes: partner.notes || ''
-    });
-    setIsModalOpen(true);
+  const handleDelete = async (id: string) => {
+    if (confirm('Вы уверены, что хотите удалить партнера?')) {
+      await deletePartner.mutateAsync(id);
+    }
   };
 
   return (
@@ -144,7 +73,7 @@ const Partners: React.FC<PartnersProps> = ({ profile }) => {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {partners.map((partner: any) => (
+              {partners.map((partner) => (
                 <div key={partner.id} className="bg-white p-6 rounded-[24px] border border-slate-200 hover:shadow-md transition-all group relative">
                   <div className="flex justify-between items-start mb-4">
                     <div className="flex items-center gap-3">
@@ -188,12 +117,22 @@ const Partners: React.FC<PartnersProps> = ({ profile }) => {
                     </div>
                   </div>
 
-                  <button 
-                    onClick={() => handleEdit(partner)}
-                    className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-blue-600"
-                  >
-                    <span className="material-icons-round">edit</span>
-                  </button>
+                  <div className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
+                    <button 
+                      onClick={() => handleEdit(partner)}
+                      className="p-2 hover:bg-slate-100 rounded-full text-slate-400 hover:text-blue-600"
+                      title="Редактировать"
+                    >
+                      <span className="material-icons-round">edit</span>
+                    </button>
+                    <button 
+                      onClick={() => handleDelete(partner.id)}
+                      className="p-2 hover:bg-red-50 rounded-full text-slate-400 hover:text-red-600"
+                      title="Удалить"
+                    >
+                      <span className="material-icons-round">delete</span>
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -204,54 +143,12 @@ const Partners: React.FC<PartnersProps> = ({ profile }) => {
       )}
 
       <Modal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} title={editingPartner ? 'Редактирование партнера' : 'Новый партнер'}>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <Input label="Название / Компания" required value={formData.name} onChange={(e: any) => setFormData({...formData, name: e.target.value})} />
-          <div className="grid grid-cols-2 gap-4">
-            <Input label="Контактное лицо" value={formData.contact_person || ''} onChange={(e: any) => setFormData({...formData, contact_person: e.target.value})} />
-            <Input label="Телефон" value={formData.phone || ''} onChange={(e: any) => setFormData({...formData, phone: e.target.value})} />
-          </div>
-          <Input label="Email" type="email" value={formData.email || ''} onChange={(e: any) => setFormData({...formData, email: e.target.value})} />
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Комиссия по умолчанию (%)</label>
-              <input 
-                type="number" 
-                min="0" 
-                max="100" 
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all font-bold text-indigo-600"
-                value={formData.default_commission_percent}
-                onChange={(e) => setFormData({...formData, default_commission_percent: parseFloat(e.target.value) || 0})}
-              />
-            </div>
-            <div>
-              <label className="block text-xs font-bold text-slate-700 mb-1">Статус</label>
-              <select 
-                className="w-full h-10 px-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all"
-                value={formData.status}
-                onChange={(e) => setFormData({...formData, status: e.target.value as any})}
-              >
-                <option value="active">Активен</option>
-                <option value="inactive">Неактивен</option>
-              </select>
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-xs font-bold text-slate-700 mb-1">Заметки</label>
-            <textarea 
-              className="w-full p-3 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 outline-none transition-all min-h-[80px] text-sm"
-              value={formData.notes || ''}
-              onChange={(e) => setFormData({...formData, notes: e.target.value})}
-              placeholder="Реквизиты, особенности работы..."
-            />
-          </div>
-
-          <div className="pt-4 flex gap-3">
-            <Button variant="secondary" className="flex-1" onClick={() => setIsModalOpen(false)}>Отмена</Button>
-            <Button type="submit" className="flex-1" loading={mutation.isPending}>Сохранить</Button>
-          </div>
-        </form>
+        <PartnerForm 
+          mode={editingPartner ? 'edit' : 'create'}
+          initialData={editingPartner}
+          onSuccess={() => { setIsModalOpen(false); setEditingPartner(null); }}
+          onCancel={() => { setIsModalOpen(false); setEditingPartner(null); }}
+        />
       </Modal>
     </div>
   );

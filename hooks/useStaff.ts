@@ -1,7 +1,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '../lib/supabase';
-import { Profile } from './useAuth';
+import { ProfileDTO } from '../types/dto';
 
 export const useStaff = () => {
   return useQuery({
@@ -15,7 +15,7 @@ export const useStaff = () => {
         .order('full_name');
 
       if (error) throw error;
-      return data as Profile[];
+      return data as unknown as ProfileDTO[];
     },
     staleTime: 1000 * 60 * 10, // 10 minutes
   });

@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Input, Select } from '../../../ui';
-import { createNotification } from '../../../../lib/notifications';
+import { useClientMutations } from '../../../../hooks/useClientMutations';
 
 interface ClientFormProps {
   mode: 'create' | 'edit';
@@ -23,12 +23,12 @@ const SOURCES = [
 ];
 
 export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff, profile, onSuccess }) => {
-  const queryClient = useQueryClient();
+  const { createClient, updateClient } = useClientMutations();
 
   const [partners, setPartners] = useState<any[]>([]); 
   const [formData, setFormData] = useState({
     name: '',
-    type: 'person' as 'person' | 'company', // Изменено на person
+    type: 'person' as 'person' | 'company',
     contact_person: '',
     phone: '',
     email: '',
@@ -42,7 +42,6 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
     if (mode === 'edit' && initialData) {
       setFormData({
         name: initialData.name,
-        // Если прилетит старый кэш с individual, сразу мапим в person
         type: initialData.type === 'individual' ? 'person' : initialData.type, 
         contact_person: initialData.contact_person || '',
         phone: initialData.phone || '',
@@ -61,147 +60,107 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
     fetchPartners();
   }, [mode, initialData, profile]);
 
-  const mutation = useMutation({
-    mutationFn: async (payload: any) => {
-      const cleanPayload = {
-        name: payload.name,
-        type: payload.type, // Теперь тут всегда person или company
-        contact_person: payload.contact_person,
-        phone: payload.phone,
-        email: payload.email,
-        requisites: payload.requisites,
-        lead_source: payload.lead_source,
-        partner_id: payload.lead_source === 'partner' && payload.partner_id ? payload.partner_id : null,
-        manager_id: payload.manager_id || null,
-        updated_at: new Date().toISOString(),
-        updated_by: profile.id
-      };
-
-      if (mode === 'create') {
-        (cleanPayload as any).created_by = profile.id;
-      }
-
-      if (mode === 'edit') {
-        const { error } = await supabase.from('clients').update(cleanPayload).eq('id', initialData.id);
-        if (error) throw error;
-
-        // Notify manager if changed
-        if (initialData.manager_id !== payload.manager_id && payload.manager_id && payload.manager_id !== profile.id) {
-          const managerName = staff.find(s => s.id === payload.manager_id)?.full_name || 'Менеджер';
-          
-          const telegramMsg = `${managerName}, 👤 Вам назначен клиент\n\n` +
-            `<b>🏢 Клиент:</b> ${payload.name}\n` +
-            `<b>👨‍💼 Кто назначил:</b> ${profile.full_name}\n` +
-            `<b>📞 Телефон:</b> ${payload.phone || 'Не указан'}`;
-
-          await createNotification(
-            payload.manager_id, 
-            `Вам назначен клиент: ${payload.name}`, 
-            `#clients/${initialData.id}`,
-            telegramMsg
-          );
-        }
-      } else {
-        const { data, error } = await supabase.from('clients').insert([cleanPayload]).select('id').single();
-        if (error) throw error;
-
-        // Notify manager
-        if (payload.manager_id && payload.manager_id !== profile.id) {
-          const managerName = staff.find(s => s.id === payload.manager_id)?.full_name || 'Менеджер';
-          
-          const telegramMsg = `${managerName}, 👤 Вам назначен новый клиент\n\n` +
-            `<b>🏢 Клиент:</b> ${payload.name}\n` +
-            `<b>👨‍💼 Кто назначил:</b> ${profile.full_name}\n` +
-            `<b>📞 Телефон:</b> ${payload.phone || 'Не указан'}`;
-
-          await createNotification(
-            payload.manager_id, 
-            `Вам назначен новый клиент: ${payload.name}`, 
-            `#clients/${data.id}`,
-            telegramMsg
-          );
-        }
-      }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['clients'] });
-      onSuccess();
-    },
-    onError: (error: any) => {
-      console.error('Client save error:', error);
-      alert('Ошибка при сохранении: ' + error.message);
-    }
-  });
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    mutation.mutate(formData);
+    
+    const cleanPayload = {
+      name: formData.name,
+      type: formData.type,
+      contact_person: formData.contact_person || null,
+      phone: formData.phone || null,
+      email: formData.email || null,
+      requisites: formData.requisites || null,
+      lead_source: formData.lead_source || null,
+      partner_id: formData.lead_source === 'partner' && formData.partner_id ? formData.partner_id : null,
+      manager_id: formData.manager_id || null,
+    };
+
+    if (mode === 'create') {
+      createClient.mutate({
+        payload: {
+          ...cleanPayload,
+          created_by: profile.id
+        },
+        staff,
+        profile
+      }, {
+        onSuccess: onSuccess
+      });
+    } else {
+      updateClient.mutate({
+        payload: {
+          id: initialData.id,
+          ...cleanPayload,
+          updated_by: profile.id
+        },
+        initialData,
+        staff,
+        profile
+      }, {
+        onSuccess: onSuccess
+      });
+    }
   };
 
-  const managers = staff.filter(s => s.role === 'manager' || s.role === 'director');
+  const isPending = createClient.isPending || updateClient.isPending;
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      <Input 
-        label="Имя / Название компании" 
-        required 
-        value={formData.name} 
-        onChange={(e: any) => setFormData({...formData, name: e.target.value})} 
-        icon="person" 
-      />
-      <div className="grid grid-cols-2 gap-4">
+    <form onSubmit={handleSubmit} className="space-y-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Input label="Имя / Название" required value={formData.name} onChange={(e: any) => setFormData({...formData, name: e.target.value})} icon="badge" />
         <Select 
-          label="Тип" 
-          value={formData.type} 
-          onChange={(e: any) => setFormData({...formData, type: e.target.value as 'person' | 'company'})} // Изменено
-          options={[{ value: 'person', label: 'Физлицо' }, { value: 'company', label: 'Компания' }]} // Изменено
-          icon="category"
-        />
-        <Select 
-          label="Менеджер" 
-          value={formData.manager_id} 
-          onChange={(e: any) => setFormData({...formData, manager_id: e.target.value})}
-          options={[{ value: '', label: 'Не выбран' }, ...managers.map(s => ({ value: s.id, label: s.full_name }))]}
-          icon="support_agent"
+            label="Тип клиента" 
+            value={formData.type} 
+            onChange={(e: any) => setFormData({...formData, type: e.target.value})} 
+            options={[
+                { value: 'person', label: 'Физическое лицо' }, 
+                { value: 'company', label: 'Юридическое лицо' }
+            ]} 
+            icon="category" 
         />
       </div>
 
       {formData.type === 'company' && (
-        <Input label="Контактное лицо" value={formData.contact_person} onChange={(e: any) => setFormData({...formData, contact_person: e.target.value})} icon="account_box" placeholder="Напр: Иванов Иван" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <Input label="Контактное лицо" value={formData.contact_person} onChange={(e: any) => setFormData({...formData, contact_person: e.target.value})} icon="person" />
+            <Input label="Реквизиты (УНП)" value={formData.requisites} onChange={(e: any) => setFormData({...formData, requisites: e.target.value})} icon="description" />
+        </div>
       )}
 
-      {/* MARKETING BLOCK */}
-      <div className="bg-blue-50 p-4 rounded-2xl border border-blue-100 space-y-4">
-          <p className="text-[10px] font-bold text-blue-400 uppercase tracking-widest ml-1">Маркетинг (Откуда пришел)</p>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Select 
-                  label="Источник" 
-                  value={formData.lead_source} 
-                  onChange={(e: any) => setFormData({...formData, lead_source: e.target.value})}
-                  options={SOURCES}
-                  icon="campaign"
-              />
-              {formData.lead_source === 'partner' && (
-                  <Select 
-                      label="Выберите партнера" 
-                      value={formData.partner_id} 
-                      onChange={(e: any) => setFormData({...formData, partner_id: e.target.value})}
-                      options={[{value: '', label: 'Выберите...'}, ...partners.map(p => ({ value: p.id, label: p.name }))]}
-                      icon="handshake"
-                      className="animate-in fade-in slide-in-from-left-2"
-                  />
-              )}
-          </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Input label="Телефон" type="tel" value={formData.phone} onChange={(e: any) => setFormData({...formData, phone: e.target.value})} icon="phone" />
+        <Input label="Email" type="email" value={formData.email} onChange={(e: any) => setFormData({...formData, email: e.target.value})} icon="email" />
       </div>
 
-      <div className="grid grid-cols-2 gap-4">
-        <Input label="Телефон" value={formData.phone} onChange={(e: any) => setFormData({...formData, phone: e.target.value})} icon="phone" />
-        <Input label="Email" type="email" value={formData.email} onChange={(e: any) => setFormData({...formData, email: e.target.value})} icon="alternate_email" />
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Select 
+            label="Источник лида" 
+            value={formData.lead_source} 
+            onChange={(e: any) => setFormData({...formData, lead_source: e.target.value})} 
+            options={SOURCES} 
+            icon="campaign" 
+        />
+        
+        {formData.lead_source === 'partner' ? (
+            <Select 
+                label="Выберите партнера" 
+                value={formData.partner_id} 
+                onChange={(e: any) => setFormData({...formData, partner_id: e.target.value})} 
+                options={[{value: '', label: 'Не выбран'}, ...partners.map(p => ({value: p.id, label: p.name}))]} 
+                icon="handshake" 
+            />
+        ) : (
+            <Select 
+                label="Менеджер" 
+                value={formData.manager_id} 
+                onChange={(e: any) => setFormData({...formData, manager_id: e.target.value})} 
+                options={[{value: '', label: 'Без менеджера'}, ...staff.map(s => ({value: s.id, label: s.full_name}))]} 
+                icon="support_agent" 
+            />
+        )}
       </div>
-      
-      <Input label="Адрес / Реквизиты" value={formData.requisites} onChange={(e: any) => setFormData({...formData, requisites: e.target.value})} icon="location_on" />
 
-      <Button type="submit" className="w-full h-14" loading={mutation.isPending} icon="save">
+      <Button type="submit" className="w-full h-14" loading={isPending} icon="save">
         {mode === 'edit' ? 'Сохранить изменения' : 'Создать клиента'}
       </Button>
     </form>

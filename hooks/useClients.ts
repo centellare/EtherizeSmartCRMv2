@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../components/ui';
+import { ClientDTO } from '../types/dto';
 
 export const useClients = (profileId?: string) => {
   const queryClient = useQueryClient();
@@ -9,20 +11,21 @@ export const useClients = (profileId?: string) => {
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['clients'],
     queryFn: async () => {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('clients')
         .select('*, manager:profiles!fk_clients_manager(full_name), objects!fk_objects_client(id, name, is_deleted), partner:partners(id, name)')
         .is('deleted_at', null)
         .order('name');
-      return data || []; 
+      
+      if (error) throw error;
+      return data as unknown as ClientDTO[]; 
     },
     enabled: !!profileId
   });
 
   const deleteClient = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from('clients').update({ deleted_at: new Date().toISOString() }).eq('id', id);
-      if (error) throw error;
+      await api.softDelete('clients', id);
     },
     onSuccess: () => {
       toast.success('Клиент удален');

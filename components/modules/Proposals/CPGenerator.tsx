@@ -1,8 +1,11 @@
-
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase } from '../../../lib/supabase';
 import { Button, Input, Select, Badge, ProductImage, Drawer, useToast } from '../../ui';
 import { Product } from '../../../types';
+import { useProducts } from '../../../hooks/useProducts';
+import { useObjects } from '../../../hooks/useObjects';
+import { useInventoryStock } from '../../../hooks/useInventory';
+import { useProposal } from '../../../hooks/useProposals';
+import { useProposalMutations } from '../../../hooks/useProposalMutations';
 
 interface CPGeneratorProps {
   profile: any;
@@ -26,14 +29,22 @@ interface CartItem {
   manual_markup_percent: number;
   is_bundle_header?: boolean;
   is_manual_price?: boolean; // New: flag to lock auto-calculation
+  
+  // Helpers for mapping back to DB
+  db_id?: string;
+  parent_db_id?: string | null;
 }
 
 const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialObjectId, onSuccess, onCancel }) => {
-  const [products, setProducts] = useState<Product[]>([]);
-  const [objects, setObjects] = useState<any[]>([]);
-  const [stockMap, setStockMap] = useState<Record<string, number>>({});
-  const [loading, setLoading] = useState(false);
   const toast = useToast();
+
+  // Queries
+  const { data: products = [] } = useProducts();
+  const { data: objects = [] } = useObjects();
+  const { data: stockMap = {} } = useInventoryStock();
+  const { data: proposal, isLoading: isLoadingProposal } = useProposal(proposalId || null);
+  
+  const { saveProposalWithItems } = useProposalMutations();
 
   // Settings
   const [title, setTitle] = useState('');
@@ -55,53 +66,26 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
   // Product Details Drawer
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
 
+  // Initialize from Proposal
   useEffect(() => {
-    const init = async () => {
-      setLoading(true);
-      try {
-        const [prodRes, objRes, stockRes] = await Promise.all([
-          supabase.from('products').select('*').eq('is_archived', false).order('category').order('name'),
-          supabase.from('objects').select('id, name, address, client:clients(id, name)').is('is_deleted', false).order('name'),
-          supabase.from('inventory_items').select('product_id, quantity').eq('status', 'in_stock').is('deleted_at', null)
-        ]);
+    if (proposal && products.length > 0) {
+        setTitle(proposal.title || '');
+        if (proposal.client) setLinkedClient(proposal.client as any);
+        if (proposal.object_id) setSelectedObjectId(proposal.object_id);
         
-        if (prodRes.data) setProducts(prodRes.data as unknown as Product[]);
-        if (objRes.data) setObjects(objRes.data);
-        if (stockRes.data) {
-            const stocks = stockRes.data.reduce((acc: Record<string, number>, item: any) => {
-                acc[item.product_id] = (acc[item.product_id] || 0) + item.quantity;
-                return acc;
-            }, {});
-            setStockMap(stocks);
-        }
+        setHasVat(proposal.has_vat);
+        setPreamble(proposal.preamble || '');
+        setFooter(proposal.footer || '');
 
-        if (initialObjectId && !proposalId && objRes.data) {
-            const targetObj = objRes.data.find((o: any) => o.id === initialObjectId);
-            if (targetObj) setSelectedObjectId(targetObj.id);
-        }
-
-        if (proposalId) {
-          const { data: cp } = await supabase.from('commercial_proposals').select('*, client:clients(id, name)').eq('id', proposalId).single();
-          if (cp) {
-            const cpData = cp as any;
-            setTitle(cpData.title || '');
-            setLinkedClient(cpData.client);
-            if (cpData.object_id) setSelectedObjectId(cpData.object_id);
-            setHasVat(cpData.has_vat || false);
-            setPreamble(cpData.preamble || '');
-            setFooter(cpData.footer || '');
-
-            const { data: items } = await supabase.from('cp_items').select('*').eq('cp_id', proposalId);
-            if (items) {
-              const dbIdToUiId: Record<string, string> = {};
-              
-              const mappedItems: CartItem[] = items.map((i: any) => {
-                  const uiId = Math.random().toString(36).substr(2, 9);
-                  dbIdToUiId[i.id] = uiId;
-                  const liveProd = (prodRes.data as unknown as Product[])?.find(p => p.id === i.product_id);
-                  const isBundleHeader = !i.product_id;
-                  
-                  return {
+        if (proposal.items && proposal.items.length > 0) {
+            const dbIdToUiId: Record<string, string> = {};
+            const mappedItems: CartItem[] = proposal.items.map((i: any) => {
+                const uiId = Math.random().toString(36).substr(2, 9);
+                dbIdToUiId[i.id] = uiId;
+                const liveProd = products.find(p => p.id === i.product_id);
+                const isBundleHeader = !i.product_id;
+                
+                return {
                     unique_id: uiId,
                     db_id: i.id, 
                     parent_db_id: i.parent_id,
@@ -115,27 +99,32 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
                     retail_price: i.price_at_moment || 0,
                     manual_markup_percent: i.manual_markup || 0,
                     is_bundle_header: isBundleHeader,
-                    is_manual_price: isBundleHeader, 
+                    is_manual_price: isBundleHeader, // Assume manual price for bundles loaded from DB
                     parent_unique_id: null 
-                  };
-              });
+                };
+            });
 
-              mappedItems.forEach(item => {
-                  if ((item as any).parent_db_id) {
-                      item.parent_unique_id = dbIdToUiId[(item as any).parent_db_id] || null;
-                  }
-              });
+            // Reconstruct hierarchy
+            mappedItems.forEach(item => {
+                if (item.parent_db_id) {
+                    item.parent_unique_id = dbIdToUiId[item.parent_db_id] || null;
+                }
+            });
 
-              setCart(mappedItems);
-            }
-          }
+            setCart(mappedItems);
         }
-      } catch (e: any) { toast.error('Ошибка: ' + e.message); }
-      setLoading(false);
-    };
-    init();
-  }, [proposalId, initialObjectId]);
+    }
+  }, [proposal, products]);
 
+  // Initialize from Initial Object
+  useEffect(() => {
+      if (initialObjectId && !proposalId && objects.length > 0) {
+          const targetObj = objects.find((o: any) => o.id === initialObjectId);
+          if (targetObj) setSelectedObjectId(targetObj.id);
+      }
+  }, [initialObjectId, proposalId, objects]);
+
+  // Update Client when Object changes
   useEffect(() => {
       if (selectedObjectId) {
           const obj = objects.find(o => o.id === selectedObjectId);
@@ -331,9 +320,8 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
   const handleSave = async () => {
     if (!linkedClient) { toast.error('Выберите объект с клиентом'); return; }
     if (cart.length === 0) { toast.error('Корзина пуста'); return; }
-    setLoading(true);
+    
     try {
-      let cpId = proposalId;
       const headerPayload = {
         title: title || null,
         client_id: linkedClient.id,
@@ -347,68 +335,23 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
         footer: footer || null
       };
 
-      if (cpId) {
-        await supabase.from('commercial_proposals').update(headerPayload as any).eq('id', cpId);
-        await supabase.from('cp_items').delete().eq('cp_id', cpId); 
-      } else {
-        const { data, error } = await supabase.from('commercial_proposals').insert([headerPayload as any]).select('id').single();
-        if (error) throw error;
-        cpId = data.id;
-      }
+      // Prepare items with calculated prices
+      const itemsToSave = cart.map(item => ({
+          ...item,
+          final_price_byn: calculateItemTotal(item) / item.quantity,
+          price_at_moment: calculateItemPrice(item),
+      }));
 
-      if (cpId) {
-        const roots = cart.filter(c => !c.parent_unique_id);
-        const children = cart.filter(c => c.parent_unique_id);
-        const idMap: Record<string, string> = {};
-
-        if (roots.length > 0) {
-            const rootPayloads = roots.map(item => ({
-                cp_id: cpId,
-                product_id: item.product_id,
-                quantity: item.quantity,
-                final_price_byn: calculateItemTotal(item) / item.quantity,
-                price_at_moment: calculateItemPrice(item),
-                manual_markup: item.manual_markup_percent,
-                snapshot_name: item.name,
-                snapshot_description: item.description,
-                snapshot_unit: item.unit,
-                snapshot_global_category: item.category,
-                parent_id: null
-            }));
-            
-            const { data: insertedRoots, error: rootError } = await supabase.from('cp_items').insert(rootPayloads).select('id');
-            if (rootError) throw rootError;
-            
-            if (insertedRoots) {
-                insertedRoots.forEach((row, idx) => {
-                    idMap[roots[idx].unique_id] = row.id;
-                });
-            }
-        }
-
-        if (children.length > 0) {
-            const childPayloads = children.map(item => ({
-                cp_id: cpId,
-                product_id: item.product_id,
-                quantity: item.quantity,
-                final_price_byn: calculateItemTotal(item) / item.quantity,
-                price_at_moment: calculateItemPrice(item),
-                manual_markup: item.manual_markup_percent,
-                snapshot_name: item.name,
-                snapshot_description: item.description,
-                snapshot_unit: item.unit,
-                snapshot_global_category: item.category,
-                parent_id: item.parent_unique_id ? idMap[item.parent_unique_id] : null
-            }));
-            
-            const { error: childError } = await supabase.from('cp_items').insert(childPayloads);
-            if (childError) throw childError;
-        }
-      }
-      toast.success('КП успешно сохранено');
+      await saveProposalWithItems.mutateAsync({
+          header: headerPayload,
+          items: itemsToSave,
+          cpId: proposalId || undefined
+      });
+      
       onSuccess();
-    } catch (e: any) { toast.error('Ошибка: ' + e.message); }
-    setLoading(false);
+    } catch (e: any) { 
+        // Error handled in mutation
+    }
   };
 
   const groupedCatalog = useMemo(() => {
@@ -442,6 +385,8 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
       });
       return output;
   };
+
+  const isSaving = saveProposalWithItems.isPending;
 
   return (
     <div className="flex flex-col h-[calc(100vh-280px)] min-h-[600px] gap-4">
@@ -481,7 +426,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
             </button>
           </div>
           <Button variant="ghost" onClick={onCancel}>Отмена</Button>
-          <Button icon="save" onClick={handleSave} loading={loading}>Сохранить</Button>
+          <Button icon="save" onClick={handleSave} loading={isSaving}>Сохранить</Button>
         </div>
       </div>
 
@@ -529,8 +474,6 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
                 <div className="p-10 text-center text-slate-400">Товары не найдены</div>
             ) : (
                 groupedCatalog.map(([cat, items]) => {
-                    // Logic inverted: if expandedCategories HAS category -> show it. Default (empty) -> Hide.
-                    // BUT: if search is active -> show everything matching
                     const isExpanded = expandedCategories.has(cat) || search.length > 0;
                     
                     return (

@@ -1,9 +1,9 @@
 import React, { useMemo } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { Partner } from '../../../types';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { PartnerDTO } from '../../../types/dto';
 
 interface PartnerStatsProps {
-  partners: Partner[];
+  partners: PartnerDTO[];
 }
 
 export const PartnerStats: React.FC<PartnerStatsProps> = ({ partners }) => {
@@ -12,7 +12,7 @@ export const PartnerStats: React.FC<PartnerStatsProps> = ({ partners }) => {
       .map(p => ({
         name: p.name,
         clients: p.total_clients || 0,
-        revenue: p.total_revenue || 0 // Assuming this is populated or we calculate it
+        revenue: 0 // Placeholder as we don't calculate revenue yet
       }))
       .sort((a, b) => b.clients - a.clients);
   }, [partners]);

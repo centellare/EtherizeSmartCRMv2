@@ -1,10 +1,9 @@
-
 import React, { useState, useEffect } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Input, Select, MultiSelect } from '../../../ui';
 import { getMinskISODate } from '../../../../lib/dateUtils';
-import { createNotification } from '../../../../lib/notifications';
+import { useTaskMutations } from '../../../../hooks/useTaskMutations';
 
 interface TaskModalProps {
   mode: 'create' | 'edit';
@@ -16,7 +15,7 @@ interface TaskModalProps {
 }
 
 export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile, staff, objects, onSuccess }) => {
-  const queryClient = useQueryClient();
+  const { createTask, updateTask } = useTaskMutations();
   const [formData, setFormData] = useState({
     id: '', 
     object_id: '', 
@@ -107,185 +106,76 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
     }));
   };
 
-  const mutation = useMutation({
-    mutationFn: async () => {
-      if (!formData.object_id) throw new Error('Выберите объект');
-      if (!formData.title.trim()) throw new Error('Введите название задачи');
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData.object_id) {
+      alert('Выберите объект');
+      return;
+    }
+    if (!formData.title.trim()) {
+      alert('Введите название задачи');
+      return;
+    }
 
-      if (mode === 'edit') {
-        if (!formData.assigned_to) throw new Error('Выберите исполнителя');
-        
-        let taskId = formData.id;
-        const { error } = await supabase.from('tasks').update({
+    if (mode === 'edit') {
+      if (!formData.assigned_to) {
+        alert('Выберите исполнителя');
+        return;
+      }
+      
+      updateTask.mutate({
+        payload: {
+          id: formData.id,
           object_id: formData.object_id,
           title: formData.title,
           assigned_to: formData.assigned_to,
           start_date: formData.start_date,
-          deadline: formData.deadline || null,
-          comment: formData.comment,
-          doc_link: formData.doc_link,
-          doc_name: formData.doc_name,
-          last_edited_at: new Date().toISOString(),
-          last_edited_by: profile.id
-        }).eq('id', formData.id);
-
-        if (error) throw error;
-
-        // Notify if assignee changed
-        if (initialData.assigned_to !== formData.assigned_to && formData.assigned_to !== profile.id) {
-          const assignedToName = staff.find(s => s.id === formData.assigned_to)?.full_name || 'Сотрудник';
-          const objectName = objects.find(o => o.id === formData.object_id)?.name || 'Объект';
-          const deadlineStr = formData.deadline ? new Date(formData.deadline).toLocaleDateString('ru-RU') : 'Не указан';
-          
-          const telegramMsg = `<b>📋 Вам назначена задача</b>\n\n` +
-            `<b>👤 Кому:</b> ${assignedToName}\n` +
-            `<b>👨‍💼 От кого:</b> ${profile.full_name}\n` +
-            `<b>🏠 Объект:</b> ${objectName}\n` +
-            `<b>📅 Дедлайн:</b> ${deadlineStr}\n` +
-            `<b>📝 Задача:</b> ${formData.title}`;
-
-          await createNotification(
-            formData.assigned_to, 
-            `Вам назначена задача: ${formData.title}`, 
-            `#tasks/${taskId}`,
-            telegramMsg
-          );
-        }
-
-        // Update checklists and questions for edit mode
-        const currentIds = formData.checklist.filter(c => c.id).map(c => c.id);
-        if (currentIds.length > 0) {
-          await supabase.from('task_checklists').delete().eq('task_id', taskId).not('id', 'in', `(${currentIds.join(',')})`);
-        } else {
-          await supabase.from('task_checklists').delete().eq('task_id', taskId);
-        }
-
-        const currentQIds = formData.questions.filter(q => q.id).map(q => q.id);
-        if (currentQIds.length > 0) {
-          await supabase.from('task_questions').delete().eq('task_id', taskId).not('id', 'in', `(${currentQIds.join(',')})`);
-        } else {
-          await supabase.from('task_questions').delete().eq('task_id', taskId);
-        }
-
-        const itemsToUpsert = formData.checklist
-          .filter(c => c.content.trim() !== '')
-          .map(c => ({
-            ...(c.id ? { id: c.id } : {}),
-            task_id: taskId,
-            content: c.content,
-            is_completed: c.is_completed || false
-          }));
-
-        if (itemsToUpsert.length > 0) {
-          const { error: chkError } = await supabase.from('task_checklists').upsert(itemsToUpsert);
-          if (chkError) throw chkError;
-        }
-
-        const questionsToUpsert = formData.questions
-          .filter(q => q.question.trim() !== '')
-          .map(q => ({
-            ...(q.id ? { id: q.id } : {}),
-            task_id: taskId,
-            question: q.question,
-            answer: q.answer || null,
-            created_by: profile.id
-          }));
-
-        if (questionsToUpsert.length > 0) {
-          const { error: qError } = await supabase.from('task_questions').upsert(questionsToUpsert);
-          if (qError) throw qError;
-        }
-
-      } else {
-        // CREATE MODE
-        if (formData.assigned_to_multiple.length === 0) throw new Error('Выберите хотя бы одного исполнителя');
-
-        const selectedObject = objects.find(o => o.id === formData.object_id);
-        const currentStage = selectedObject?.current_stage || null;
-
-        for (const assigneeId of formData.assigned_to_multiple) {
-          const { data: newTask, error } = await supabase.from('tasks').insert([{
-              object_id: formData.object_id,
-              title: formData.title,
-              assigned_to: assigneeId,
-              start_date: formData.start_date,
-              deadline: formData.deadline || null,
-              comment: formData.comment,
-              doc_link: formData.doc_link || null,
-              doc_name: formData.doc_name || null,
-              created_by: profile.id,
-              stage_id: currentStage,
-              status: 'pending'
-          }]).select('id').single();
-
-          if (error) throw error;
-          const taskId = newTask.id;
-
-          // Notify assignee
-          if (assigneeId !== profile.id) {
-            const assignedToName = staff.find(s => s.id === assigneeId)?.full_name || 'Сотрудник';
-            const objectName = selectedObject?.name || 'Объект';
-            const deadlineStr = formData.deadline ? new Date(formData.deadline).toLocaleDateString('ru-RU') : 'Не указан';
-            
-            const telegramMsg = `<b>📋 Вам назначена новая задача</b>\n\n` +
-              `<b>👤 Кому:</b> ${assignedToName}\n` +
-              `<b>👨‍💼 От кого:</b> ${profile.full_name}\n` +
-              `<b>🏠 Объект:</b> ${objectName}\n` +
-              `<b>📅 Дедлайн:</b> ${deadlineStr}\n` +
-              `<b>📝 Задача:</b> ${formData.title}`;
-
-            await createNotification(
-              assigneeId, 
-              `Вам назначена новая задача: ${formData.title}`, 
-              `#tasks/${taskId}`,
-              telegramMsg
-            );
-          }
-
-          // Insert checklists for this task
-          const itemsToInsert = formData.checklist
-            .filter(c => c.content.trim() !== '')
-            .map(c => ({
-              task_id: taskId,
-              content: c.content,
-              is_completed: false
-            }));
-
-          if (itemsToInsert.length > 0) {
-            const { error: chkError } = await supabase.from('task_checklists').insert(itemsToInsert);
-            if (chkError) throw chkError;
-          }
-
-          // Insert questions for this task
-          const questionsToInsert = formData.questions
-            .filter(q => q.question.trim() !== '')
-            .map(q => ({
-              task_id: taskId,
-              question: q.question,
-              answer: null,
-              created_by: profile.id
-            }));
-
-          if (questionsToInsert.length > 0) {
-            const { error: qError } = await supabase.from('task_questions').insert(questionsToInsert);
-            if (qError) throw qError;
-          }
-        }
+          deadline: formData.deadline || undefined,
+          comment: formData.comment || undefined,
+          doc_link: formData.doc_link || undefined,
+          doc_name: formData.doc_name || undefined,
+          checklist: formData.checklist,
+          questions: formData.questions,
+          updated_by: profile.id
+        },
+        initialData,
+        objects,
+        staff,
+        profile
+      }, {
+        onSuccess: onSuccess
+      });
+    } else {
+      if (formData.assigned_to_multiple.length === 0) {
+        alert('Выберите хотя бы одного исполнителя');
+        return;
       }
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['tasks'] });
-      onSuccess();
-    },
-    onError: (error: any) => {
-      alert(`Ошибка: ${error.message || 'Не удалось сохранить'}`);
-    }
-  });
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    mutation.mutate();
+      createTask.mutate({
+        payload: {
+          object_id: formData.object_id,
+          title: formData.title,
+          assigned_to_multiple: formData.assigned_to_multiple,
+          start_date: formData.start_date,
+          deadline: formData.deadline || undefined,
+          comment: formData.comment || undefined,
+          doc_link: formData.doc_link || undefined,
+          doc_name: formData.doc_name || undefined,
+          checklist: formData.checklist,
+          questions: formData.questions,
+          created_by: profile.id
+        },
+        objects,
+        staff,
+        profile
+      }, {
+        onSuccess: onSuccess
+      });
+    }
   };
+
+  const isPending = createTask.isPending || updateTask.isPending;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -375,7 +265,7 @@ export const TaskModal: React.FC<TaskModalProps> = ({ mode, initialData, profile
         <label className="block text-xs font-medium text-[#444746] mb-1.5 ml-1">Описание / ТЗ</label>
         <textarea className="w-full bg-white border border-slate-200 rounded-2xl p-4 text-sm outline-none focus:border-blue-500" rows={3} placeholder="Описание / детали..." value={formData.comment} onChange={(e) => setFormData({...formData, comment: e.target.value})} />
         </div>
-        <Button type="submit" className="w-full h-14" loading={mutation.isPending}>{mode === 'edit' ? 'Сохранить изменения' : 'Создать задачу'}</Button>
+        <Button type="submit" className="w-full h-14" loading={isPending}>{mode === 'edit' ? 'Сохранить изменения' : 'Создать задачу'}</Button>
     </form>
   );
 };

@@ -1,9 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../../lib/supabase';
 import { Button, Input, Select } from '../../../ui';
-import { createNotification } from '../../../../lib/notifications';
+import { useObjectMutations } from '../../../../hooks/useObjectMutations';
 
 interface ObjectFormProps {
   mode: 'create' | 'edit';
@@ -18,7 +17,8 @@ interface ObjectFormProps {
 export const ObjectForm: React.FC<ObjectFormProps> = ({ 
   mode, initialData, clients, staff, profile, initialClientId, onSuccess 
 }) => {
-  const queryClient = useQueryClient();
+  const { createObject, updateObject } = useObjectMutations();
+  
   const [formData, setFormData] = useState({ 
     name: '', 
     address: '', 
@@ -48,75 +48,47 @@ export const ObjectForm: React.FC<ObjectFormProps> = ({
     }
   }, [mode, initialData, initialClientId, profile]);
 
-  const mutation = useMutation({
-    mutationFn: async (payload: any) => {
-      let error;
-      if (mode === 'edit' && initialData) {
-        const res = await supabase.from('objects').update(payload).eq('id', initialData.id);
-        error = res.error;
-
-        // Notify responsible if changed
-        if (initialData.responsible_id !== payload.responsible_id && payload.responsible_id && payload.responsible_id !== profile.id) {
-          const clientName = clients.find(c => c.id === payload.client_id)?.name || 'Не указан';
-          const responsibleName = staff.find(s => s.id === payload.responsible_id)?.full_name || 'Сотрудник';
-          
-          const telegramMsg = `${responsibleName}, 🏠 Вам назначен объект\n\n` +
-            `<b>🏗 Объект:</b> ${payload.name}\n` +
-            `<b>📍 Адрес:</b> ${payload.address || 'Не указан'}\n` +
-            `<b>👨‍💼 Кто назначил:</b> ${profile.full_name}\n` +
-            `<b>👤 Клиент:</b> ${clientName}`;
-
-          await createNotification(
-            payload.responsible_id, 
-            `Вам назначен объект: ${payload.name}`, 
-            `#objects/${initialData.id}`,
-            telegramMsg
-          );
-        }
-      } else {
-        const { data: newObject, error: insertError } = await supabase.from('objects').insert([{ 
-          ...payload, 
-          created_by: profile.id, 
-          current_stage: 'negotiation', 
-          current_status: 'in_work' 
-        }]).select('id').single();
-        error = insertError;
-
-        // Notify responsible
-        if (newObject && payload.responsible_id && payload.responsible_id !== profile.id) {
-          const clientName = clients.find(c => c.id === payload.client_id)?.name || 'Не указан';
-          const responsibleName = staff.find(s => s.id === payload.responsible_id)?.full_name || 'Сотрудник';
-          
-          const telegramMsg = `${responsibleName}, 🏠 Вам назначен новый объект\n\n` +
-            `<b>🏗 Объект:</b> ${payload.name}\n` +
-            `<b>📍 Адрес:</b> ${payload.address || 'Не указан'}\n` +
-            `<b>👨‍💼 Кто назначил:</b> ${profile.full_name}\n` +
-            `<b>👤 Клиент:</b> ${clientName}`;
-
-          await createNotification(
-            payload.responsible_id, 
-            `Вам назначен новый объект: ${payload.name}`, 
-            `#objects/${newObject.id}`,
-            telegramMsg
-          );
-        }
-      }
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-      onSuccess();
-    },
-    onError: (error: any) => {
-      alert('Ошибка при сохранении: ' + error.message);
-    }
-  });
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const payload = { ...formData, updated_by: profile.id, updated_at: new Date().toISOString() };
-    mutation.mutate(payload);
+    
+    const cleanPayload = {
+      name: formData.name,
+      address: formData.address || null,
+      client_id: formData.client_id,
+      responsible_id: formData.responsible_id,
+      comment: formData.comment || null
+    };
+
+    if (mode === 'create') {
+      createObject.mutate({
+        payload: {
+          ...cleanPayload,
+          created_by: profile.id
+        },
+        clients,
+        staff,
+        profile
+      }, {
+        onSuccess: onSuccess
+      });
+    } else {
+      updateObject.mutate({
+        payload: {
+          id: initialData.id,
+          ...cleanPayload,
+          updated_by: profile.id
+        },
+        initialData,
+        clients,
+        staff,
+        profile
+      }, {
+        onSuccess: onSuccess
+      });
+    }
   };
+
+  const isPending = createObject.isPending || updateObject.isPending;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
@@ -146,7 +118,7 @@ export const ObjectForm: React.FC<ObjectFormProps> = ({
         />
       </div>
 
-      <Button type="submit" className="w-full h-14" loading={mutation.isPending} icon="save">
+      <Button type="submit" className="w-full h-14" loading={isPending} icon="save">
         {mode === 'edit' ? 'Сохранить изменения' : 'Создать объект'}
       </Button>
     </form>
