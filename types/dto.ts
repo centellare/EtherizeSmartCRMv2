@@ -193,6 +193,7 @@ export interface ProfileDTO {
   phone?: string | null;
   birth_date?: string | null;
   avatar_url?: string | null;
+  last_seen_at?: string | null;
   is_approved: boolean;
   created_at: string;
   updated_at: string;

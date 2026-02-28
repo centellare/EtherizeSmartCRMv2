@@ -1,8 +1,9 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Badge, Button, Modal, Input, Select, ConfirmModal } from '../ui';
+import { useTeamMembers, useTeamTasksStats } from '../../hooks/useTeam';
+import { useTeamMutations } from '../../hooks/useTeamMutations';
 import { supabase } from '../../lib/supabase';
-import { Badge, Button, Modal, Input, Select, ConfirmModal, useToast } from '../ui';
 
 const ROLES = [
   { value: 'admin', label: 'Администратор' },
@@ -12,16 +13,19 @@ const ROLES = [
   { value: 'specialist', label: 'Специалист' }
 ];
 
-// Define User Role Type explicitly locally if not imported
 type UserRole = 'admin' | 'director' | 'manager' | 'specialist' | 'storekeeper';
 
 const Team: React.FC<{ profile: any }> = ({ profile }) => {
-  const queryClient = useQueryClient();
-  const toast = useToast();
+  const { data: members = [], isLoading: isMembersLoading } = useTeamMembers();
+  const { data: tasks = [] } = useTeamTasksStats();
+  const { approveMember, blockMember, deleteMember, saveMember, uploadAvatar } = useTeamMutations();
   
   // Search & Filter
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
+
+  // Presence State
+  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
 
   // Modals
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -34,40 +38,41 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
     role: 'specialist' as UserRole, 
     phone: '', 
     birth_date: '',
-    password: '' // New field
+    password: '',
+    avatar_url: ''
   });
+
+  // Presence Tracking
+  useEffect(() => {
+    const channel = supabase.channel('online-users', {
+      config: {
+        presence: {
+          key: profile?.id,
+        },
+      },
+    });
+
+    channel
+      .on('presence', { event: 'sync' }, () => {
+        const state = channel.presenceState();
+        const onlineIds = Object.keys(state);
+        setOnlineUsers(onlineIds);
+      })
+      .subscribe(async (status) => {
+        if (status === 'SUBSCRIBED') {
+          await channel.track({ online_at: new Date().toISOString() });
+        }
+      });
+
+    return () => {
+      channel.unsubscribe();
+    };
+  }, [profile?.id]);
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'director';
 
-  // --- QUERIES ---
-
-  const { data: members = [], isLoading: isMembersLoading } = useQuery({
-    queryKey: ['team'],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .is('deleted_at', null)
-        .in('role', ['admin', 'director', 'manager', 'specialist', 'storekeeper']) // Filter out clients and partners
-        .order('full_name');
-      return data || [];
-    }
-  });
-
   const pendingMembers = useMemo(() => members.filter((m: any) => m.is_approved === false), [members]);
   const activeMembers = useMemo(() => members.filter((m: any) => m.is_approved !== false), [members]);
-
-  const { data: tasks = [] } = useQuery({
-    queryKey: ['team_tasks_stats'],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('tasks')
-        .select('assigned_to, status, deadline')
-        .is('is_deleted', false)
-        .eq('status', 'pending');
-      return data || [];
-    }
-  });
 
   const filteredMembers = useMemo(() => {
     return activeMembers.filter((m: any) => {
@@ -78,30 +83,9 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
     });
   }, [activeMembers, search, roleFilter]);
 
-  const handleApprove = async (memberId: string) => {
-    const { error } = await supabase.from('profiles').update({ is_approved: true }).eq('id', memberId);
-    if (!error) {
-      toast.success('Сотрудник подтвержден');
-      queryClient.invalidateQueries({ queryKey: ['team'] });
-    } else {
-      toast.error('Ошибка подтверждения');
-    }
-  };
-
-  const handleBlock = async (memberId: string) => {
-    if (!window.confirm('Заблокировать доступ этому сотруднику?')) return;
-    const { error } = await supabase.from('profiles').update({ is_approved: false }).eq('id', memberId);
-    if (!error) {
-      toast.success('Доступ заблокирован');
-      queryClient.invalidateQueries({ queryKey: ['team'] });
-    } else {
-      toast.error('Ошибка блокировки');
-    }
-  };
-
   const handleOpenCreate = () => {
     setSelectedMember(null);
-    setFormData({ full_name: '', email: '', role: 'specialist', phone: '', birth_date: '', password: '' });
+    setFormData({ full_name: '', email: '', role: 'specialist', phone: '', birth_date: '', password: '', avatar_url: '' });
     setIsEditModalOpen(true);
   };
 
@@ -114,7 +98,8 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
       role: (member.role as UserRole) || 'specialist',
       phone: member.phone || '',
       birth_date: member.birth_date || '',
-      password: ''
+      password: '',
+      avatar_url: member.avatar_url || ''
     });
     setIsEditModalOpen(true);
   };
@@ -122,117 +107,33 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Explicit casting to match Supabase types for Role
-    const payload = {
-        full_name: formData.full_name,
-        role: formData.role, // This is already typed as UserRole
-        phone: formData.phone,
-        birth_date: formData.birth_date
-    };
-
-    if (selectedMember) {
-      // Update Profile
-      const { error: profileError } = await supabase.from('profiles').update(payload).eq('id', selectedMember.id);
-      
-      if (profileError) {
-        toast.error('Ошибка обновления профиля');
-        return;
+    saveMember.mutate({
+      id: selectedMember?.id,
+      formData: {
+        ...formData,
+        email_changed: selectedMember ? formData.email !== selectedMember.email : false
       }
+    }, {
+      onSuccess: () => setIsEditModalOpen(false)
+    });
+  };
 
-      // Update Credentials (Email/Password) via RPC if changed
-      if (formData.email !== selectedMember.email || formData.password) {
-        const { error: credsError } = await supabase.rpc('admin_update_user_credentials', {
-          target_user_id: selectedMember.id,
-          new_email: formData.email !== selectedMember.email ? formData.email : null,
-          new_password: formData.password || null
-        });
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !selectedMember) return;
 
-        if (credsError) {
-          console.error('Credentials update error:', credsError);
-          toast.error('Профиль обновлен, но не удалось изменить email/пароль');
-        } else {
-          toast.success('Профиль и данные входа обновлены');
-        }
-      } else {
-        toast.success('Профиль обновлен');
+    uploadAvatar.mutate({ userId: selectedMember.id, file }, {
+      onSuccess: (url) => {
+        setFormData(prev => ({ ...prev, avatar_url: url }));
       }
-
-      setIsEditModalOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['team'] });
-
-    } else {
-      // Create New User (Admin Flow)
-      if (!formData.password) {
-        toast.error('Для создания пользователя необходим пароль');
-        return;
-      }
-
-      // 1. Create User in Auth (using secondary client to avoid logout)
-      // We use a trick: createClient with persistSession: false is needed.
-      // But we don't have service_role key on client.
-      // However, we can use signUp. Since we are admin, we can just signUp a new user?
-      // No, signUp logs you in.
-      // We need to use the secondary client (supabaseAdmin) defined in lib/supabase.ts
-      
-      // Import supabaseAdmin dynamically or use the one from props/context if available.
-      // Actually we need to import it at top level.
-      
-      try {
-        // We need to import supabaseAdmin from lib/supabase
-        const { supabaseAdmin } = await import('../../lib/supabase');
-        
-        const { data: authData, error: authError } = await supabaseAdmin.auth.signUp({
-          email: formData.email,
-          password: formData.password,
-          options: {
-            data: {
-              full_name: formData.full_name,
-              // We DON'T pass role here to avoid security issues with the trigger.
-              // The trigger will create a 'specialist' / 'unapproved' profile.
-            }
-          }
-        });
-
-        if (authError) {
-          toast.error('Ошибка создания пользователя: ' + authError.message);
-          return;
-        }
-
-        if (authData.user) {
-          // 2. Immediately update profile to set correct role and approve
-          const { error: rpcError } = await supabase.rpc('admin_update_profile', {
-            target_user_id: authData.user.id,
-            new_role: formData.role,
-            new_approval_status: true
-          });
-
-          if (rpcError) {
-             toast.error('Пользователь создан, но ошибка при назначении роли: ' + rpcError.message);
-          } else {
-             toast.success('Сотрудник успешно создан и подтвержден');
-             setIsEditModalOpen(false);
-             queryClient.invalidateQueries({ queryKey: ['team'] });
-          }
-        }
-      } catch (err: any) {
-        toast.error('Критическая ошибка: ' + err.message);
-      }
-    }
+    });
   };
 
   const handleDelete = async () => {
     if (!selectedMember) return;
-    const { error } = await supabase.from('profiles').update({ 
-      deleted_at: new Date().toISOString() 
-    }).eq('id', selectedMember.id);
-    
-    if (!error) {
-      setIsDeleteModalOpen(false);
-      queryClient.invalidateQueries({ queryKey: ['team'] });
-      toast.success('Сотрудник уволен');
-    } else {
-      toast.error('Ошибка при удалении');
-    }
+    deleteMember.mutate(selectedMember.id, {
+      onSuccess: () => setIsDeleteModalOpen(false)
+    });
   };
 
   const getUserInitials = (name: string) => {
@@ -241,10 +142,41 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
 
   const getMemberStats = (memberId: string) => {
     const today = new Date().toISOString().split('T')[0];
-    const userTasks = tasks.filter(t => t.assigned_to === memberId);
-    const overdue = userTasks.filter(t => t.deadline && t.deadline < today);
-    return { active: userTasks.length, overdue: overdue.length };
+    const userTasks = tasks.filter((t: any) => t.assigned_to === memberId);
+    
+    const overdue = userTasks.filter((t: any) => t.deadline && t.deadline < today);
+    const inWork = userTasks.filter((t: any) => t.status === 'in_progress');
+    const pending = userTasks.filter((t: any) => t.status === 'pending');
+    
+    return { 
+      total: userTasks.length, 
+      overdue: overdue.length,
+      inWork: inWork.length,
+      pending: pending.length
+    };
   };
+
+  const formatLastSeen = (dateString: string | null) => {
+    if (!dateString) return 'Неизвестно';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diff = now.getTime() - date.getTime();
+    
+    if (diff < 60000) return 'Только что';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)} мин. назад`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)} ч. назад`;
+    
+    return date.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  };
+
+  if (isMembersLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24">
+        <div className="w-10 h-10 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mb-4"></div>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Загрузка команды...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-in fade-in duration-500">
@@ -291,16 +223,20 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
             {pendingMembers.map((member: any) => (
               <div key={member.id} className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-amber-600 font-bold shadow-sm">
-                    {getUserInitials(member.full_name)}
-                  </div>
+                  {member.avatar_url ? (
+                    <img src={member.avatar_url} alt={member.full_name} className="w-10 h-10 rounded-full object-cover shadow-sm border border-white" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className="w-10 h-10 bg-white rounded-full flex items-center justify-center text-amber-600 font-bold shadow-sm">
+                      {getUserInitials(member.full_name)}
+                    </div>
+                  )}
                   <div>
                     <p className="font-bold text-slate-900 text-sm">{member.full_name}</p>
                     <p className="text-xs text-slate-500">{member.email}</p>
                   </div>
                 </div>
                 <div className="flex gap-2">
-                   <Button variant="primary" onClick={() => handleApprove(member.id)} icon="check" className="h-8 text-xs">
+                   <Button variant="primary" onClick={() => approveMember.mutate(member.id)} icon="check" className="h-8 text-xs" loading={approveMember.isPending}>
                      Принять
                    </Button>
                    <Button variant="secondary" className="bg-white h-8 text-xs" onClick={() => { setSelectedMember(member); setIsDeleteModalOpen(true); }} icon="close">
@@ -317,30 +253,41 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
         {filteredMembers.map(member => {
           const stats = getMemberStats(member.id);
           const isSelf = member.id === profile.id;
+          const isOnline = onlineUsers.includes(member.id);
 
           return (
-            <div key={member.id} className="bg-white rounded-[32px] border border-[#e1e2e1] p-6 hover:shadow-lg transition-all flex flex-col items-center text-center group">
+            <div key={member.id} className="bg-white rounded-[32px] border border-[#e1e2e1] p-6 hover:shadow-lg transition-all flex flex-col items-center text-center group relative">
               <div className="relative mb-4">
-                <div className={`w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold border-4 border-white shadow-sm ${
-                  member.role === 'admin' ? 'bg-red-50 text-red-600' :
-                  member.role === 'director' ? 'bg-purple-50 text-purple-600' :
-                  member.role === 'manager' ? 'bg-blue-50 text-blue-600' :
-                  member.role === 'storekeeper' ? 'bg-amber-50 text-amber-600' :
-                  'bg-emerald-50 text-emerald-600'
-                }`}>
-                  {getUserInitials(member.full_name)}
+                <div className="relative">
+                  {member.avatar_url ? (
+                    <img src={member.avatar_url} alt={member.full_name} className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-sm" referrerPolicy="no-referrer" />
+                  ) : (
+                    <div className={`w-20 h-20 rounded-full flex items-center justify-center text-2xl font-bold border-4 border-white shadow-sm ${
+                      member.role === 'admin' ? 'bg-red-50 text-red-600' :
+                      member.role === 'director' ? 'bg-purple-50 text-purple-600' :
+                      member.role === 'manager' ? 'bg-blue-50 text-blue-600' :
+                      member.role === 'storekeeper' ? 'bg-amber-50 text-amber-600' :
+                      'bg-emerald-50 text-emerald-600'
+                    }`}>
+                      {getUserInitials(member.full_name)}
+                    </div>
+                  )}
+                  
+                  {/* Online Indicator */}
+                  <div className={`absolute bottom-0 right-0 w-5 h-5 rounded-full border-4 border-white shadow-sm ${isOnline ? 'bg-emerald-500' : 'bg-slate-300'}`} title={isOnline ? 'В сети' : 'Не в сети'} />
                 </div>
+
                 {isSelf && (
-                  <div className="absolute -bottom-1 -right-1 bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center border-2 border-white" title="Это вы">
+                  <div className="absolute -top-1 -right-1 bg-blue-600 text-white w-7 h-7 rounded-full flex items-center justify-center border-2 border-white" title="Это вы">
                     <span className="material-icons-round text-xs">face</span>
                   </div>
                 )}
               </div>
 
               <h4 className="text-lg font-bold text-slate-900 leading-tight mb-1">{member.full_name}</h4>
-              <p className="text-xs text-slate-400 mb-4">{member.email}</p>
+              <p className="text-xs text-slate-400 mb-2">{member.email}</p>
               
-              <div className="mb-6">
+              <div className="flex flex-col items-center gap-2 mb-4">
                 <Badge color={
                   member.role === 'admin' ? 'red' : 
                   member.role === 'director' ? 'purple' : 
@@ -349,12 +296,23 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
                 }>
                   {ROLES.find(r => r.value === member.role)?.label.toUpperCase() || member.role}
                 </Badge>
+                <span className="text-[10px] text-slate-400 font-medium">
+                  {isOnline ? 'В сети' : `Был: ${formatLastSeen(member.last_seen_at || member.updated_at)}`}
+                </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 w-full pt-4 border-t border-slate-50 mb-6">
+              <div className="grid grid-cols-2 gap-y-4 gap-x-2 w-full pt-4 border-t border-slate-50 mb-6">
                 <div className="flex flex-col">
-                  <span className="text-sm font-bold text-slate-900">{stats.active}</span>
+                  <span className="text-sm font-bold text-slate-900">{stats.total}</span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Всего</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-sm font-bold text-blue-600">{stats.inWork}</span>
                   <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">В работе</span>
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-sm font-bold text-amber-600">{stats.pending}</span>
+                  <span className="text-[10px] text-slate-400 font-bold uppercase tracking-tight">Новые</span>
                 </div>
                 <div className="flex flex-col">
                   <span className={`text-sm font-bold ${stats.overdue > 0 ? 'text-red-500' : 'text-slate-900'}`}>{stats.overdue}</span>
@@ -362,7 +320,7 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
                 </div>
               </div>
 
-              <div className="flex gap-2 w-full">
+              <div className="flex gap-2 w-full mt-auto">
                 {member.phone ? (
                   <a href={`tel:${member.phone}`} className="flex-1 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 hover:bg-blue-50 hover:text-blue-600 transition-colors">
                     <span className="material-icons-round text-lg">call</span>
@@ -385,9 +343,10 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
                     {!isSelf && (
                       <>
                         <button 
-                          onClick={(e) => { e.stopPropagation(); handleBlock(member.id); }}
+                          onClick={(e) => { e.stopPropagation(); blockMember.mutate(member.id); }}
                           className="flex-1 h-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-600 hover:bg-amber-50 hover:text-amber-600 transition-colors"
                           title="Заблокировать доступ"
+                          disabled={blockMember.isPending}
                         >
                           <span className="material-icons-round text-lg">block</span>
                         </button>
@@ -421,6 +380,27 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
         onClose={() => setIsEditModalOpen(false)} 
         title={selectedMember ? "Редактирование сотрудника" : "Добавление сотрудника"}
       >
+        <div className="flex flex-col items-center mb-6">
+          <div className="relative group">
+            {formData.avatar_url ? (
+              <img src={formData.avatar_url} alt="Avatar" className="w-24 h-24 rounded-full object-cover border-4 border-slate-50 shadow-md" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="w-24 h-24 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 border-4 border-slate-50 shadow-md">
+                <span className="material-icons-round text-4xl">person</span>
+              </div>
+            )}
+            {selectedMember && (
+              <label className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer">
+                <span className="material-icons-round text-white">photo_camera</span>
+                <input type="file" className="hidden" accept="image/jpeg,image/png" onChange={handleAvatarUpload} />
+              </label>
+            )}
+          </div>
+          {selectedMember && (
+            <p className="text-[10px] text-slate-400 mt-2 uppercase font-bold tracking-wider">Нажмите, чтобы изменить фото (до 1МБ)</p>
+          )}
+        </div>
+
         <form onSubmit={handleSave} className="space-y-4">
           <Input 
             label="ФИО сотрудника" 
@@ -472,7 +452,7 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
           />
           
           <div className="pt-4">
-            <Button type="submit" className="w-full h-14" loading={false} icon={selectedMember ? "save" : "person_add"}>
+            <Button type="submit" className="w-full h-14" loading={saveMember.isPending} icon={selectedMember ? "save" : "person_add"}>
               {selectedMember ? 'Сохранить изменения' : 'Создать сотрудника'}
             </Button>
           </div>
@@ -491,10 +471,11 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
         title="Увольнение сотрудника" 
         message={`Вы уверены, что хотите уволить сотрудника ${selectedMember?.full_name}? Доступ в систему будет закрыт, но история задач сохранится.`} 
         confirmLabel="Да, уволить"
-        loading={false}
+        loading={deleteMember.isPending}
       />
     </div>
   );
 };
 
 export default Team;
+

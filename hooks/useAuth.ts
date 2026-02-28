@@ -13,6 +13,8 @@ export interface Profile {
   birth_date?: string;
   deleted_at?: string | null;
   is_approved?: boolean;
+  avatar_url?: string | null;
+  last_seen_at?: string | null;
 }
 
 export const useAuth = () => {
