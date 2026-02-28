@@ -10,7 +10,7 @@ export const useObjects = () => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('objects')
-        .select('*, client:clients(id, name)')
+        .select('*, client:clients(id, name), responsible:profiles!responsible_id(id, full_name, role)')
         .is('is_deleted', false)
         .order('updated_at', { ascending: false });
 

@@ -3,6 +3,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { Badge, Button, Modal, Input, Select, ConfirmModal } from '../ui';
 import { useTeamMembers, useTeamTasksStats } from '../../hooks/useTeam';
 import { useTeamMutations } from '../../hooks/useTeamMutations';
+import { useOnlineUsers } from '../../hooks/useOnlineUsers';
 import { supabase } from '../../lib/supabase';
 
 const ROLES = [
@@ -19,13 +20,11 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
   const { data: members = [], isLoading: isMembersLoading } = useTeamMembers();
   const { data: tasks = [] } = useTeamTasksStats();
   const { approveMember, blockMember, deleteMember, saveMember, uploadAvatar } = useTeamMutations();
+  const onlineUsers = useOnlineUsers(profile?.id);
   
   // Search & Filter
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
-
-  // Presence State
-  const [onlineUsers, setOnlineUsers] = useState<string[]>([]);
 
   // Modals
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -41,33 +40,6 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
     password: '',
     avatar_url: ''
   });
-
-  // Presence Tracking
-  useEffect(() => {
-    const channel = supabase.channel('online-users', {
-      config: {
-        presence: {
-          key: profile?.id,
-        },
-      },
-    });
-
-    channel
-      .on('presence', { event: 'sync' }, () => {
-        const state = channel.presenceState();
-        const onlineIds = Object.keys(state);
-        setOnlineUsers(onlineIds);
-      })
-      .subscribe(async (status) => {
-        if (status === 'SUBSCRIBED') {
-          await channel.track({ online_at: new Date().toISOString() });
-        }
-      });
-
-    return () => {
-      channel.unsubscribe();
-    };
-  }, [profile?.id]);
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'director';
 

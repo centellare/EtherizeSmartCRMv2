@@ -1,11 +1,13 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../lib/supabase';
 import { Modal, Input, Button, Badge, useToast } from './ui';
 import { isModuleAllowed } from '../lib/access';
 import CommandPalette from './CommandPalette';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTeamMutations } from '../hooks/useTeamMutations';
+import { useOnlineUsers } from '../hooks/useOnlineUsers';
+import { useTeamMembers } from '../hooks/useTeam';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -25,9 +27,16 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
   const [unreadCount, setUnreadCount] = useState(0);
   
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
+  const [isOnlineUsersOpen, setIsOnlineUsersOpen] = useState(false);
   const queryClient = useQueryClient();
   const toast = useToast();
   const { uploadAvatar } = useTeamMutations();
+  const onlineUsers = useOnlineUsers(profile?.id);
+  const { data: members = [] } = useTeamMembers();
+
+  const onlineProfiles = useMemo(() => {
+    return members.filter(m => onlineUsers.includes(m.id));
+  }, [members, onlineUsers]);
 
   useEffect(() => {
     if (profile) {
@@ -364,6 +373,52 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
             <div className="flex items-center gap-2 px-2 md:px-3 py-1 bg-slate-50 rounded-full border border-slate-100">
                <div className={`w-2 h-2 rounded-full ${isLive ? 'bg-emerald-500 animate-pulse' : 'bg-red-400'}`}></div>
                <span className={`text-[10px] font-bold uppercase tracking-widest hidden sm:inline ${isLive ? 'text-emerald-600' : 'text-red-400'}`}>{isLive ? 'Live' : 'Offline'}</span>
+            </div>
+
+            <div className="relative">
+              <button 
+                onClick={() => setIsOnlineUsersOpen(!isOnlineUsersOpen)}
+                className={`flex items-center gap-2 px-2 md:px-3 py-1 rounded-full border transition-all ${
+                  isOnlineUsersOpen ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-slate-50 border-slate-100 text-slate-600 hover:bg-slate-100'
+                }`}
+                title="Кто онлайн"
+              >
+                <span className="material-icons-round text-sm">group</span>
+                <span className="text-[10px] font-bold">{onlineUsers.length}</span>
+              </button>
+              
+              {isOnlineUsersOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setIsOnlineUsersOpen(false)}></div>
+                  <div className="absolute top-12 right-0 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 p-4 z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 px-1">Сейчас онлайн</h4>
+                    <div className="space-y-3 max-h-64 overflow-y-auto pr-1 scrollbar-hide">
+                      {onlineProfiles.length > 0 ? (
+                        onlineProfiles.map((u: any) => (
+                          <div key={u.id} className="flex items-center gap-3 group">
+                            <div className="relative">
+                              <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 overflow-hidden border border-slate-200">
+                                {u.avatar_url ? (
+                                  <img src={u.avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                ) : (
+                                  u.full_name?.charAt(0) || '?'
+                                )}
+                              </div>
+                              <div className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 rounded-full border-2 border-white"></div>
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-900 truncate">{u.full_name}</p>
+                              <p className="text-[10px] text-slate-400 uppercase tracking-tighter">{u.role}</p>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-xs text-slate-400 italic text-center py-2">Никого нет</p>
+                      )}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
             <button onClick={() => setActiveModule('notifications')} className={`w-10 h-10 rounded-full flex items-center justify-center transition-colors relative ${activeModule === 'notifications' ? 'bg-[#d3e4ff] text-[#001d3d]' : 'hover:bg-[#f3f5f7] text-[#444746]'}`}>
               <span className="material-icons-round">notifications</span>

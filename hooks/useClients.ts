@@ -13,7 +13,7 @@ export const useClients = (profileId?: string) => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('clients')
-        .select('*, manager:profiles!fk_clients_manager(full_name), objects!fk_objects_client(id, name, is_deleted), partner:partners(id, name)')
+        .select('*, manager:profiles!fk_clients_manager(full_name, role), objects!fk_objects_client(id, name, is_deleted), partner:partners(id, name)')
         .is('deleted_at', null)
         .order('name');
       

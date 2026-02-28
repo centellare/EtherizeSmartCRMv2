@@ -108,7 +108,13 @@ export const TaskList: React.FC<TaskListProps> = ({
                       </>
                     )}
                     <div className="flex items-center gap-2">
-                      <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 overflow-hidden">
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold overflow-hidden ${
+                        task.executor?.role === 'admin' ? 'bg-red-50 text-red-600' :
+                        task.executor?.role === 'director' ? 'bg-purple-50 text-purple-600' :
+                        task.executor?.role === 'manager' ? 'bg-blue-50 text-blue-600' :
+                        task.executor?.role === 'storekeeper' ? 'bg-amber-50 text-amber-600' :
+                        'bg-emerald-50 text-emerald-600'
+                      }`}>
                         {task.executor?.avatar_url ? (
                           <img src={task.executor.avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                         ) : (

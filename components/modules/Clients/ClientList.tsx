@@ -80,7 +80,13 @@ export const ClientList: React.FC<ClientListProps> = ({
 
             <div className="pt-4 border-t border-[#f2f3f5] flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 overflow-hidden">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold overflow-hidden ${
+                  client.manager?.role === 'admin' ? 'bg-red-50 text-red-600' :
+                  client.manager?.role === 'director' ? 'bg-purple-50 text-purple-600' :
+                  client.manager?.role === 'manager' ? 'bg-blue-50 text-blue-600' :
+                  client.manager?.role === 'storekeeper' ? 'bg-amber-50 text-amber-600' :
+                  'bg-emerald-50 text-emerald-600'
+                }`}>
                   {client.manager?.avatar_url ? (
                     <img src={client.manager.avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (

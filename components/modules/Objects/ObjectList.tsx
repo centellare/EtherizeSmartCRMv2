@@ -129,7 +129,13 @@ export const ObjectList: React.FC<ObjectListProps> = ({
               </div>
               
               <div className="flex items-center gap-2 pt-1">
-                <div className="w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center text-[10px] font-bold text-blue-600 border border-blue-100 overflow-hidden">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border overflow-hidden ${
+                  obj.responsible?.role === 'admin' ? 'bg-red-50 text-red-600 border-red-100' :
+                  obj.responsible?.role === 'director' ? 'bg-purple-50 text-purple-600 border-purple-100' :
+                  obj.responsible?.role === 'manager' ? 'bg-blue-50 text-blue-600 border-blue-100' :
+                  obj.responsible?.role === 'storekeeper' ? 'bg-amber-50 text-amber-600 border-amber-100' :
+                  'bg-emerald-50 text-emerald-600 border-emerald-100'
+                }`}>
                   {obj.responsible?.avatar_url ? (
                     <img src={obj.responsible.avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
