@@ -273,8 +273,12 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
         <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2">Ответственный</p>
             <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold">
-                {task.executor?.full_name?.charAt(0)}
+                <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold overflow-hidden">
+                {task.executor?.avatar_url ? (
+                    <img src={task.executor.avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                    task.executor?.full_name?.charAt(0)
+                )}
                 </div>
                 <p className="text-sm font-bold text-slate-800">{task.executor?.full_name}</p>
             </div>

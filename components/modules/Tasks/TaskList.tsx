@@ -107,7 +107,16 @@ export const TaskList: React.FC<TaskListProps> = ({
                         <span className="w-1 h-1 rounded-full bg-slate-300"></span>
                       </>
                     )}
-                    <span className="text-xs text-slate-400">{task.executor?.full_name}</span>
+                    <div className="flex items-center gap-2">
+                      <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 overflow-hidden">
+                        {task.executor?.avatar_url ? (
+                          <img src={task.executor.avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                        ) : (
+                          task.executor?.full_name?.charAt(0) || '?'
+                        )}
+                      </div>
+                      <span className="text-xs text-slate-400">{task.executor?.full_name}</span>
+                    </div>
                     {task.checklist && task.checklist.length > 0 && (
                       <div className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded text-[9px] font-bold text-slate-600 ml-2">
                         <span className="material-icons-round text-[10px]">checklist</span>

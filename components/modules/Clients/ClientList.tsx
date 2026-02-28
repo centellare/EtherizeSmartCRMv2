@@ -80,8 +80,12 @@ export const ClientList: React.FC<ClientListProps> = ({
 
             <div className="pt-4 border-t border-[#f2f3f5] flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500">
-                  {client.manager?.full_name?.charAt(0) || '?'}
+                <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 overflow-hidden">
+                  {client.manager?.avatar_url ? (
+                    <img src={client.manager.avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    client.manager?.full_name?.charAt(0) || '?'
+                  )}
                 </div>
                 <span className="text-xs text-[#444746]">{client.manager?.full_name?.split(' ')[0] || 'Нет менеджера'}</span>
               </div>

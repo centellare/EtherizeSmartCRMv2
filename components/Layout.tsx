@@ -5,6 +5,7 @@ import { Modal, Input, Button, Badge, useToast } from './ui';
 import { isModuleAllowed } from '../lib/access';
 import CommandPalette from './CommandPalette';
 import { useQueryClient } from '@tanstack/react-query';
+import { useTeamMutations } from '../hooks/useTeamMutations';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -26,6 +27,7 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
   const [isCommandPaletteOpen, setIsCommandPaletteOpen] = useState(false);
   const queryClient = useQueryClient();
   const toast = useToast();
+  const { uploadAvatar } = useTeamMutations();
 
   useEffect(() => {
     if (profile) {
@@ -184,6 +186,21 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
     setIsMobileMenuOpen(false);
   };
 
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !profile) return;
+
+    try {
+      setLoading(true);
+      await uploadAvatar.mutateAsync({ userId: profile.id, file });
+      await onProfileUpdate();
+    } catch (error: any) {
+      // Error handled by mutation
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const userInitials = profile?.full_name 
     ? profile.full_name.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
     : '??';
@@ -195,7 +212,19 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
       <Modal isOpen={isProfileModalOpen} onClose={() => setIsProfileModalOpen(false)} title="Настройки профиля">
         <form onSubmit={handleProfileUpdate} className="space-y-6">
           <div className="flex flex-col items-center mb-6">
-            <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white text-2xl font-bold mb-3 shadow-lg">{userInitials}</div>
+            <div className="relative group">
+              <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-white text-2xl font-bold mb-3 shadow-lg overflow-hidden border-2 border-white">
+                {profile?.avatar_url ? (
+                  <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  userInitials
+                )}
+              </div>
+              <label className="absolute inset-0 flex items-center justify-center bg-black/40 text-white rounded-full opacity-0 group-hover:opacity-100 cursor-pointer transition-opacity">
+                <span className="material-icons-round text-xl">photo_camera</span>
+                <input type="file" className="hidden" accept="image/jpeg,image/png" onChange={handleAvatarUpload} />
+              </label>
+            </div>
             <h4 className="text-lg font-bold text-slate-900">{profile?.full_name}</h4>
             <div className="flex gap-2 mt-1"><Badge color="blue">{profile?.role?.toUpperCase() || 'USER'}</Badge></div>
           </div>
@@ -286,7 +315,13 @@ const Layout: React.FC<LayoutProps> = ({ children, profile, activeModule, setAct
         <div className="p-4 border-t border-[#e1e2e1] bg-white/50">
           <div className="bg-white rounded-2xl p-4 border border-[#e1e2e1] shadow-sm">
             <div className="flex items-center gap-3 mb-3">
-              <div onClick={() => setIsProfileModalOpen(true)} className="w-10 h-10 rounded-full bg-[#eff1f8] border border-[#d3e4ff] flex items-center justify-center text-[#005ac1] font-bold text-xs cursor-pointer hover:bg-[#d3e4ff] transition-colors">{userInitials}</div>
+              <div onClick={() => setIsProfileModalOpen(true)} className="w-10 h-10 rounded-full bg-[#eff1f8] border border-[#d3e4ff] flex items-center justify-center text-[#005ac1] font-bold text-xs cursor-pointer hover:bg-[#d3e4ff] transition-colors overflow-hidden">
+                {profile?.avatar_url ? (
+                  <img src={profile.avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                ) : (
+                  userInitials
+                )}
+              </div>
               <div className="flex-grow min-w-0">
                 <p className="text-sm font-bold text-[#1c1b1f] truncate leading-tight">{profile?.full_name || 'Загрузка...'}</p>
                 <div className="mt-1"><Badge color="slate">{profile?.role || 'user'}</Badge></div>

@@ -118,8 +118,12 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
                         <div key={member.id} className="flex items-start group hover:bg-slate-50 rounded-xl transition-colors py-2">
                             {/* User Info */}
                             <div className="w-48 shrink-0 flex items-center gap-3 pl-2 mt-1">
-                                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500">
-                                    {member.full_name.charAt(0)}
+                                <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-[10px] font-bold text-slate-500 overflow-hidden">
+                                    {member.avatar_url ? (
+                                        <img src={member.avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                    ) : (
+                                        member.full_name.charAt(0)
+                                    )}
                                 </div>
                                 <div className="min-w-0">
                                     <p className="text-xs font-bold text-slate-800 truncate">{member.full_name}</p>

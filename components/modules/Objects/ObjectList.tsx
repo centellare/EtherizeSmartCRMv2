@@ -129,8 +129,12 @@ export const ObjectList: React.FC<ObjectListProps> = ({
               </div>
               
               <div className="flex items-center gap-2 pt-1">
-                <div className="w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center text-[10px] font-bold text-blue-600 border border-blue-100">
-                  {obj.responsible?.full_name?.charAt(0) || '?'}
+                <div className="w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center text-[10px] font-bold text-blue-600 border border-blue-100 overflow-hidden">
+                  {obj.responsible?.avatar_url ? (
+                    <img src={obj.responsible.avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  ) : (
+                    obj.responsible?.full_name?.charAt(0) || '?'
+                  )}
                 </div>
                 <p className="text-xs text-slate-500 font-medium truncate">
                   <span className="text-slate-400">Отв:</span> {obj.responsible?.full_name || 'Не назначен'}

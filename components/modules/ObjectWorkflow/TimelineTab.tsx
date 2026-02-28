@@ -59,18 +59,19 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ object, profile }) => 
           
           let profiles: any[] = [];
           if (profileIds.length > 0) {
-             const { data } = await supabase.from('profiles').select('id, full_name').in('id', profileIds);
+             const { data } = await supabase.from('profiles').select('id, full_name, avatar_url').in('id', profileIds);
              profiles = data || [];
           }
           
           const profileMap = profiles.reduce((acc: any, p: any) => {
-              acc[p.id] = p.full_name;
+              acc[p.id] = { full_name: p.full_name, avatar_url: p.avatar_url };
               return acc;
           }, {});
 
           historyWithProfiles = historyData.map((h: any) => ({
               ...h,
-              user_name: h.profile_id ? (profileMap[h.profile_id] || 'Неизвестный') : 'Система'
+              user_name: h.profile_id ? (profileMap[h.profile_id]?.full_name || 'Неизвестный') : 'Система',
+              avatar_url: h.profile_id ? profileMap[h.profile_id]?.avatar_url : null
           }));
       }
 
@@ -100,6 +101,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ object, profile }) => 
               title: `Новая задача: ${t.title}`,
               description: `Исполнитель: ${t.executor?.full_name}`,
               user_name: t.creator?.full_name,
+              meta: { avatar_url: t.creator?.avatar_url },
               icon: 'assignment_add',
               color: 'blue'
           });
@@ -112,6 +114,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ object, profile }) => 
                   title: `Выполнена задача: ${t.title}`,
                   description: t.completion_comment || undefined,
                   user_name: t.executor?.full_name, // Assuming executor completed it
+                  meta: { avatar_url: t.executor?.avatar_url },
                   icon: 'task_alt',
                   color: 'emerald'
               });
@@ -128,6 +131,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ object, profile }) => 
               title: `Отгрузка на объект: ${prodName}`,
               description: i.comment,
               user_name: i.profile?.full_name,
+              meta: { avatar_url: i.profile?.avatar_url },
               icon: 'local_shipping',
               color: 'indigo'
           });
@@ -143,6 +147,7 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ object, profile }) => 
               title: `${isIncome ? 'План прихода' : 'Запрос расхода'}: ${t.amount} BYN`,
               description: t.category,
               user_name: t.creator?.full_name,
+              meta: { avatar_url: t.creator?.avatar_url },
               icon: isIncome ? 'add_card' : 'request_quote',
               color: isIncome ? 'emerald' : 'amber'
           });
@@ -297,8 +302,12 @@ export const TimelineTab: React.FC<TimelineTabProps> = ({ object, profile }) => 
                                             )}
                                             {event.user_name && (
                                                 <div className="mt-3 flex items-center gap-1.5">
-                                                    <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px] text-slate-500 font-bold">
-                                                        {event.user_name.charAt(0)}
+                                                    <div className="w-5 h-5 rounded-full bg-slate-100 flex items-center justify-center text-[10px] text-slate-500 font-bold overflow-hidden">
+                                                        {(event.meta?.avatar_url || (event as any).avatar_url) ? (
+                                                            <img src={event.meta?.avatar_url || (event as any).avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                                                        ) : (
+                                                            event.user_name.charAt(0)
+                                                        )}
                                                     </div>
                                                     <span className="text-[10px] text-slate-400 font-bold">{event.user_name}</span>
                                                 </div>
