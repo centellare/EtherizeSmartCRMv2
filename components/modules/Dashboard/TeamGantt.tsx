@@ -1,10 +1,13 @@
 
 import React, { useMemo, useState } from 'react';
 import { formatDate } from '../../../lib/dateUtils';
+import { Task } from '../../../types';
+import { Profile } from '../../../hooks/useAuth';
+import { getStackedTasks } from './ganttUtils';
 
 interface TeamGanttProps {
-  staff: any[];
-  tasks: any[];
+  staff: Profile[];
+  tasks: Task[];
 }
 
 export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
@@ -43,73 +46,6 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
       return a.full_name.localeCompare(b.full_name);
     });
   }, [staff]);
-
-  // Хелпер для позиционирования и цвета
-  const getTaskStyleInfo = (task: any) => {
-    const taskStart = task.start_date ? new Date(task.start_date) : new Date();
-    const taskEnd = task.deadline ? new Date(task.deadline) : new Date(taskStart);
-    
-    // Если дедлайн не указан, даем задаче длину 1 день
-    if (!task.deadline) taskEnd.setDate(taskEnd.getDate() + 1);
-
-    // Обрезаем по границам вьюпорта
-    const viewStart = rangeConfig.start.getTime();
-    const viewEnd = rangeConfig.end.getTime();
-    const tStart = taskStart.getTime();
-    const tEnd = taskEnd.getTime();
-
-    // Если задача полностью вне диапазона
-    if (tEnd < viewStart || tStart > viewEnd) return null;
-
-    const effectiveStart = Math.max(tStart, viewStart);
-    const effectiveEnd = Math.min(tEnd, viewEnd);
-    
-    const totalDuration = viewEnd - viewStart;
-    const taskDuration = effectiveEnd - effectiveStart;
-    
-    // Вычисляем проценты для CSS
-    const left = ((effectiveStart - viewStart) / totalDuration) * 100;
-    const width = Math.max(((taskDuration) / totalDuration) * 100, 2); // Мин ширина 2%
-
-    let colorClass = 'bg-blue-500';
-    const now = new Date().getTime();
-    
-    if (taskEnd.getTime() < now) colorClass = 'bg-red-500'; // Просрочено
-    else if (taskStart.getTime() > now) colorClass = 'bg-slate-300'; // Будущее
-    
-    return {
-      left: `${left}%`,
-      width: `${width}%`,
-      className: colorClass,
-      tStart,
-      tEnd
-    };
-  };
-
-  // Алгоритм "укладки" задач, чтобы они не слипались
-  const getStackedTasks = (memberTasks: any[]) => {
-    const styledTasks = memberTasks
-      .map(task => ({ task, style: getTaskStyleInfo(task) }))
-      .filter(item => item.style !== null); // Только те, что попадают в экран
-
-    // Сортируем по дате начала
-    styledTasks.sort((a, b) => a.style!.tStart - b.style!.tStart);
-
-    const lanes: number[] = [];
-    const stacked = styledTasks.map(item => {
-      // Ищем первую свободную линию (где конец предыдущей задачи < начала текущей)
-      let laneIndex = lanes.findIndex(laneEnd => laneEnd < item.style!.tStart);
-      if (laneIndex === -1) {
-        laneIndex = lanes.length;
-        lanes.push(item.style!.tEnd);
-      } else {
-        lanes[laneIndex] = item.style!.tEnd;
-      }
-      return { ...item, laneIndex };
-    });
-
-    return { stacked, totalLanes: Math.max(1, lanes.length) };
-  };
 
   return (
     <div className="bg-white p-6 rounded-[32px] border border-slate-200 shadow-sm overflow-hidden flex flex-col">
@@ -171,7 +107,11 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
             <div className="space-y-4 relative z-10">
                 {sortedStaff.map(member => {
                     const memberTasks = tasks.filter(t => t.assigned_to === member.id && t.status !== 'completed');
-                    const { stacked, totalLanes } = getStackedTasks(memberTasks);
+                    const { stacked, totalLanes } = getStackedTasks(
+                        memberTasks, 
+                        rangeConfig.start.getTime(), 
+                        rangeConfig.end.getTime()
+                    );
                     
                     // Show row even if no tasks, to see availability
                     return (
@@ -204,10 +144,10 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
                                     return (
                                         <div
                                             key={task.id}
-                                            className={`absolute h-5 rounded-md shadow-sm border border-white/20 cursor-pointer hover:brightness-110 hover:z-20 transition-all group/task flex items-center px-2 overflow-hidden ${style!.className}`}
+                                            className={`absolute h-5 rounded-md shadow-sm border border-white/20 cursor-pointer hover:brightness-110 hover:z-20 transition-all group/task flex items-center px-2 overflow-hidden ${style.className}`}
                                             style={{ 
-                                                left: style!.left, 
-                                                width: style!.width,
+                                                left: style.left, 
+                                                width: style.width,
                                                 top: `${laneIndex * 24 + 4}px`
                                             }}
                                             onClick={() => window.location.hash = task.object_id ? `objects/${task.object_id}` : 'tasks'}
@@ -219,7 +159,7 @@ export const TeamGantt: React.FC<TeamGanttProps> = ({ staff, tasks }) => {
                                             <div className="opacity-0 group-hover/task:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 mb-2 bg-slate-800 text-white text-[10px] p-2 rounded shadow-lg whitespace-nowrap z-50 pointer-events-none transition-opacity">
                                                 <p className="font-bold">{task.title}</p>
                                                 <p className="text-slate-300">{task.objects?.name}</p>
-                                                <p className="text-slate-400 mt-1">{formatDate(task.deadline)}</p>
+                                                <p className="text-slate-400 mt-1">{formatDate(task.deadline || '')}</p>
                                             </div>
                                         </div>
                                     );

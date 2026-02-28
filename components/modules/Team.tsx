@@ -48,7 +48,7 @@ const Team: React.FC<{ profile: any }> = ({ profile }) => {
         .from('profiles')
         .select('*')
         .is('deleted_at', null)
-        .neq('role', 'client') // Filter out clients
+        .in('role', ['admin', 'director', 'manager', 'specialist', 'storekeeper']) // Filter out clients and partners
         .order('full_name');
       return data || [];
     }

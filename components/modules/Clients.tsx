@@ -3,6 +3,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { Button, Input, Modal, ConfirmModal, Select, Drawer, useToast } from '../ui';
 import { Module } from '../../App';
+import { useClients } from '../../hooks/useClients';
+import { filterClients } from '../../lib/clientUtils';
 
 // Sub-components
 import { ClientList } from './Clients/ClientList';
@@ -36,20 +38,7 @@ const Clients: React.FC<ClientsProps> = ({
 
   // --- QUERIES ---
 
-  const { data: clients = [], isLoading: isClientsLoading } = useQuery({
-    queryKey: ['clients'],
-    queryFn: async () => {
-      const { data } = await supabase
-        .from('clients')
-        .select('*, manager:profiles!fk_clients_manager(full_name), objects!fk_objects_client(id, name, is_deleted), partner:partners(id, name)')
-        .is('deleted_at', null)
-        .order('name');
-      
-      // Теперь возвращаем данные напрямую, так как фронтенд переведен на 'person'
-      return data || []; 
-    },
-    enabled: !!profile?.id
-  });
+  const { clients, isLoading: isClientsLoading, deleteClient } = useClients(profile?.id);
 
   const { data: staff = [] } = useQuery({
     queryKey: ['staff'],
@@ -57,7 +46,8 @@ const Clients: React.FC<ClientsProps> = ({
       const { data } = await supabase
         .from('profiles')
         .select('id, full_name, role')
-        .is('deleted_at', null);
+        .is('deleted_at', null)
+        .in('role', ['admin', 'director', 'manager', 'specialist', 'storekeeper']);
       return data || [];
     },
     staleTime: 1000 * 60 * 5
@@ -74,28 +64,14 @@ const Clients: React.FC<ClientsProps> = ({
   }, [initialClientId, clients]);
 
   const filteredClients = useMemo(() => {
-    return clients.filter((c: any) => {
-      const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                           c.contact_person?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                           c.phone?.includes(searchQuery) || 
-                           c.email?.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesType = typeFilter === 'all' || c.type === typeFilter;
-      return matchesSearch && matchesType;
-    });
+    return filterClients(clients, searchQuery, typeFilter);
   }, [clients, searchQuery, typeFilter]);
 
   const handleDelete = async () => {
     if (!deleteModal.id) return;
-    const { error } = await supabase.from('clients').update({ deleted_at: new Date().toISOString() }).eq('id', deleteModal.id);
-    
-    if (!error) {
-        toast.success('Клиент удален');
-        setDeleteModal({ open: false, id: null });
-        setModalMode('none');
-        queryClient.invalidateQueries({ queryKey: ['clients'] });
-    } else {
-        toast.error('Ошибка при удалении');
-    }
+    await deleteClient.mutateAsync(deleteModal.id);
+    setDeleteModal({ open: false, id: null });
+    setModalMode('none');
   };
 
   const handleCloseModal = () => {

@@ -11,7 +11,7 @@ export const useStaff = () => {
         .from('profiles')
         .select('*')
         .is('deleted_at', null)
-        .neq('role', 'client')
+        .in('role', ['admin', 'director', 'manager', 'specialist', 'storekeeper'])
         .order('full_name');
 
       if (error) throw error;

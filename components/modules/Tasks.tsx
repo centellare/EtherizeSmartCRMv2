@@ -4,7 +4,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase, measureQuery } from '../../lib/supabase';
 import { Modal, ConfirmModal, Button, Drawer, useToast } from '../ui';
 import { Task } from '../../types';
+import { Profile } from '../../hooks/useAuth';
 import { getMinskISODate } from '../../lib/dateUtils';
+import { filterTasks, getOverdueCount, calculateTeamWorkload, TaskTab, FilterMode } from '../../lib/taskUtils';
 
 // Sub-components
 import { TaskFilters } from './Tasks/TaskFilters';
@@ -13,9 +15,6 @@ import { TaskList } from './Tasks/TaskList';
 import { TaskModal } from './Tasks/modals/TaskModal';
 import { TaskDetails } from './Tasks/modals/TaskDetails';
 import { TaskCompletionModal } from './Tasks/modals/TaskCompletionModal';
-
-type FilterMode = 'all' | 'mine' | 'created';
-type TaskTab = 'active' | 'today' | 'week' | 'overdue' | 'team' | 'archive';
 
 const PAGE_SIZE = 50;
 
@@ -43,7 +42,7 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
   
   // Modals state
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'details' | 'completion' | 'none'>('none');
-  const [selectedTask, setSelectedTask] = useState<any>(null);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ open: boolean; id: string | null }>({ open: false, id: null });
 
   const isAdmin = profile?.role === 'admin' || profile?.role === 'director';
@@ -56,8 +55,8 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
   const { data: staff = [] } = useQuery({
     queryKey: ['staff'],
     queryFn: async () => {
-      const { data } = await supabase.from('profiles').select('id, full_name, role').is('deleted_at', null).neq('role', 'client');
-      return data || [];
+      const { data } = await supabase.from('profiles').select('id, full_name, role').is('deleted_at', null).in('role', ['admin', 'director', 'manager', 'specialist', 'storekeeper']);
+      return (data || []) as Profile[];
     },
     staleTime: 1000 * 60 * 5 // 5 minutes
   });
@@ -185,55 +184,16 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
   const baseVisibleTasks = useMemo(() => activeTasks, [activeTasks]);
 
   const overdueCount = useMemo(() => {
-    const todayStr = getMinskISODate();
-    return baseVisibleTasks.filter((t: Task) => t.deadline && t.deadline < todayStr).length;
+    return getOverdueCount(baseVisibleTasks);
   }, [baseVisibleTasks]);
 
   const filteredTasks = useMemo(() => {
     if (activeTab === 'archive') return archiveTasks;
-    const todayStr = getMinskISODate();
-    
-    const tomorrow = new Date();
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const tomorrowStr = getMinskISODate(tomorrow);
-
-    const nextWeek = new Date();
-    nextWeek.setDate(nextWeek.getDate() + 7);
-    const nextWeekStr = getMinskISODate(nextWeek);
-
-    let list = baseVisibleTasks;
-    
-    switch (activeTab) {
-      case 'today': 
-        list = list.filter((t: Task) => {
-          if (!t.deadline) return false;
-          const taskDate = getMinskISODate(t.deadline);
-          return taskDate === todayStr || taskDate === tomorrowStr;
-        });
-        break;
-      case 'week': 
-        list = list.filter((t: Task) => t.deadline && t.deadline >= todayStr && t.deadline <= nextWeekStr);
-        break;
-      case 'overdue': 
-        list = list.filter((t: Task) => t.deadline && t.deadline < todayStr);
-        break;
-      case 'active':
-        if (activeRange.start) {
-          list = list.filter(t => t.deadline && getMinskISODate(t.deadline) >= activeRange.start);
-        }
-        if (activeRange.end) {
-          list = list.filter(t => t.deadline && getMinskISODate(t.deadline) <= activeRange.end);
-        }
-        break;
-    }
-    return list;
+    return filterTasks(baseVisibleTasks, activeTab, activeRange);
   }, [baseVisibleTasks, archiveTasks, activeTab, activeRange]);
 
   const teamWorkload = useMemo(() => {
-    return staff.map(member => {
-      let memberTasks = activeTasks.filter((t: Task) => t.assigned_to === member.id);
-      return { ...member, tasks: memberTasks };
-    }).filter(m => m.tasks.length > 0 || m.role === 'specialist' || m.role === 'manager');
+    return calculateTeamWorkload(staff, activeTasks);
   }, [staff, activeTasks]);
 
   // --- ACTIONS ---
@@ -370,10 +330,15 @@ const Tasks: React.FC<TasksProps> = ({ profile, onNavigateToObject, initialTaskI
                 if (createNew && selectedTask) {
                     const contextText = `--- Контекст из задачи: ${selectedTask.title} ---\nЗадача: ${selectedTask.comment || 'Нет описания'}\nРезультат: ${completionComment || 'Нет отчета'}\n--------------------------------------------------------\n\n`;
                     setSelectedTask({
-                        object_id: selectedTask.object_id,
-                        client_id: selectedTask.client_id,
+                        ...selectedTask,
+                        id: '',
+                        title: '',
+                        status: 'pending',
+                        assigned_to: '',
+                        created_at: '',
+                        created_by: profile.id,
                         comment: contextText
-                    });
+                    } as Task);
                     setModalMode('create');
                 }
             }} 

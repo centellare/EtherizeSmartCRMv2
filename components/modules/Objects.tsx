@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../lib/supabase';
 import { Button, Input, Modal, Select, ConfirmModal, useToast } from '../ui';
 import ObjectWorkflow from './ObjectWorkflow';
+import { useObjectsList } from '../../hooks/useObjectsList';
+import { filterObjects } from '../../lib/objectUtils';
 
 // Sub-components
 import { ObjectList } from './Objects/ObjectList';
@@ -43,16 +45,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
 
   // --- QUERIES ---
 
-  const { data: objects = [], isLoading: isObjectsLoading } = useQuery({
-    queryKey: ['objects'],
-    queryFn: async () => {
-      const { data } = await supabase.from('objects').select('*, client:clients(name), responsible:profiles!responsible_id(full_name), tasks(id, status, is_deleted)').is('is_deleted', false).order('created_at', { ascending: false });
-      return data || [];
-    },
-    enabled: !!profile?.id,
-    refetchInterval: 5000, // Poll every 5 seconds
-    staleTime: 1000
-  });
+  const { objects, isLoading: isObjectsLoading, deleteObject } = useObjectsList(profile?.id);
 
   const { data: clients = [] } = useQuery({
     queryKey: ['clients_list'],
@@ -66,7 +59,7 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
   const { data: staff = [] } = useQuery({
     queryKey: ['staff'],
     queryFn: async () => {
-      const { data } = await supabase.from('profiles').select('id, full_name, role').is('deleted_at', null).neq('role', 'client').order('full_name');
+      const { data } = await supabase.from('profiles').select('id, full_name, role').is('deleted_at', null).in('role', ['admin', 'director', 'manager', 'specialist', 'storekeeper']).order('full_name');
       return data || [];
     },
     staleTime: 1000 * 60 * 5
@@ -97,35 +90,12 @@ const Objects: React.FC<ObjectsProps> = ({ profile, initialObjectId, initialStag
 
   const handleDeleteConfirm = async () => {
     if (!deleteConfirm.id) return;
-    // setLoading(true);
-    const now = new Date().toISOString();
-    try {
-      await supabase.from('objects').update({ is_deleted: true, deleted_at: now, updated_by: profile.id }).eq('id', deleteConfirm.id);
-      await supabase.from('tasks').update({ is_deleted: true, deleted_at: now }).eq('object_id', deleteConfirm.id);
-      await supabase.from('transactions').update({ deleted_at: now }).eq('object_id', deleteConfirm.id);
-      toast.success('Объект и связанные данные перенесены в корзину');
-      setDeleteConfirm({ open: false, id: null }); 
-      queryClient.invalidateQueries({ queryKey: ['objects'] });
-    } catch (err) { toast.error('Ошибка при удалении'); }
-    // setLoading(false);
+    await deleteObject.mutateAsync({ id: deleteConfirm.id, profileId: profile.id });
+    setDeleteConfirm({ open: false, id: null }); 
   };
 
   const filteredObjects = useMemo(() => {
-    return objects.filter((o: any) => {
-      const matchesSearch = o.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                           (o.address && o.address.toLowerCase().includes(searchQuery.toLowerCase())) || 
-                           (o.client && o.client.name.toLowerCase().includes(searchQuery.toLowerCase()));
-      
-      const matchesStatus = statusFilter === 'all' || o.current_status === statusFilter;
-      const matchesResponsible = responsibleFilter === 'all' || o.responsible_id === responsibleFilter;
-      
-      const activeTasksCount = o.tasks?.filter((t: any) => !t.is_deleted && t.status !== 'completed').length || 0;
-      const matchesTaskFilter = taskFilter === 'all' || 
-                               (taskFilter === 'no_tasks' && activeTasksCount === 0) ||
-                               (taskFilter === 'has_tasks' && activeTasksCount > 0);
-      
-      return matchesSearch && matchesStatus && matchesResponsible && matchesTaskFilter;
-    });
+    return filterObjects(objects, searchQuery, statusFilter, responsibleFilter, taskFilter);
   }, [objects, searchQuery, statusFilter, responsibleFilter, taskFilter]);
 
   const handleCloseModal = () => {

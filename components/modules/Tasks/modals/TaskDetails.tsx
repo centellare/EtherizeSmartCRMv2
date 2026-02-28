@@ -138,7 +138,7 @@ export const TaskDetails: React.FC<TaskDetailsProps> = ({
 
   const canEditDelete = () => {
     if (task.status === 'completed') return isAdmin;
-    return isAdmin || task.created_by === profile?.id;
+    return isAdmin || profile?.role === 'director' || task.created_by === profile?.id;
   };
 
   // Determine if user can perform actions (Executor or Admin/Manager)

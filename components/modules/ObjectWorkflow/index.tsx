@@ -83,7 +83,7 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
       const { data: stagesData } = await supabase.from('object_stages').select('*').eq('object_id', object.id).order('created_at', { ascending: true });
       setAllStagesData(stagesData || []);
 
-      const { data: tasksData } = await supabase.from('tasks').select(`*, executor:profiles!assigned_to(id, full_name), creator:profiles!created_by(id, full_name)`).eq('object_id', object.id).is('is_deleted', false).order('created_at', { ascending: false });
+      const { data: tasksData } = await supabase.from('tasks').select(`*, checklist:task_checklists(*), questions:task_questions(*), executor:profiles!assigned_to(id, full_name), creator:profiles!created_by(id, full_name)`).eq('object_id', object.id).is('is_deleted', false).order('created_at', { ascending: false });
       setTasks(tasksData || []);
 
       if (canSeeFinances) {
@@ -95,7 +95,7 @@ const ObjectWorkflow: React.FC<ObjectWorkflowProps> = ({ object: initialObject, 
         setTransactions(transData || []);
       }
       
-      const { data: staffData } = await supabase.from('profiles').select('id, full_name, role').is('deleted_at', null);
+      const { data: staffData } = await supabase.from('profiles').select('id, full_name, role').is('deleted_at', null).in('role', ['admin', 'director', 'manager', 'specialist', 'storekeeper']);
       setStaff(staffData || []);
     } catch (e) { 
       console.error('Fetch error:', e); 

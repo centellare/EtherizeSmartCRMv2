@@ -10,3 +10,4 @@ export * from './Toast';
 export * from './ToastContext';
 export * from './Drawer';
 export * from './ProductImage';
+export * from './FinanceWidget';

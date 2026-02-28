@@ -12,15 +12,16 @@ interface TaskListProps {
   isAdmin: boolean;
   onPageChange: (page: number) => void;
   onTaskClick: (task: any) => void;
-  onNavigateToObject: (objectId: string, stageId?: string) => void;
+  onNavigateToObject?: (objectId: string, stageId?: string) => void;
   onRequestComplete?: (task: any) => void; 
+  hideObjectLink?: boolean;
 }
 
 const PAGE_SIZE = 50;
 
 export const TaskList: React.FC<TaskListProps> = ({ 
   tasks, activeTab, archivePage, archiveTotal, currentUserId, isAdmin,
-  onPageChange, onTaskClick, onNavigateToObject, onRequestComplete 
+  onPageChange, onTaskClick, onNavigateToObject, onRequestComplete, hideObjectLink 
 }) => {
   
   if (tasks.length === 0) {
@@ -100,9 +101,19 @@ export const TaskList: React.FC<TaskListProps> = ({
                     {task.doc_link && <span className="material-icons-round text-sm ml-2 text-slate-300 align-middle">attach_file</span>}
                   </h4>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1">
-                    <span className="text-xs text-slate-500 font-medium">{task.objects?.name || 'Объект'}</span>
-                    <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                    {!hideObjectLink && (
+                      <>
+                        <span className="text-xs text-slate-500 font-medium">{task.objects?.name || 'Объект'}</span>
+                        <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                      </>
+                    )}
                     <span className="text-xs text-slate-400">{task.executor?.full_name}</span>
+                    {task.checklist && task.checklist.length > 0 && (
+                      <div className="flex items-center gap-1 bg-slate-100 px-1.5 py-0.5 rounded text-[9px] font-bold text-slate-600 ml-2">
+                        <span className="material-icons-round text-[10px]">checklist</span>
+                        {task.checklist.filter((c: any) => c.is_completed).length}/{task.checklist.length}
+                      </div>
+                    )}
                     {isCompleted && task.completed_at && (
                       <span className="text-[10px] font-bold text-emerald-500 bg-emerald-50 px-2 py-0.5 rounded whitespace-nowrap ml-2">
                           {formatDate(task.completed_at)}
@@ -120,15 +131,17 @@ export const TaskList: React.FC<TaskListProps> = ({
                     <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Дедлайн</p>
                   </div>
                 )}
-                <button 
-                  onClick={(e) => { 
-                    e.stopPropagation(); 
-                    if (task.object_id) onNavigateToObject(task.object_id, task.stage_id); 
-                  }} 
-                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all group/btn ${isCompleted ? 'hover:bg-slate-100' : 'hover:bg-blue-50'}`}
-                >
-                  <span className={`material-icons-round transition-all ${isCompleted ? 'text-slate-300 group-hover:text-slate-600' : 'text-slate-300 group-hover:text-blue-600 group-hover/btn:translate-x-1'}`}>chevron_right</span>
-                </button>
+                {!hideObjectLink && (
+                  <button 
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      if (task.object_id && onNavigateToObject) onNavigateToObject(task.object_id, task.stage_id); 
+                    }} 
+                    className={`w-10 h-10 rounded-full flex items-center justify-center transition-all group/btn ${isCompleted ? 'hover:bg-slate-100' : 'hover:bg-blue-50'}`}
+                  >
+                    <span className={`material-icons-round transition-all ${isCompleted ? 'text-slate-300 group-hover:text-slate-600' : 'text-slate-300 group-hover:text-blue-600 group-hover/btn:translate-x-1'}`}>chevron_right</span>
+                  </button>
+                )}
               </div>
             </div>
           );

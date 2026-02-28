@@ -1,13 +1,15 @@
 
 import React, { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase';
-import { Button, Modal, Input, Badge, Select, ConfirmModal, useToast } from '../../ui';
+import { Button, Modal, Input, Badge, Select, ConfirmModal, useToast, FinanceWidget } from '../../ui';
 import { Transaction } from '../../../types';
 import { formatDate, getMinskISODate } from '../../../lib/dateUtils';
 import { TransactionForm } from '../Finances/modals/TransactionForm';
 import { PaymentForm } from '../Finances/modals/PaymentForm';
 import { TransactionDetails } from '../Finances/modals/TransactionDetails';
 import { TransactionTable } from '../Finances/TransactionTable';
+import { calculateGlobalMetrics, calculatePeriodMetrics, filterTransactions, getFactAmount } from '../../../lib/financeUtils';
+import { useFinanceMutations } from '../../../hooks/useFinanceMutations';
 
 const formatBYN = (amount: number = 0) => {
   return new Intl.NumberFormat('ru-BY', {
@@ -16,34 +18,6 @@ const formatBYN = (amount: number = 0) => {
     minimumFractionDigits: 2
   }).format(amount);
 };
-
-// Local Widget Component
-const FinanceWidget = ({ label, value, subValue, color, icon, onClick, isActive, count }: any) => (
-  <div 
-    onClick={onClick}
-    className={`p-4 rounded-2xl border shadow-sm flex flex-col justify-between h-24 relative overflow-hidden group cursor-pointer transition-all ${
-        isActive 
-        ? 'bg-slate-800 border-slate-900 ring-2 ring-slate-200' 
-        : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-md'
-    }`}
-  >
-    <div className={`absolute top-0 right-0 p-3 transition-opacity ${isActive ? 'opacity-20 text-white' : `opacity-10 group-hover:opacity-20 ${color}`}`}>
-        <span className="material-icons-round text-4xl">{icon}</span>
-    </div>
-    <p className={`text-[10px] font-bold uppercase tracking-widest z-10 ${isActive ? 'text-slate-400' : 'text-slate-400'}`}>{label}</p>
-    <div className="z-10">
-        <div className="flex items-baseline gap-2">
-            <p className={`text-xl font-bold ${isActive ? 'text-white' : color.replace('bg-', 'text-').replace('/20', '')}`}>{value}</p>
-            {count !== undefined && (
-                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${isActive ? 'bg-slate-600 text-slate-200' : 'bg-slate-100 text-slate-500'}`}>
-                    {count} шт
-                </span>
-            )}
-        </div>
-        {subValue && <p className={`text-[10px] mt-0.5 ${isActive ? 'text-slate-400' : 'text-slate-400'}`}>{subValue}</p>}
-    </div>
-  </div>
-);
 
 interface FinancesTabProps {
   object: any;
@@ -89,120 +63,28 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
   const canApprove = isAdmin || isDirector || (isManager && object.responsible_id === profile.id);
   const canEditDelete = isAdmin || isDirector;
 
+  const { deleteTransaction, approveTransaction, simpleAction } = useFinanceMutations(profile.id);
+
   // --- Calculations ---
 
   // 1. GLOBAL METRICS (Lifetime)
   const globalMetrics = useMemo(() => {
-      const todayStr = getMinskISODate();
-      const allIncome = transactions.filter(t => t.type === 'income').reduce((s, t) => s + (t.fact_amount || 0), 0);
-      const allExpense = transactions.filter(t => t.type === 'expense' && t.status === 'approved').reduce((s, t) => s + t.amount, 0);
-      const balance = allIncome - allExpense;
-
-      // Debtors: Planned Income (Pending/Partial) where planned_date < today
-      const debtorsList = transactions.filter(t => 
-          t.type === 'income' && 
-          t.status !== 'approved' && 
-          t.planned_date && 
-          t.planned_date < todayStr
-      );
-      const debtorsSum = debtorsList.reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
-
-      return {
-          balance,
-          debtorsSum,
-          debtorsCount: debtorsList.length
-      };
+      return calculateGlobalMetrics(transactions);
   }, [transactions]);
 
   // 2. PERIOD FLOW METRICS (Depends on Dates)
   // These are for the Widgets display ONLY. They show stats for the selected period.
   const periodMetrics = useMemo(() => {
-      const filteredByDate = transactions.filter(t => {
-          const targetDate = t.planned_date || getMinskISODate(t.created_at);
-          const matchesStart = !startDate || targetDate >= startDate;
-          const matchesEnd = !endDate || targetDate <= endDate;
-          return matchesStart && matchesEnd;
-      });
-
-      // Income Fact
-      const incomeFactList = filteredByDate.filter(t => t.type === 'income');
-      const incomeFactSum = incomeFactList.reduce((s, t) => s + (t.fact_amount || 0), 0);
-
-      // Income Plan (Pending/Partial, NOT overdue or just generally pending in this period creation)
-      // Usually "Plan" in a period view means "Plans created in this period" OR "Plans due in this period". 
-      // Let's use created_at for consistency with list filter.
-      const incomePlanList = filteredByDate.filter(t => 
-          t.type === 'income' && 
-          t.status !== 'approved' &&
-          (t.amount - (t.fact_amount || 0)) > 0.01
-      );
-      const incomePlanSum = incomePlanList.reduce((s, t) => s + (t.amount - (t.fact_amount || 0)), 0);
-
-      // Expense Fact
-      const expenseFactList = filteredByDate.filter(t => t.type === 'expense' && t.status === 'approved');
-      const expenseFactSum = expenseFactList.reduce((s, t) => s + t.amount, 0);
-
-      // Expense Plan
-      const expensePlanList = filteredByDate.filter(t => 
-          t.type === 'expense' && 
-          t.status !== 'approved'
-      );
-      const expensePlanSum = expensePlanList.reduce((s, t) => {
-          const targetAmount = t.requested_amount || t.amount;
-          const done = t.fact_amount || 0;
-          return s + Math.max(0, targetAmount - done);
-      }, 0);
-
-      return {
-          incomeFactSum, incomeFactCount: incomeFactList.length,
-          incomePlanSum, incomePlanCount: incomePlanList.length,
-          expenseFactSum, expenseFactCount: expenseFactList.length,
-          expensePlanSum, expensePlanCount: expensePlanList.length
-      };
+      return calculatePeriodMetrics(transactions, startDate, endDate);
   }, [transactions, startDate, endDate]);
 
   // 3. FINAL LIST FILTERING (For Table)
   const filteredTransactions = useMemo(() => {
-      const todayStr = getMinskISODate();
-
-      return transactions.filter(t => {
-          // A. Debtor Widget Logic (Override everything)
-          if (activeWidget === 'debtors') {
-              return t.type === 'income' && 
-                     (t.status === 'pending' || t.status === 'partial') && 
-                     t.planned_date && 
-                     t.planned_date < todayStr;
-          }
-
-          // B. Date Filter (Base) - Applies to all other widgets and default view
-          const targetDate = t.planned_date || getMinskISODate(t.created_at);
-          const matchesDate = (!startDate || targetDate >= startDate) && (!endDate || targetDate <= endDate);
-          if (!matchesDate) return false;
-
-          // C. Doc Filter
-          if (unclosedDocsOnly) {
-              const hasUnclosedDoc = t.payments?.some((p: any) => p.requires_doc && !p.doc_number);
-              if (!hasUnclosedDoc) return false;
-          }
-
-          // D. Widget Specific Filters
-          if (activeWidget === 'income_fact') return t.type === 'income'; // We show all income rows, fact amount is highlighted in table
-          
-          if (activeWidget === 'income_plan') {
-              const remaining = t.amount - (t.fact_amount || 0);
-              return t.type === 'income' && t.status !== 'approved' && remaining > 0.01;
-          }
-          
-          if (activeWidget === 'expense_fact') return t.type === 'expense' && t.status === 'approved';
-          
-          if (activeWidget === 'expense_plan') {
-               const target = t.requested_amount || t.amount;
-               const done = t.fact_amount || 0;
-               return t.type === 'expense' && t.status !== 'approved' && (target - done) > 0.01;
-          }
-
-          // Default (Balance/All)
-          return true;
+      return filterTransactions(transactions, {
+          startDate,
+          endDate,
+          activeWidget,
+          unclosedDocsOnly
       });
   }, [transactions, startDate, endDate, unclosedDocsOnly, activeWidget]);
 
@@ -212,18 +94,14 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
     e.preventDefault();
     if (!selectedTrans) return;
     const amount = Number(approvalAmount);
-    await supabase.from('transactions').update({
-      status: 'approved',
-      amount,
-      processed_by: profile.id,
-      processed_at: new Date().toISOString()
-    }).eq('id', selectedTrans.id);
-    setIsApprovalModalOpen(false); await refreshData();
+    await approveTransaction.mutateAsync({ id: selectedTrans.id, amount });
+    setIsApprovalModalOpen(false); 
+    await refreshData();
   };
 
   const handleDeleteTransaction = async () => {
     if (!deleteConfirm.id) return;
-    await supabase.from('transactions').update({ deleted_at: new Date().toISOString() }).eq('id', deleteConfirm.id);
+    await deleteTransaction.mutateAsync(deleteConfirm.id);
     setDeleteConfirm({ open: false, id: null, type: 'transaction' });
     setIsDetailsModalOpen(false);
     await refreshData();
@@ -414,6 +292,36 @@ export const FinancesTab: React.FC<FinancesTabProps> = ({
         title="Удаление записи" 
         message="Вы уверены? Запись будет удалена безвозвратно."
         confirmVariant="danger"
+       />
+
+       <ConfirmModal
+        isOpen={isRejectConfirmOpen}
+        onClose={() => setIsRejectConfirmOpen(false)}
+        onConfirm={async () => {
+            if (selectedTrans) {
+                await simpleAction.mutateAsync({ action: 'reject', data: selectedTrans });
+                setIsRejectConfirmOpen(false);
+                await refreshData();
+            }
+        }}
+        title="Отклонить запрос"
+        message="Вы уверены, что хотите отклонить этот запрос на расход?"
+        confirmVariant="danger"
+       />
+
+       <ConfirmModal
+        isOpen={isFinalizeConfirmOpen}
+        onClose={() => setIsFinalizeConfirmOpen(false)}
+        onConfirm={async () => {
+            if (selectedTrans) {
+                await simpleAction.mutateAsync({ action: 'finalize', data: selectedTrans });
+                setIsFinalizeConfirmOpen(false);
+                await refreshData();
+            }
+        }}
+        title="Подтвердить приход"
+        message="Вы уверены, что хотите подтвердить получение средств?"
+        confirmVariant="primary"
        />
     </div>
   );

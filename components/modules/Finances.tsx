@@ -7,6 +7,8 @@ import { Transaction } from '../../types';
 import { getMinskISODate, formatDate } from '../../lib/dateUtils';
 import { useObjects } from '../../hooks/useObjects';
 import { useTransactions } from '../../hooks/useTransactions';
+import { useFinanceMutations } from '../../hooks/useFinanceMutations';
+import { calculateGlobalMetrics, calculatePeriodMetrics, filterTransactions, getFactAmount } from '../../lib/financeUtils';
 
 // Sub-components
 import { StatsOverview } from './Finances/StatsOverview';
@@ -43,7 +45,7 @@ const Finances: React.FC<{ profile: any; initialTransactionId?: string | null }>
   const [modalMode, setModalMode] = useState<'create_income' | 'create_expense' | 'edit_transaction' | 'add_payment' | 'edit_payment' | 'details' | 'approve' | 'none'>('none');
   
   // Selected Data
-  const [selectedTransaction, setSelectedTransaction] = useState<any>(null);
+  const [selectedTransaction, setSelectedTransaction] = useState<Transaction | null>(null);
   const [selectedPayment, setSelectedPayment] = useState<any>(null);
   
   // Confirmations
@@ -71,9 +73,11 @@ const Finances: React.FC<{ profile: any; initialTransactionId?: string | null }>
     isSpecialist
   });
 
+  const { deleteTransaction, deletePayment, approveTransaction, simpleAction } = useFinanceMutations(profile?.id);
+
   useEffect(() => {
     if (initialTransactionId && transactions.length > 0) {
-      const t = transactions.find((t: any) => t.id === initialTransactionId);
+      const t = transactions.find((t: Transaction) => t.id === initialTransactionId);
       if (t) {
         setSelectedTransaction(t);
         setModalMode('details');
@@ -92,191 +96,25 @@ const Finances: React.FC<{ profile: any; initialTransactionId?: string | null }>
 
   // --- CALCULATIONS ---
 
-  // Helper to calculate "Real" Fact Amount (handles legacy/simple approved items without explicit payments)
-  const getFactAmount = (t: any) => {
-      if (t.fact_amount && t.fact_amount > 0) return t.fact_amount;
-      if (t.status === 'approved') return t.amount;
-      return 0;
-  };
-
   // 1. GLOBAL METRICS (Lifetime, Snapshot)
   const globalMetrics = useMemo(() => {
-      const todayStr = getMinskISODate();
-      
-      // Filter by Object if selected
-      let relevantTransactions = transactions;
-      if (selectedObjectId) {
-          relevantTransactions = transactions.filter(t => t.object_id === selectedObjectId);
-      }
-
-      // REAL BALANCE: Fact Income - Fact Expense
-      const allIncome = relevantTransactions.filter(t => t.type === 'income').reduce((s, t) => s + getFactAmount(t), 0);
-      const allExpense = relevantTransactions.filter(t => t.type === 'expense').reduce((s, t) => s + getFactAmount(t), 0);
-      const balance = allIncome - allExpense;
-
-      // Debtors: Planned Income (Pending/Partial) where planned_date < today
-      const debtorsList = relevantTransactions.filter(t => 
-          t.type === 'income' && 
-          (t.amount - getFactAmount(t)) > 0.01 && // Has debt
-          t.planned_date && 
-          t.planned_date < todayStr
-      );
-      const debtorsSum = debtorsList.reduce((s, t) => s + (t.amount - getFactAmount(t)), 0);
-
-      return {
-          balance,
-          debtorsSum,
-          debtorsCount: debtorsList.length
-      };
+      return calculateGlobalMetrics(transactions, selectedObjectId);
   }, [transactions, selectedObjectId]);
 
   // 2. PERIOD FLOW METRICS (Depends on Dates)
   const periodMetrics = useMemo(() => {
-      // 1. Filter by Object first
-      let relevantTransactions = transactions;
-      if (selectedObjectId) {
-          relevantTransactions = transactions.filter(t => t.object_id === selectedObjectId);
-      }
-
-      // 2. Plan Metrics: Based on Transaction Date (planned_date)
-      const planTransactions = relevantTransactions.filter(t => {
-          const targetDate = t.planned_date || getMinskISODate(t.created_at);
-          const matchesStart = !startDate || targetDate >= startDate;
-          const matchesEnd = !endDate || targetDate <= endDate;
-          return matchesStart && matchesEnd;
-      });
-
-      // Income Plan: Sum of remaining debt (EXPECTED MONEY IN)
-      const incomePlanList = planTransactions.filter(t => 
-          t.type === 'income' && 
-          (t.amount - getFactAmount(t)) > 0.01
-      );
-      const incomePlanSum = incomePlanList.reduce((s, t) => s + (t.amount - getFactAmount(t)), 0);
-
-      // Expense Plan: Sum of remaining payable (EXPECTED MONEY OUT)
-      const expensePlanList = planTransactions.filter(t => 
-          t.type === 'expense' && 
-          t.status !== 'rejected'
-      );
-      const expensePlanSum = expensePlanList.reduce((s, t) => {
-          const targetAmount = t.status === 'approved' ? t.amount : (t.requested_amount || t.amount);
-          const done = getFactAmount(t);
-          return s + Math.max(0, targetAmount - done);
-      }, 0);
-
-      // 3. Fact Metrics: Based on Actual Payment Dates
-      let incomeFactSum = 0;
-      let incomeFactCount = 0;
-      let expenseFactSum = 0;
-      let expenseFactCount = 0;
-
-      relevantTransactions.forEach(t => {
-          // Calculate Fact for this transaction in the given period
-          let factInPeriod = 0;
-          let hasFact = false;
-
-          if (t.payments && t.payments.length > 0) {
-              // If payments exist, sum those in range
-              t.payments.forEach((p: any) => {
-                  // Ensure we compare YYYY-MM-DD only
-                  const pDate = p.payment_date ? p.payment_date.split('T')[0] : '';
-                  const matchesStart = !startDate || pDate >= startDate;
-                  const matchesEnd = !endDate || pDate <= endDate;
-                  if (matchesStart && matchesEnd) {
-                      factInPeriod += (p.amount || 0);
-                      hasFact = true;
-                  }
-              });
-          } else {
-              // Legacy/Simple: Check transaction date
-              // t.planned_date is YYYY-MM-DD usually. t.created_at is ISO.
-              const rawDate = t.planned_date || t.created_at;
-              const tDate = rawDate ? (rawDate.includes('T') ? rawDate.split('T')[0] : rawDate) : '';
-              
-              const matchesStart = !startDate || tDate >= startDate;
-              const matchesEnd = !endDate || tDate <= endDate;
-              
-              if (matchesStart && matchesEnd) {
-                  const amt = getFactAmount(t);
-                  if (amt > 0) {
-                      factInPeriod += amt;
-                      hasFact = true;
-                  }
-              }
-          }
-
-          if (hasFact) {
-              if (t.type === 'income') {
-                  incomeFactSum += factInPeriod;
-                  incomeFactCount++;
-              } else {
-                  expenseFactSum += factInPeriod;
-                  expenseFactCount++;
-              }
-          }
-      });
-
-      return {
-          incomeFactSum, incomeFactCount,
-          incomePlanSum, incomePlanCount: incomePlanList.length,
-          expenseFactSum, expenseFactCount,
-          expensePlanSum, expensePlanCount: expensePlanList.length
-      };
+      return calculatePeriodMetrics(transactions, startDate, endDate, selectedObjectId);
   }, [transactions, startDate, endDate, selectedObjectId]);
 
   // 3. FINAL LIST FILTERING
   const filteredTransactions = useMemo(() => {
-    const todayStr = getMinskISODate();
-
-    return transactions.filter((t: any) => {
-      // 0. Object Filter (Top Priority)
-      if (selectedObjectId && t.object_id !== selectedObjectId) return false;
-
-      // 1. Text Search Filter (Documents)
-      const searchLower = docSearchQuery.toLowerCase();
-      const matchesDocSearch = !docSearchQuery || t.payments?.some((p: any) => 
-        (p.doc_number?.toLowerCase().includes(searchLower)) ||
-        (p.doc_type?.toLowerCase().includes(searchLower)) ||
-        (p.doc_date && formatDate(p.doc_date).includes(docSearchQuery))
-      );
-      if (!matchesDocSearch) return false;
-
-      // 2. Unclosed Docs Filter
-      const hasUnclosedDoc = t.payments?.some((p: any) => p.requires_doc && !p.doc_number);
-      if (unclosedDocsOnly && !hasUnclosedDoc) return false;
-
-      // 3. WIDGET & DATE LOGIC
-      
-      // A. Debtor Widget Logic (Override dates)
-      if (activeWidget === 'debtors') {
-          return t.type === 'income' && 
-                 (t.status === 'pending' || t.status === 'partial') &&
-                 t.planned_date && 
-                 t.planned_date < todayStr;
-      }
-
-      // B. Date Filter (Base) - CHANGED to use planned_date or created_at
-      const targetDate = t.planned_date || getMinskISODate(t.created_at);
-      const matchesDate = (!startDate || targetDate >= startDate) && (!endDate || targetDate <= endDate);
-      if (!matchesDate) return false;
-
-      // C. Specific Widget Filters - CHANGED to exclude fully paid items from PLAN
-      if (activeWidget === 'income_fact') return t.type === 'income';
-      
-      if (activeWidget === 'income_plan') {
-          const remaining = t.amount - (t.fact_amount || 0);
-          return t.type === 'income' && t.status !== 'approved' && remaining > 0.01;
-      }
-      
-      if (activeWidget === 'expense_fact') return t.type === 'expense' && t.status === 'approved';
-      
-      if (activeWidget === 'expense_plan') {
-           const target = t.requested_amount || t.amount;
-           const done = t.fact_amount || 0;
-           return t.type === 'expense' && t.status !== 'approved' && (target - done) > 0.01;
-      }
-
-      return true;
+    return filterTransactions(transactions, {
+        startDate,
+        endDate,
+        activeWidget,
+        unclosedDocsOnly,
+        docSearchQuery,
+        selectedObjectId
     });
   }, [transactions, startDate, endDate, activeWidget, unclosedDocsOnly, docSearchQuery, selectedObjectId]);
 
@@ -285,57 +123,28 @@ const Finances: React.FC<{ profile: any; initialTransactionId?: string | null }>
   // Actions
   const handleDeleteTransaction = async () => {
     if (!confirmConfig.id) return;
-    // setLoading(true); // Handled by mutation or just wait
-    const { error } = await supabase.from('transactions').update({ deleted_at: new Date().toISOString() }).eq('id', confirmConfig.id);
-    if (!error) {
-        toast.success('Запись удалена');
-        setConfirmConfig({ ...confirmConfig, open: false });
-        setModalMode('none');
-        queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    }
-    // setLoading(false);
+    await deleteTransaction.mutateAsync(confirmConfig.id);
+    setConfirmConfig({ ...confirmConfig, open: false });
+    setModalMode('none');
   };
 
   const handleDeletePayment = async (id: string) => {
-    // setLoading(true);
-    const { data: payment } = await supabase.from('transaction_payments').select('amount, transaction_id').eq('id', id).single();
-    const { error } = await supabase.from('transaction_payments').delete().eq('id', id);
-    if (!error && payment) {
-        const trans = transactions.find(t => t.id === payment.transaction_id);
-        if (trans) {
-            const newFact = Math.max(0, (trans.fact_amount || 0) - payment.amount);
-            const newStatus = newFact >= trans.amount - 0.01 ? 'approved' : (newFact > 0 ? 'partial' : 'pending');
-            await supabase.from('transactions').update({ fact_amount: newFact, status: newStatus }).eq('id', payment.transaction_id);
-        }
-        toast.success('Платеж удален');
-        setModalMode('none');
-        queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    }
-    // setLoading(false);
+    await deletePayment.mutateAsync({ id, transactions });
+    setModalMode('none');
   };
 
   const handleApprove = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedTransaction) return;
     const amount = parseFloat(approvalAmount);
-    // setLoading(true);
-    await supabase.from('transactions').update({ status: 'approved', amount: amount, processed_by: profile.id, processed_at: new Date().toISOString() }).eq('id', selectedTransaction.id);
+    await approveTransaction.mutateAsync({ id: selectedTransaction.id, amount });
     setModalMode('none');
-    queryClient.invalidateQueries({ queryKey: ['transactions'] });
-    // setLoading(false);
   };
 
   const handleSimpleAction = async (action: 'reject' | 'finalize') => {
       if (!confirmConfig.data) return;
-      // setLoading(true);
-      if (action === 'reject') {
-          await supabase.from('transactions').update({ status: 'rejected', processed_by: profile.id, processed_at: new Date().toISOString() }).eq('id', confirmConfig.data.id);
-      } else {
-          await supabase.from('transactions').update({ status: 'approved', amount: confirmConfig.data.fact_amount || 0 }).eq('id', confirmConfig.data.id);
-      }
+      await simpleAction.mutateAsync({ action, data: confirmConfig.data });
       setConfirmConfig({ ...confirmConfig, open: false });
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      // setLoading(false);
   };
 
   const handleResetDates = () => { setStartDate(''); setEndDate(''); };
@@ -550,13 +359,17 @@ const Finances: React.FC<{ profile: any; initialTransactionId?: string | null }>
             onClose={() => setModalMode('none')}
             canManage={canEditDelete}
             onEdit={() => setModalMode('edit_transaction')}
-            onDelete={() => setConfirmConfig({ open: true, type: 'delete_transaction', id: selectedTransaction.id })}
+            onDelete={() => {
+                if (selectedTransaction) {
+                    setConfirmConfig({ open: true, type: 'delete_transaction', id: selectedTransaction.id })
+                }
+            }}
         />
       </Modal>
 
       <Modal isOpen={modalMode === 'approve'} onClose={() => setModalMode('none')} title="Утверждение расхода">
         <form onSubmit={handleApprove} className="space-y-4">
-            <p className="text-sm text-slate-500">Запрошено: <b>{formatCurrency(selectedTransaction?.requested_amount || selectedTransaction?.amount)}</b></p>
+            <p className="text-sm text-slate-500">Запрошено: <b>{formatCurrency(selectedTransaction?.requested_amount || selectedTransaction?.amount || 0)}</b></p>
             <Input label="Сумма к утверждению" type="number" step="0.01" required value={approvalAmount} onChange={(e:any) => setApprovalAmount(e.target.value)} icon="payments" />
             <Button type="submit" className="w-full h-12" loading={isLoading} icon="check">Утвердить сумму</Button>
         </form>

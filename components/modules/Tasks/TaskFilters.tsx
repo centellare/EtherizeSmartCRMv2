@@ -2,11 +2,13 @@
 import React from 'react';
 import { Button, Input } from '../../ui';
 
+import { TaskTab, FilterMode } from '../../../lib/taskUtils';
+
 interface TaskFiltersProps {
-  activeTab: string;
-  setActiveTab: (tab: any) => void;
-  filterMode: string;
-  setFilterMode: (mode: any) => void;
+  activeTab: TaskTab;
+  setActiveTab: (tab: TaskTab) => void;
+  filterMode: FilterMode;
+  setFilterMode: (mode: FilterMode) => void;
   overdueCount: number;
   isSpecialist: boolean;
   onOpenCreate: () => void;
@@ -55,7 +57,7 @@ export const TaskFilters: React.FC<TaskFiltersProps> = ({
         {tabs.map(tab => (
           <button 
             key={tab.id} 
-            onClick={() => setActiveTab(tab.id)} 
+            onClick={() => setActiveTab(tab.id as TaskTab)} 
             className={`flex items-center gap-2 px-6 py-4 text-xs font-bold uppercase transition-all relative shrink-0 ${activeTab === tab.id ? 'text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
           >
             <span className="material-icons-round text-sm">{tab.icon}</span>
