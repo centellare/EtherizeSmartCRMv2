@@ -13,7 +13,7 @@ export const useObjectsList = (profileId?: string) => {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('objects')
-        .select('*, client:clients(name), responsible:profiles!responsible_id(full_name), tasks(id, status, is_deleted)')
+        .select('*, client:clients(name), responsible:profiles!responsible_id(full_name), tasks(id, status, is_deleted, deadline)')
         .is('is_deleted', false)
         .order('created_at', { ascending: false });
       

@@ -29,6 +29,10 @@ export const ObjectList: React.FC<ObjectListProps> = ({
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {objects.map(obj => {
         const isCritical = obj.current_status === 'review_required';
+        const isFrozen = obj.current_status === 'frozen';
+        
+        const activeTasks = obj.tasks?.filter((t: any) => !t.is_deleted && t.status !== 'completed') || [];
+        const hasOverdue = activeTasks.some((t: any) => t.deadline && new Date(t.deadline) < new Date());
         
         // Update: Managers can edit any object
         const canEdit = isAdminOrDirector || isManager;
@@ -40,27 +44,47 @@ export const ObjectList: React.FC<ObjectListProps> = ({
             key={obj.id} 
             onClick={() => onSelect(obj.id)} 
             className={`bg-white rounded-[28px] border p-6 cursor-pointer hover:shadow-lg transition-all group flex flex-col justify-between min-h-[250px] relative overflow-hidden ${
-              isCritical ? 'border-red-400 ring-2 ring-red-50' : 'border-[#e1e2e1] hover:border-[#005ac1]'
+              isCritical ? 'border-red-400 ring-2 ring-red-50' : 
+              isFrozen ? 'border-slate-200 opacity-60 grayscale-[0.5]' :
+              hasOverdue ? 'border-orange-300 ring-1 ring-orange-50' :
+              'border-[#e1e2e1] hover:border-[#005ac1]'
             }`}
           >
             {isCritical && (
               <div className="absolute top-0 left-0 w-1.5 h-full bg-red-500 animate-pulse"></div>
             )}
+            {hasOverdue && !isCritical && (
+              <div className="absolute top-0 left-0 w-1.5 h-full bg-orange-500"></div>
+            )}
+            {isFrozen && (
+              <div className="absolute top-0 right-0 p-2">
+                <span className="material-icons-round text-slate-400 text-xl">ac_unit</span>
+              </div>
+            )}
             
             <div>
               <div className="flex justify-between items-start mb-4">
                 <div className="flex items-center gap-2">
-                  <Badge color={
-                    obj.current_status === 'completed' ? 'emerald' : 
-                    obj.current_status === 'on_pause' ? 'amber' : 
-                    obj.current_status === 'review_required' ? 'red' : 'blue'
-                  }>
-                    {STATUS_MAP[obj.current_status] || obj.current_status?.toUpperCase()}
-                  </Badge>
-                  
-                  {(() => {
-                    const activeTasksCount = obj.tasks?.filter((t: any) => !t.is_deleted && t.status !== 'completed').length || 0;
-                    if (activeTasksCount > 0) {
+                    <Badge color={
+                      obj.current_status === 'completed' ? 'emerald' : 
+                      obj.current_status === 'on_pause' ? 'amber' : 
+                      obj.current_status === 'review_required' ? 'red' : 
+                      obj.current_status === 'frozen' ? 'slate' : 'blue'
+                    }>
+                      {STATUS_MAP[obj.current_status] || obj.current_status?.toUpperCase()}
+                    </Badge>
+                    
+                    {(() => {
+                      const activeTasksCount = activeTasks.length;
+                      if (hasOverdue) {
+                        return (
+                          <div className="flex items-center gap-1 bg-red-100 px-2 py-0.5 rounded-full text-[10px] font-bold text-red-700 border border-red-200 animate-pulse" title="Есть просроченные задачи!">
+                            <span className="material-icons-round text-[12px]">priority_high</span>
+                            {activeTasksCount}
+                          </div>
+                        );
+                      }
+                      if (activeTasksCount > 0) {
                       return (
                         <div className="flex items-center gap-1 bg-slate-100 px-2 py-0.5 rounded-full text-[10px] font-bold text-slate-600 border border-slate-200" title={`Активных задач: ${activeTasksCount}`}>
                           <span className="material-icons-round text-[12px]">assignment</span>
@@ -129,13 +153,7 @@ export const ObjectList: React.FC<ObjectListProps> = ({
               </div>
               
               <div className="flex items-center gap-2 pt-1">
-                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold border overflow-hidden ${
-                  obj.responsible?.role === 'admin' ? 'bg-red-50 text-red-600 border-red-100' :
-                  obj.responsible?.role === 'director' ? 'bg-purple-50 text-purple-600 border-purple-100' :
-                  obj.responsible?.role === 'manager' ? 'bg-blue-50 text-blue-600 border-blue-100' :
-                  obj.responsible?.role === 'storekeeper' ? 'bg-amber-50 text-amber-600 border-amber-100' :
-                  'bg-emerald-50 text-emerald-600 border-emerald-100'
-                }`}>
+                <div className="w-6 h-6 rounded-full bg-blue-50 flex items-center justify-center text-[10px] font-bold text-blue-600 border border-blue-100 overflow-hidden">
                   {obj.responsible?.avatar_url ? (
                     <img src={obj.responsible.avatar_url} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                   ) : (
