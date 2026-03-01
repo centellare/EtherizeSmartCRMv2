@@ -167,6 +167,27 @@ export const ContractTemplateEditor: React.FC = () => {
 
     return (
         <div className="h-full flex flex-col bg-slate-50">
+            <style>{`
+                .prose { 
+                    max-width: none !important; 
+                    width: 100% !important;
+                    word-break: normal !important;
+                    overflow-wrap: break-word !important;
+                    hyphens: manual !important;
+                }
+                .prose p {
+                    margin-bottom: 0.5em;
+                    line-height: 1.5;
+                }
+                .prose h1, .prose h2, .prose h3 {
+                    margin-top: 1em;
+                    margin-bottom: 0.5em;
+                    font-weight: bold;
+                }
+                .ql-align-center { text-align: center; }
+                .ql-align-right { text-align: right; }
+                .ql-align-justify { text-align: justify; }
+            `}</style>
             {/* Header */}
             <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center shadow-sm sticky top-0 z-10">
                 <div className="flex items-center gap-4">
@@ -200,32 +221,31 @@ export const ContractTemplateEditor: React.FC = () => {
             {/* Main Content */}
             <div className="flex-grow flex overflow-hidden">
                 {/* Text Editor Area */}
-                <div className="flex-grow p-6 overflow-y-auto relative bg-white flex flex-col">
+                <div className="flex-grow p-6 overflow-y-auto relative bg-slate-100 flex flex-col items-center">
                     {isLoading ? (
                         <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
                             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                         </div>
                     ) : null}
-                    <div className="flex-grow flex flex-col h-full border border-slate-200 rounded-xl overflow-hidden shadow-sm">
-                        {showPreview ? (
-                            <div 
-                                className="w-[210mm] min-h-[297mm] mx-auto bg-white shadow-lg p-[20mm_15mm] prose max-w-none font-serif"
-                                dangerouslySetInnerHTML={{ __html: replaceDocumentTags(content, previewClientData, previewDocumentData) }}
+                    
+                    {showPreview ? (
+                        <div 
+                            className="w-[210mm] min-h-[297mm] bg-white shadow-lg p-[20mm_15mm] prose max-w-none font-serif"
+                            dangerouslySetInnerHTML={{ __html: replaceDocumentTags(content, previewClientData, previewDocumentData) }}
+                        />
+                    ) : (
+                        <div className="w-[210mm] min-h-[297mm] bg-white shadow-lg flex flex-col">
+                            <ReactQuill 
+                                ref={quillRef}
+                                theme="snow" 
+                                value={content} 
+                                onChange={setContent}
+                                modules={modules}
+                                className="flex-grow flex flex-col h-full font-serif"
+                                placeholder="Вставьте текст шаблона договора сюда..."
                             />
-                        ) : (
-                            <div className="w-[210mm] min-h-[297mm] mx-auto bg-white shadow-lg flex flex-col">
-                                <ReactQuill 
-                                    ref={quillRef}
-                                    theme="snow" 
-                                    value={content} 
-                                    onChange={setContent}
-                                    modules={modules}
-                                    className="flex-grow flex flex-col h-full font-serif"
-                                    placeholder="Вставьте текст шаблона договора сюда..."
-                                />
-                            </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Tags Sidebar */}

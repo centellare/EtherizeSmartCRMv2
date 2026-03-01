@@ -26,28 +26,45 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
 
   const fetchDeleted = async () => {
     setLoading(true);
+    
+    const fetchTable = async (table: string, query: any) => {
+      try {
+        const { data, error } = await query;
+        if (error) throw error;
+        return data || [];
+      } catch (e) {
+        console.warn(`Failed to fetch deleted items for ${table}`, e);
+        return [];
+      }
+    };
+
     const [
-      { data: objects }, 
-      { data: clients }, 
-      { data: tasks }, 
-      { data: transactions },
-      { data: inventoryItems }
+      objects, 
+      clients, 
+      tasks, 
+      transactions,
+      inventoryItems,
+      contracts,
+      partners,
+      proposals,
+      invoices
     ] = await Promise.all([
-      supabase.from('objects').select('id, name, deleted_at').is('is_deleted', true),
-      supabase.from('clients').select('id, name, deleted_at').not('deleted_at', 'is', null),
-      supabase.from('tasks').select('id, title, deleted_at').is('is_deleted', true),
-      supabase.from('transactions').select('id, category, amount, type, deleted_at').not('deleted_at', 'is', null),
-      // CHANGED: Use deleted_at and join with PRODUCTS instead of catalog
-      supabase.from('inventory_items')
-        .select('id, serial_number, deleted_at, product:products(name, unit)')
-        .not('deleted_at', 'is', null)
+      fetchTable('objects', supabase.from('objects').select('id, name, deleted_at').is('is_deleted', true)),
+      fetchTable('clients', supabase.from('clients').select('id, name, deleted_at').not('deleted_at', 'is', null)),
+      fetchTable('tasks', supabase.from('tasks').select('id, title, deleted_at').is('is_deleted', true)),
+      fetchTable('transactions', supabase.from('transactions').select('id, category, amount, type, deleted_at').not('deleted_at', 'is', null)),
+      fetchTable('inventory_items', supabase.from('inventory_items').select('id, serial_number, deleted_at, product:products(name, unit)').not('deleted_at', 'is', null)),
+      fetchTable('contracts', (supabase as any).from('contracts').select('id, contract_number, deleted_at').not('deleted_at', 'is', null)),
+      fetchTable('partners', (supabase as any).from('partners').select('id, name, deleted_at').not('deleted_at', 'is', null)),
+      fetchTable('commercial_proposals', (supabase as any).from('commercial_proposals').select('id, title, number, deleted_at').not('deleted_at', 'is', null)),
+      fetchTable('invoices', (supabase as any).from('invoices').select('id, number, deleted_at').not('deleted_at', 'is', null))
     ]);
     
     const combined: TrashItem[] = [
-      ...(objects || []).map(i => ({ id: i.id, name: i.name, type: 'Объект', table: 'objects', deleted_at: i.deleted_at || '' })),
-      ...(clients || []).map(i => ({ id: i.id, name: i.name, type: 'Клиент', table: 'clients', deleted_at: i.deleted_at || '' })),
-      ...(tasks || []).map(i => ({ id: i.id, name: i.title, type: 'Задача', table: 'tasks', deleted_at: i.deleted_at || '' })),
-      ...(transactions || []).map(i => ({ 
+      ...(objects || []).map((i: any) => ({ id: i.id, name: i.name, type: 'Объект', table: 'objects', deleted_at: i.deleted_at || '' })),
+      ...(clients || []).map((i: any) => ({ id: i.id, name: i.name, type: 'Клиент', table: 'clients', deleted_at: i.deleted_at || '' })),
+      ...(tasks || []).map((i: any) => ({ id: i.id, name: i.title, type: 'Задача', table: 'tasks', deleted_at: i.deleted_at || '' })),
+      ...(transactions || []).map((i: any) => ({ 
         id: i.id,
         name: `${i.type === 'income' ? 'Приход' : 'Расход'}: ${i.category} (${i.amount} BYN)`, 
         type: 'Финансы', 
@@ -59,6 +76,28 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
         name: `${i.product?.name || 'Товар'} ${i.serial_number ? `(S/N: ${i.serial_number})` : ''}`, 
         type: 'Товар со склада', 
         table: 'inventory_items', 
+        deleted_at: i.deleted_at || '' 
+      })),
+      ...(contracts || []).map((i: any) => ({
+        id: i.id,
+        name: `Договор №${i.contract_number}`,
+        type: 'Договор',
+        table: 'contracts',
+        deleted_at: i.deleted_at || ''
+      })),
+      ...(partners || []).map((i: any) => ({ id: i.id, name: i.name, type: 'Партнер', table: 'partners', deleted_at: i.deleted_at || '' })),
+      ...(proposals || []).map((i: any) => ({ 
+        id: i.id, 
+        name: `КП №${i.number} ${i.title ? `(${i.title})` : ''}`, 
+        type: 'КП', 
+        table: 'commercial_proposals', 
+        deleted_at: i.deleted_at || '' 
+      })),
+      ...(invoices || []).map((i: any) => ({ 
+        id: i.id, 
+        name: `Счет №${i.number}`, 
+        type: 'Счет', 
+        table: 'invoices', 
         deleted_at: i.deleted_at || '' 
       })),
     ];
@@ -76,6 +115,9 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
       if (filterType === 'tasks') return item.table === 'tasks';
       if (filterType === 'finances') return item.table === 'transactions';
       if (filterType === 'inventory') return item.table === 'inventory_items';
+      if (filterType === 'contracts') return item.table === 'contracts';
+      if (filterType === 'partners') return item.table === 'partners';
+      if (filterType === 'proposals') return item.table === 'commercial_proposals' || item.table === 'invoices';
       return true;
     });
   }, [deletedItems, filterType]);
@@ -99,7 +141,7 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
   const handleRestore = async (id: string, table: string) => {
     setLoading(true);
     // Determine which field to use for restoration
-    const usesDeletedAt = ['clients', 'transactions', 'inventory_items'].includes(table);
+    const usesDeletedAt = ['clients', 'transactions', 'inventory_items', 'contracts', 'partners', 'commercial_proposals', 'invoices'].includes(table);
     const field = usesDeletedAt ? 'deleted_at' : 'is_deleted';
     const value = usesDeletedAt ? null : false;
     
@@ -142,7 +184,7 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
     for (const table in grouped) {
       const ids = grouped[table];
       if (action === 'restore') {
-        const usesDeletedAt = ['clients', 'transactions', 'inventory_items'].includes(table);
+        const usesDeletedAt = ['clients', 'transactions', 'inventory_items', 'contracts', 'partners', 'commercial_proposals', 'invoices'].includes(table);
         const field = usesDeletedAt ? 'deleted_at' : 'is_deleted';
         const value = usesDeletedAt ? null : false;
         
@@ -212,7 +254,10 @@ const Trash: React.FC<{ profile: any }> = ({ profile }) => {
                 { value: 'clients', label: 'Клиенты' },
                 { value: 'tasks', label: 'Задачи' },
                 { value: 'finances', label: 'Финансы' },
-                { value: 'inventory', label: 'Склад' }
+                { value: 'inventory', label: 'Склад' },
+                { value: 'contracts', label: 'Договоры' },
+                { value: 'partners', label: 'Партнеры' },
+                { value: 'proposals', label: 'КП и Счета' }
               ]}
               icon="filter_list"
               className="!h-11"
