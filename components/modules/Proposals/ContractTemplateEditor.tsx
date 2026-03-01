@@ -30,10 +30,12 @@ const TAG_GROUPS = [
     ]
   },
   {
-    title: 'Договор',
+    title: 'Договор и Счет',
     items: [
       { tag: '{{contract_number}}', description: 'Номер договора' },
       { tag: '{{contract_date}}', description: 'Дата договора' },
+      { tag: '{{invoice_number}}', description: 'Номер счета' },
+      { tag: '{{invoice_date}}', description: 'Дата счета' },
       { tag: '{{purchase_subject}}', description: 'Предмет приобретения' },
       { tag: '{{purchase_purpose}}', description: 'Цель приобретения' },
       { tag: '{{funding_source}}', description: 'Источник финансирования' },
@@ -253,6 +255,8 @@ export const ContractTemplateEditor: React.FC = () => {
     const previewDocumentData = {
         contract_number: 'Д-2023-10-01',
         contract_date: '«01» октября 2023 г.',
+        invoice_number: '20231001-ИИ-1',
+        invoice_date: '«01» октября 2023 г.',
         contract_amount: '10 500,00 руб. (Десять тысяч пятьсот рублей 00 копеек)',
         amount_words: 'Десять тысяч пятьсот рублей 00 копеек',
         vat_amount: '1 750,00 руб.',

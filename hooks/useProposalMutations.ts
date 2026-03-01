@@ -3,9 +3,10 @@ import { api } from '../lib/api';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../components/ui';
 import { ProposalDTO, ProposalItemDTO } from '../types/dto';
+import { generateDocumentNumber } from '../lib/documentUtils';
 
 interface CreateProposalPayload {
-  number: number;
+  number: string | number;
   title?: string | null;
   client_id: string | null;
   status: 'draft' | 'sent' | 'accepted' | 'rejected';
@@ -153,7 +154,24 @@ export const useProposalMutations = () => {
         // Delete old items
         await supabase.from('cp_items').delete().eq('cp_id', finalId);
       } else {
-        const res = await api.create<ProposalDTO>('commercial_proposals', header);
+        // Generate custom number
+        let number = header.number;
+        if (!number) {
+            const { data: userData } = await supabase.auth.getUser();
+            if (userData.user) {
+                const { data: profile } = await supabase.from('profiles').select('id, full_name').eq('id', userData.user.id).single();
+                if (profile) {
+                    number = await generateDocumentNumber(supabase, 'commercial_proposals', profile);
+                }
+            }
+        }
+        
+        // Fallback if number generation failed
+        if (!number) {
+            number = `DRAFT-${Date.now()}`;
+        }
+        
+        const res = await api.create<ProposalDTO>('commercial_proposals', { ...header, number });
         finalId = res.id;
       }
 

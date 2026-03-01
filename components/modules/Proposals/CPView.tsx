@@ -5,6 +5,7 @@ import { supabase } from '../../../lib/supabase';
 import { Button, Select, useToast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
 import { sumInWords, replaceDocumentTags } from '../../../lib/formatUtils';
+import { generateDocumentNumber } from '../../../lib/documentUtils';
 
 interface CPViewProps {
   proposalId: string;
@@ -187,8 +188,22 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
     try {
         const { data: tmpl } = await supabase.from('document_templates').select('*').eq('type', 'invoice').limit(1).maybeSingle();
         
+        // Generate custom invoice number
+        let invoiceNumber = '';
+        if (data.created_by) {
+            const { data: profile } = await supabase.from('profiles').select('id, full_name').eq('id', data.created_by).single();
+            if (profile) {
+                invoiceNumber = await generateDocumentNumber(supabase, 'invoices', profile);
+            }
+        }
+
+        if (!invoiceNumber) {
+            invoiceNumber = `INV-${Date.now()}`;
+        }
+
         const { data: inv, error: invError } = await supabase.from('invoices').insert([{
             cp_id: proposalId,
+            number: invoiceNumber,
             client_id: data.client_id,
             object_id: selectedObjectId || null,
             total_amount: toNum(data.total_amount_byn),

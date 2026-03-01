@@ -114,6 +114,8 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                 const documentData = {
                     contract_number: contractNumber,
                     contract_date: new Date().toLocaleDateString('ru-RU'),
+                    invoice_number: invoice.number,
+                    invoice_date: new Date(invoice.date).toLocaleDateString('ru-RU'),
                     contract_amount: amountStr,
                     amount_words: amountWords,
                     vat_amount: vatAmountStr,

@@ -1,13 +1,14 @@
 
 import React, { useState } from 'react';
 import { TableSchema } from '../types';
-import { MIGRATION_SQL_V10, MIGRATION_SQL_V11, MIGRATION_SQL_V12, MIGRATION_SQL_V13, MIGRATION_SQL_V14, MIGRATION_SQL_V15, MIGRATION_SQL_V16, MIGRATION_SQL_V17, MIGRATION_SQL_V18, MIGRATION_SQL_V19, MIGRATION_SQL_V20, MIGRATION_SQL_V21, MIGRATION_SQL_V22 } from '../constants';
+import { MIGRATION_SQL_V10, MIGRATION_SQL_V11, MIGRATION_SQL_V12, MIGRATION_SQL_V13, MIGRATION_SQL_V14, MIGRATION_SQL_V15, MIGRATION_SQL_V16, MIGRATION_SQL_V17, MIGRATION_SQL_V18, MIGRATION_SQL_V19, MIGRATION_SQL_V20, MIGRATION_SQL_V21, MIGRATION_SQL_V22, MIGRATION_SQL_V23 } from '../constants';
 
 interface SqlGeneratorProps { 
   schemas: TableSchema[]; 
 }
 
 const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
+  const [copiedV23, setCopiedV23] = useState(false);
   const [copiedV22, setCopiedV22] = useState(false);
   const [copiedV21, setCopiedV21] = useState(false);
   const [copiedV20, setCopiedV20] = useState(false);
@@ -21,6 +22,12 @@ const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
   const [copiedV12, setCopiedV12] = useState(false);
   const [copiedV11, setCopiedV11] = useState(false);
   const [copiedV10, setCopiedV10] = useState(false);
+
+  const handleCopyV23 = () => {
+    navigator.clipboard.writeText(MIGRATION_SQL_V23);
+    setCopiedV23(true);
+    setTimeout(() => setCopiedV23(false), 2000);
+  };
 
   const handleCopyV22 = () => {
     navigator.clipboard.writeText(MIGRATION_SQL_V22);
@@ -102,6 +109,38 @@ const SqlGenerator: React.FC<SqlGeneratorProps> = ({ schemas }) => {
 
   return (
     <div className="space-y-6">
+      {/* V23 Document Number Format */}
+      <div className="bg-gradient-to-br from-blue-50 to-cyan-50 p-6 rounded-[24px] border border-blue-200 shadow-sm">
+        <h3 className="text-lg font-bold text-blue-900 mb-2 flex items-center gap-2">
+          <span className="material-icons-round text-blue-600">format_list_numbered</span>
+          Формат номеров документов (v23.0)
+        </h3>
+        <div className="text-sm text-blue-800 mb-4 leading-relaxed bg-white/50 p-4 rounded-xl border border-blue-100">
+          <p className="font-bold mb-2">Обновление для поддержки пользовательского формата номеров:</p>
+          <ul className="list-disc list-inside space-y-1 ml-1">
+            <li>Изменяет тип колонки <b>number</b> в таблицах КП и Счетов на TEXT.</li>
+            <li>Позволяет использовать формат: <b>ГГГГММДД-ИИ-Н</b> (ГодМесяцДень-Инициалы-Номер).</li>
+          </ul>
+        </div>
+        
+        <div className="relative group">
+          <div className="absolute top-4 right-4 z-10">
+            <button 
+              onClick={handleCopyV23}
+              className="px-4 py-2 bg-blue-600 text-white rounded-full text-xs font-bold transition-all shadow-lg flex items-center gap-2 hover:bg-blue-700 hover:scale-105 active:scale-95"
+            >
+              <span className="material-icons-round text-sm">{copiedV23 ? 'check' : 'content_copy'}</span>
+              {copiedV23 ? 'СКОПИРОВАНО' : 'КОПИРОВАТЬ SQL'}
+            </button>
+          </div>
+          <div className="bg-[#1e1e1e] p-6 rounded-[20px] border border-slate-800 overflow-hidden shadow-inner">
+            <pre className="overflow-x-auto text-[#a5f3fc] font-mono text-xs leading-relaxed scrollbar-hide whitespace-pre-wrap max-h-[400px]">
+              {MIGRATION_SQL_V23}
+            </pre>
+          </div>
+        </div>
+      </div>
+
       {/* V22 Custom Templates */}
       <div className="bg-gradient-to-br from-indigo-50 to-purple-50 p-6 rounded-[24px] border border-indigo-200 shadow-sm">
         <h3 className="text-lg font-bold text-indigo-900 mb-2 flex items-center gap-2">

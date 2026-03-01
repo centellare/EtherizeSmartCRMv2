@@ -146,7 +146,7 @@ export interface ProposalItemDTO {
 
 export interface ProposalDTO {
   id: string;
-  number: number;
+  number: string | number;
   title: string | null;
   client_id: string | null;
   status: 'draft' | 'sent' | 'accepted' | 'rejected';

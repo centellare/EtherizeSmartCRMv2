@@ -1429,11 +1429,17 @@ COMMIT;
 `;
 
 export const MIGRATION_SQL_V5 = MIGRATION_SQL_V7;
-export const SUPABASE_SETUP_GUIDE = `
-### ВАЖНО: Обновление Партнеры (v7.0)
-1. Скопируйте SQL-скрипт обновления.
-2. Откройте SQL Editor в Supabase.
-3. Выполните скрипт.
-   
-Это добавит таблицу партнеров и связь с клиентами.
+export const MIGRATION_SQL_V23 = `
+-- SmartHome CRM: DOCUMENT NUMBER FORMAT (v23.0)
+-- Changes number column to text to support custom format (YYYYMMDD-Initials-Sequence).
+
+BEGIN;
+
+-- 1. Change CP number to text
+ALTER TABLE public.commercial_proposals ALTER COLUMN number TYPE text;
+
+-- 2. Change Invoice number to text
+ALTER TABLE public.invoices ALTER COLUMN number TYPE text;
+
+COMMIT;
 `;

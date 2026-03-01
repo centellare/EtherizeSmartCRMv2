@@ -145,8 +145,9 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
           const obj = objects.find(o => o.id === selectedObjectId);
           if (obj && obj.client) {
               setLinkedClient(obj.client);
-              if (!title || (title.startsWith('КП для объекта') && title.includes(obj.name))) {
-                  setTitle(`КП для объекта "${obj.name}"`);
+              // Update title if it's empty, or matches old format, or matches new format (starts with client name)
+              if (!title || title.startsWith('КП для объекта') || (obj.client.name && title.startsWith(obj.client.name))) {
+                  setTitle(`${obj.client.name} ${obj.name}`);
               }
           }
       }

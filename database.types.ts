@@ -293,7 +293,7 @@ export type Database = {
           has_vat: boolean | null
           header_data: Json | null
           id: string
-          number: number
+          number: string
           object_id: string | null
           status: string | null
           title: string | null
@@ -309,7 +309,7 @@ export type Database = {
           has_vat?: boolean | null
           header_data?: Json | null
           id?: string
-          number?: number
+          number?: string
           object_id?: string | null
           status?: string | null
           title?: string | null
@@ -325,7 +325,7 @@ export type Database = {
           has_vat?: boolean | null
           header_data?: Json | null
           id?: string
-          number?: number
+          number?: string
           object_id?: string | null
           status?: string | null
           title?: string | null
@@ -496,7 +496,7 @@ export type Database = {
           created_by: string | null
           has_vat: boolean | null
           id: string
-          number: number
+          number: string
           object_id: string | null
           shipping_status: string | null
           status: string | null
@@ -510,7 +510,7 @@ export type Database = {
           created_by?: string | null
           has_vat?: boolean | null
           id?: string
-          number?: number
+          number?: string
           object_id?: string | null
           shipping_status?: string | null
           status?: string | null
@@ -524,7 +524,7 @@ export type Database = {
           created_by?: string | null
           has_vat?: boolean | null
           id?: string
-          number?: number
+          number?: string
           object_id?: string | null
           shipping_status?: string | null
           status?: string | null

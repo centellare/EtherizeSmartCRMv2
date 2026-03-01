@@ -108,6 +108,8 @@ export const replaceDocumentTags = (text: string | null | undefined, clientData:
     // Document specific tags
     '{{contract_number}}': documentData?.contract_number || '',
     '{{contract_date}}': documentData?.contract_date || '',
+    '{{invoice_number}}': documentData?.invoice_number || '',
+    '{{invoice_date}}': documentData?.invoice_date || '',
     '{{contract_amount}}': documentData?.contract_amount || '',
     '{{amount_words}}': documentData?.amount_words || '',
     '{{vat_amount}}': documentData?.vat_amount || '',
