@@ -343,6 +343,17 @@ export interface Client {
   created_at: string | null; // Разрешаем null для сборки
   updated_at: string | null;
   
+  // Legal Data
+  legal_name?: string | null;
+  rep_position_nom?: string | null;
+  rep_position_gen?: string | null;
+  rep_name_nom?: string | null;
+  rep_name_gen?: string | null;
+  rep_name_short?: string | null;
+  basis_of_authority?: string | null;
+  unp?: string | null;
+  bank_details?: string | null;
+  
   // Joins (делаем опциональными и гибкими, чтобы Supabase не ломал типизацию при выборке)
   partner?: any; 
   manager?: { full_name: string } | null;

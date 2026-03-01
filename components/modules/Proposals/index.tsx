@@ -9,10 +9,11 @@ import PriceManager from './PriceManager';
 import FormSettings from './FormSettings';
 import InvoiceView from './InvoiceView';
 import InvoiceList from './InvoiceList';
+import { ContractTemplateEditor } from './ContractTemplateEditor';
 
 const Proposals: React.FC<{ profile: any; initialObjectId?: string | null }> = ({ profile, initialObjectId }) => {
   const queryClient = useQueryClient();
-  const [activeTab, setActiveTab] = useState<'proposals' | 'invoices' | 'prices' | 'forms'>('proposals');
+  const [activeTab, setActiveTab] = useState<'proposals' | 'invoices' | 'prices' | 'forms' | 'contracts'>('proposals');
   const [mode, setMode] = useState<'list' | 'create' | 'edit' | 'view_cp' | 'view_invoice'>('list');
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
@@ -94,6 +95,12 @@ const Proposals: React.FC<{ profile: any; initialObjectId?: string | null }> = (
           >
             Формы и Шаблоны
           </button>
+          <button 
+            onClick={() => setActiveTab('contracts')} 
+            className={`px-6 py-2 rounded-full text-xs font-bold uppercase transition-all ${activeTab === 'contracts' ? 'bg-white shadow-sm text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Договоры
+          </button>
         </div>
       )}
 
@@ -102,6 +109,8 @@ const Proposals: React.FC<{ profile: any; initialObjectId?: string | null }> = (
           <PriceManager profile={profile} />
         ) : activeTab === 'forms' && mode === 'list' ? (
           <FormSettings profile={profile} />
+        ) : activeTab === 'contracts' && mode === 'list' ? (
+          <ContractTemplateEditor />
         ) : activeTab === 'invoices' && mode === 'list' ? (
           <InvoiceList onView={handleViewInvoice} onViewCP={handleViewCP} />
         ) : (

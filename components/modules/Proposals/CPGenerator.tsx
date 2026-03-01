@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { supabase } from '../../../lib/supabase';
 import { Button, Input, Select, Badge, ProductImage, Drawer, useToast } from '../../ui';
 import { Product } from '../../../types';
 import { useProducts } from '../../../hooks/useProducts';
@@ -65,6 +66,20 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
   
   // Product Details Drawer
   const [viewingProduct, setViewingProduct] = useState<Product | null>(null);
+
+  // Load default template for new CP
+  useEffect(() => {
+    if (!proposalId) {
+      const fetchTemplate = async () => {
+        const { data } = await supabase.from('document_templates').select('*').eq('type', 'cp').limit(1).maybeSingle();
+        if (data) {
+          setPreamble(data.header_text || '');
+          setFooter(data.footer_text || '');
+        }
+      };
+      fetchTemplate();
+    }
+  }, [proposalId]);
 
   // Initialize from Proposal
   useEffect(() => {
@@ -435,7 +450,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
           <div className="max-w-3xl mx-auto space-y-8">
             <div>
               <h3 className="text-lg font-bold text-slate-900 mb-2">Вступительный текст</h3>
-              <p className="text-xs text-slate-500 mb-3">Этот текст будет отображаться перед таблицей товаров. Здесь можно указать приветствие, общие условия или описание проекта.</p>
+              <p className="text-xs text-slate-500 mb-3">Этот текст будет отображаться перед таблицей товаров. Поддерживаются теги: {'{{client_name}}'}, {'{{legal_name}}'}, {'{{rep_position_nom}}'}, {'{{rep_name_nom}}'}, {'{{unp}}'}, {'{{bank_details}}'}</p>
               <textarea 
                 value={preamble}
                 onChange={(e) => setPreamble(e.target.value)}
@@ -446,7 +461,7 @@ const CPGenerator: React.FC<CPGeneratorProps> = ({ profile, proposalId, initialO
             
             <div className="border-t border-slate-100 pt-8">
               <h3 className="text-lg font-bold text-slate-900 mb-2">Заключительный текст / Условия</h3>
-              <p className="text-xs text-slate-500 mb-3">Этот текст будет отображаться после итогов. Укажите здесь условия оплаты, сроки поставки, гарантийные обязательства.</p>
+              <p className="text-xs text-slate-500 mb-3">Этот текст будет отображаться после итогов. Поддерживаются теги: {'{{client_name}}'}, {'{{legal_name}}'}, {'{{rep_position_nom}}'}, {'{{rep_name_nom}}'}, {'{{unp}}'}, {'{{bank_details}}'}</p>
               <textarea 
                 value={footer}
                 onChange={(e) => setFooter(e.target.value)}

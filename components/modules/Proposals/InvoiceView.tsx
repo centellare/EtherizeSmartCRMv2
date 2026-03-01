@@ -3,8 +3,9 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { supabase } from '../../../lib/supabase';
 import { Button, useToast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
-import { sumInWords } from '../../../lib/formatUtils';
+import { sumInWords, replaceDocumentTags } from '../../../lib/formatUtils';
 import { notifyRole } from '../../../lib/notifications';
+import { ContractGenerator } from './ContractGenerator';
 
 interface InvoiceViewProps {
   invoiceId: string;
@@ -18,6 +19,8 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
   const [loading, setLoading] = useState(true);
   const [statusLoading, setStatusLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [showContractGenerator, setShowContractGenerator] = useState(false);
+  const [contracts, setContracts] = useState<any[]>([]);
   const [preamble, setPreamble] = useState('');
   const [footer, setFooter] = useState('');
   const toast = useToast();
@@ -56,12 +59,29 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
 
         const { data: set } = await supabase.from('company_settings').select('*').limit(1).maybeSingle();
 
+        const { data: contractData } = await (supabase as any).from('contracts').select('*').eq('invoice_id', invoiceId).is('deleted_at', null);
+        setContracts(contractData || []);
+
         setInvoice(inv);
         setItems(invItems || []);
         
-        setPreamble((inv as any).preamble || '');
-        if ((inv as any).footer) {
-            setFooter((inv as any).footer);
+        let preambleText = (inv as any).preamble;
+        let footerText = (inv as any).footer;
+
+        if (!preambleText || !footerText) {
+            const { data: tmpl } = await supabase.from('document_templates').select('*').eq('type', 'invoice').limit(1).maybeSingle();
+            if (!preambleText && tmpl && tmpl.header_text) {
+                preambleText = tmpl.header_text;
+            }
+            if (!footerText && tmpl && tmpl.footer_text) {
+                footerText = tmpl.footer_text;
+            }
+        }
+
+        setPreamble(preambleText || '');
+        
+        if (footerText) {
+            setFooter(footerText);
         } else {
             // Default footer if empty
             setFooter(`1. Поставщик обязуется поставить Покупателю, а Покупатель обязуется принять и оплатить товар.\n2. Оплата 100% ${(inv as any).due_date ? `в срок до ${formatDate((inv as any).due_date)}` : 'в течение 3 рабочих дней'}.\n3. Срок поставки до 20 рабочих дней.`);
@@ -330,6 +350,68 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
     }
   };
 
+  const handleDeleteContract = async (contractId: string) => {
+      if (!confirm('Вы уверены, что хотите удалить этот договор? Он будет перемещен в корзину.')) return;
+      
+      try {
+          const { data: userData } = await supabase.auth.getUser();
+          const { error } = await (supabase as any).from('contracts').update({
+              deleted_at: new Date().toISOString(),
+              deleted_by: userData.user?.id
+          }).eq('id', contractId);
+          
+          if (error) throw error;
+          
+          toast.success('Договор удален');
+          fetchData();
+      } catch (e: any) {
+          toast.error('Ошибка удаления: ' + e.message);
+      }
+  };
+
+  const handlePrintContract = (content: string, number: string) => {
+      const win = window.open('', '_blank');
+      if (win) {
+          win.document.write(`
+              <html>
+                  <head>
+                      <title>Договор №${number}</title>
+                      <script src="https://cdn.tailwindcss.com"></script>
+                      <style>
+                          @media print {
+                              @page { margin: 15mm; size: A4; }
+                              body { margin: 0; -webkit-print-color-adjust: exact; }
+                          }
+                          /* Quill Styles for Print */
+                          .ql-align-center { text-align: center; }
+                          .ql-align-right { text-align: right; }
+                          .ql-align-justify { text-align: justify; }
+                          blockquote { border-left: 4px solid #ccc; padding-left: 16px; margin-left: 0; font-style: italic; }
+                          ul, ol { padding-left: 2em; margin: 1em 0; }
+                          ul { list-style-type: disc; }
+                          ol { list-style-type: decimal; }
+                          strong { font-weight: bold; }
+                          em { font-style: italic; }
+                          u { text-decoration: underline; }
+                          s { text-decoration: line-through; }
+                          h1 { font-size: 2em; font-weight: bold; margin: 0.67em 0; }
+                          h2 { font-size: 1.5em; font-weight: bold; margin: 0.83em 0; }
+                          h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0; }
+                          p { margin: 0.5em 0; line-height: 1.5; }
+                      </style>
+                  </head>
+                  <body class="p-8 font-serif">
+                      <div class="prose max-w-none">
+                          ${content}
+                      </div>
+                      <script>setTimeout(()=>window.print(), 800)</script>
+                  </body>
+              </html>
+          `);
+          win.document.close();
+      }
+  };
+
   // --- RENDER BLOCK STARTS HERE ---
 
   if (loading) return <div className="p-10 text-center">Загрузка...</div>;
@@ -346,6 +428,9 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
   const companyReqs = toStr(settings?.requisites);
   const companyBank = toStr(settings?.bank_details);
 
+  const renderedPreamble = replaceDocumentTags(preamble, invoice?.client);
+  const renderedFooter = replaceDocumentTags(footer, invoice?.client);
+
   return (
     <div className="h-full flex flex-col bg-slate-50">
         
@@ -361,6 +446,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                 {invoice.status === 'draft' && (
                     <Button variant="secondary" icon="edit_note" onClick={() => setEditMode(true)}>Оформление</Button>
                 )}
+                <Button variant="secondary" icon="description" onClick={() => setShowContractGenerator(true)}>Подготовить договор</Button>
             </div>
             <div className="flex items-center gap-4">
                 <label className="flex items-center gap-2 cursor-pointer text-sm">
@@ -370,6 +456,16 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                 <Button icon="print" onClick={handlePrint}>Печать</Button>
             </div>
         </div>
+
+        {showContractGenerator && (
+            <ContractGenerator 
+                invoiceId={invoiceId} 
+                onClose={() => {
+                    setShowContractGenerator(false);
+                    fetchData();
+                }} 
+            />
+        )}
 
         {editMode && (
             <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
@@ -403,7 +499,36 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
             </div>
         )}
 
-        <div className="flex-grow overflow-y-auto p-4 md:p-8 flex justify-center">
+        <div className="flex-grow overflow-y-auto p-4 md:p-8 flex flex-col items-center">
+            {/* Attached Contracts Section */}
+            {contracts.length > 0 && (
+                <div className="w-full max-w-[210mm] mb-6 bg-white rounded-xl border border-slate-200 p-4 shadow-sm">
+                    <h3 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+                        <span className="material-icons text-blue-600 text-[18px]">description</span>
+                        Привязанные договоры
+                    </h3>
+                    <div className="space-y-2">
+                        {contracts.map(c => (
+                            <div key={c.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-8 h-8 rounded bg-blue-100 text-blue-600 flex items-center justify-center">
+                                        <span className="material-icons text-[16px]">article</span>
+                                    </div>
+                                    <div>
+                                        <div className="font-bold text-sm text-slate-800">Договор №{c.contract_number}</div>
+                                        <div className="text-xs text-slate-500">Создан: {formatDate(c.created_at)}</div>
+                                    </div>
+                                </div>
+                                <div className="flex gap-2">
+                                    <Button variant="secondary" icon="print" onClick={() => handlePrintContract(c.content, c.contract_number)}>Печать</Button>
+                                    <Button variant="danger" icon="delete" onClick={() => handleDeleteContract(c.id)} />
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             <div id="invoice-printable" className="bg-white w-[210mm] min-h-[297mm] p-[10mm] shadow-lg text-black font-serif relative">
                 
                 {/* HEADER */}
@@ -450,9 +575,9 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                 </div>
 
                 {/* PREAMBLE */}
-                {preamble && (
+                {renderedPreamble && (
                     <div className="mb-6 text-[11px] whitespace-pre-wrap leading-relaxed">
-                        {preamble}
+                        {renderedPreamble}
                     </div>
                 )}
 
@@ -509,7 +634,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
 
                 {/* TERMS / FOOTER */}
                 <div className="border border-black p-2 text-[9px] mb-6 whitespace-pre-wrap leading-relaxed">
-                    {footer}
+                    {renderedFooter}
                 </div>
 
                 {/* SIGNATURES */}

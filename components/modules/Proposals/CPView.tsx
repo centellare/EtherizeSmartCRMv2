@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '../../../lib/supabase';
 import { Button, Select, useToast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
-import { sumInWords } from '../../../lib/formatUtils';
+import { sumInWords, replaceDocumentTags } from '../../../lib/formatUtils';
 
 interface CPViewProps {
   proposalId: string;
@@ -60,7 +60,7 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
     const fetchCP = async () => {
       setLoading(true);
       try {
-        const { data: cp, error: cpError } = await supabase.from('commercial_proposals').select('*, client:clients(name, requisites), object:objects(name, address), creator:profiles(full_name)').eq('id', proposalId).single();
+        const { data: cp, error: cpError } = await supabase.from('commercial_proposals').select('*, client:clients(*), object:objects(name, address), creator:profiles(full_name)').eq('id', proposalId).single();
         if (cpError) throw cpError;
 
         const { data: cpItems, error: itemsError } = await supabase.from('cp_items').select('*').eq('cp_id', proposalId).order('id'); 
@@ -185,6 +185,8 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
     setSelectObjectModalOpen(false);
     setCreatingInvoice(true);
     try {
+        const { data: tmpl } = await supabase.from('document_templates').select('*').eq('type', 'invoice').limit(1).maybeSingle();
+        
         const { data: inv, error: invError } = await supabase.from('invoices').insert([{
             cp_id: proposalId,
             client_id: data.client_id,
@@ -193,7 +195,9 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
             has_vat: data.has_vat,
             created_by: data.created_by,
             status: 'draft',
-            due_date: dueDate
+            due_date: dueDate,
+            preamble: tmpl?.header_text || '',
+            footer: tmpl?.footer_text || ''
         }]).select('id, number').single();
 
         if (invError) throw invError;
@@ -321,6 +325,9 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
       ...availableObjects.map(o => ({value: String(o.id), label: String(o.name || 'Без названия')}))
   ];
 
+  const renderedPreamble = replaceDocumentTags(data?.preamble, data?.client);
+  const renderedFooter = replaceDocumentTags(data?.footer, data?.client);
+
   return (
     <div className="h-full flex flex-col bg-slate-50">
       
@@ -425,9 +432,9 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
           </div>
 
           {/* PREAMBLE */}
-          {data.preamble && (
+          {renderedPreamble && (
             <div className="mb-6 text-[11px] whitespace-pre-wrap leading-relaxed">
-              {data.preamble}
+              {renderedPreamble}
             </div>
           )}
 
@@ -479,9 +486,9 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
           </div>
 
           {/* FOOTER */}
-          {data.footer && (
+          {renderedFooter && (
             <div className="mb-8 text-[10px] whitespace-pre-wrap leading-relaxed border-t border-black pt-4">
-              {data.footer}
+              {renderedFooter}
             </div>
           )}
 

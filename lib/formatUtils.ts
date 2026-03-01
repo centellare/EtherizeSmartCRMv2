@@ -85,3 +85,46 @@ export const sumInWords = (amount: number): string => {
 
   return result.charAt(0).toUpperCase() + result.slice(1);
 };
+
+export const replaceDocumentTags = (text: string | null | undefined, clientData: any, documentData?: any): string => {
+  if (!text) return '';
+  if (!clientData && !documentData) return text;
+
+  let result = text;
+  const tags: Record<string, string> = {
+    '{{client_name}}': clientData?.name || '',
+    '{{legal_name}}': clientData?.legal_name || clientData?.name || '',
+    '{{rep_position_nom}}': clientData?.rep_position_nom || '',
+    '{{rep_position_gen}}': clientData?.rep_position_gen || '',
+    '{{rep_name_nom}}': clientData?.rep_name_nom || '',
+    '{{rep_name_gen}}': clientData?.rep_name_gen || '',
+    '{{rep_name_short}}': clientData?.rep_name_short || '',
+    '{{basis_of_authority}}': clientData?.basis_of_authority || '',
+    '{{unp}}': clientData?.unp || '',
+    '{{bank_details}}': clientData?.bank_details || '',
+    '{{contact_person}}': clientData?.contact_person || '',
+    '{{phone}}': clientData?.phone || '',
+    '{{email}}': clientData?.email || '',
+    // Document specific tags
+    '{{contract_number}}': documentData?.contract_number || '',
+    '{{contract_date}}': documentData?.contract_date || '',
+    '{{contract_amount}}': documentData?.contract_amount || '',
+    '{{amount_words}}': documentData?.amount_words || '',
+    '{{vat_amount}}': documentData?.vat_amount || '',
+    '{{vat_amount_words}}': documentData?.vat_amount_words || '',
+    '{{purchase_subject}}': documentData?.purchase_subject || '',
+    '{{prepayment_percent}}': documentData?.prepayment_percent || '',
+    '{{delivery_days}}': documentData?.delivery_days || '',
+    '{{purchase_purpose}}': documentData?.purchase_purpose || '',
+    '{{funding_source}}': documentData?.funding_source || '',
+  };
+
+  for (const [tag, value] of Object.entries(tags)) {
+    // Use global replace
+    // Handle newlines for HTML content
+    const safeValue = String(value).replace(/\n/g, '<br/>');
+    result = result.split(tag).join(safeValue);
+  }
+
+  return result;
+};

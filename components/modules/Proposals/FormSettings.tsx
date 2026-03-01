@@ -212,6 +212,9 @@ const FormSettings: React.FC<{ profile: any }> = ({ profile }) => {
               </div>
               
               <div className="space-y-4">
+                  <div className="bg-blue-50 text-blue-800 p-3 rounded-xl text-xs mb-4">
+                      Поддерживаемые теги: {'{{client_name}}'}, {'{{legal_name}}'}, {'{{rep_position_nom}}'}, {'{{rep_name_nom}}'}, {'{{unp}}'}, {'{{bank_details}}'}
+                  </div>
                   <div>
                       <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Текст в шапке</label>
                       <textarea 
@@ -245,6 +248,9 @@ const FormSettings: React.FC<{ profile: any }> = ({ profile }) => {
               </div>
               
               <div className="space-y-4">
+                  <div className="bg-blue-50 text-blue-800 p-3 rounded-xl text-xs mb-4">
+                      Поддерживаемые теги: {'{{client_name}}'}, {'{{legal_name}}'}, {'{{rep_position_nom}}'}, {'{{rep_name_nom}}'}, {'{{unp}}'}, {'{{bank_details}}'}
+                  </div>
                   <div>
                       <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 ml-1">Условия поставки (шапка)</label>
                       <textarea 
