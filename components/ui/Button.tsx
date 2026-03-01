@@ -5,6 +5,7 @@ interface ButtonProps {
   onClick?: (e: React.MouseEvent) => void;
   children?: React.ReactNode;
   variant?: 'primary' | 'secondary' | 'danger' | 'ghost' | 'tonal';
+  size?: 'sm' | 'md' | 'lg';
   disabled?: boolean;
   loading?: boolean;
   className?: string;
@@ -17,6 +18,7 @@ export const Button: React.FC<ButtonProps> = ({
   onClick, 
   children, 
   variant = 'primary', 
+  size = 'md',
   disabled, 
   loading, 
   className = '', 
@@ -31,6 +33,12 @@ export const Button: React.FC<ButtonProps> = ({
     danger: 'bg-[#ba1a1a] hover:bg-[#93000a] text-white',
     ghost: 'text-[#005ac1] hover:bg-[#005ac1]/10'
   };
+
+  const sizes = {
+    sm: 'h-8 px-3 text-xs',
+    md: 'h-10 px-6 text-sm',
+    lg: 'h-12 px-8 text-base'
+  };
   
   return (
     <button 
@@ -43,7 +51,7 @@ export const Button: React.FC<ButtonProps> = ({
         }
       }}
       title={title}
-      className={`h-10 px-6 rounded-full font-medium text-sm transition-all flex items-center justify-center gap-2 tracking-[.00714em] disabled:opacity-38 ${variants[variant]} ${className}`}
+      className={`rounded-full font-medium transition-all flex items-center justify-center gap-2 tracking-[.00714em] disabled:opacity-38 ${variants[variant]} ${sizes[size]} ${className}`}
     >
       {loading ? (
         <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin"></div>

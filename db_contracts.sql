@@ -9,6 +9,7 @@ CREATE TABLE IF NOT EXISTS public.contracts (
   client_id uuid REFERENCES public.clients(id) ON DELETE SET NULL,
   contract_number text NOT NULL,
   content text NOT NULL,
+  content_json jsonb,
   amount numeric(15,2),
   status text DEFAULT 'active',
   created_at timestamptz DEFAULT now(),

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS public.contract_templates (
   id uuid DEFAULT gen_random_uuid() PRIMARY KEY,
   type text NOT NULL UNIQUE, -- 'individual_100', 'individual_partial', 'legal_100', 'legal_partial'
   content text NOT NULL,
+  content_json jsonb,
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now()
 );

@@ -329,13 +329,23 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                     <script src="https://cdn.tailwindcss.com"></script>
                     <style>
                         @media print {
-                            @page { margin: 0; size: A4; }
-                            body { margin: 0; -webkit-print-color-adjust: exact; }
+                            @page { 
+                                size: A4; 
+                                margin: 15mm 10mm 15mm 15mm; 
+                            }
+                            body { 
+                                margin: 0 !important; 
+                                padding: 0 !important;
+                                -webkit-print-color-adjust: exact; 
+                            }
                             #invoice-printable {
                                 margin: 0;
                                 width: 100%;
-                                padding: 15mm 20mm !important;
+                                padding: 0 !important;
                                 box-shadow: none !important;
+                                word-break: normal !important;
+                                overflow-wrap: break-word !important;
+                                hyphens: none !important;
                             }
                         }
                     </style>
@@ -379,15 +389,17 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                       <script src="https://cdn.tailwindcss.com"></script>
                       <style>
                           @media print {
-                              @page { margin: 0; size: A4; }
+                              @page { 
+                                  size: A4; 
+                                  margin: 20mm 10mm 20mm 20mm; 
+                              }
                               html, body { 
-                                  width: 210mm;
-                                  height: 100%;
+                                  width: 100%;
                                   margin: 0 !important; 
                                   padding: 0 !important;
                               }
                               .print-container {
-                                  padding: 20mm 15mm;
+                                  padding: 0 !important;
                                   width: 100%;
                                   box-sizing: border-box;
                               }
@@ -409,12 +421,18 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                           h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0; }
                           p { margin: 0.5em 0; line-height: 1.5; }
                           
-                          /* Ensure text wraps */
+                          /* Ensure text wraps correctly without breaking words in the middle */
                           .prose { 
-                              max-width: none !important; 
+                              max-width: 100% !important; 
                               width: 100% !important;
-                              word-wrap: break-word;
-                              overflow-wrap: break-word;
+                              word-break: normal !important;
+                              overflow-wrap: break-word !important;
+                              hyphens: none !important;
+                              font-size: 14px !important;
+                          }
+                          .prose p {
+                              margin-bottom: 0.5em;
+                              line-height: 1.5;
                           }
                       </style>
                   </head>

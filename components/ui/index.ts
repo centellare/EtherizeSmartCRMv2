@@ -11,3 +11,4 @@ export * from './ToastContext';
 export * from './Drawer';
 export * from './ProductImage';
 export * from './FinanceWidget';
+export * from './TiptapEditor';

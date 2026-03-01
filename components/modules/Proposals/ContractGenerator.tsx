@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
-import ReactQuill from 'react-quill-new';
-import 'react-quill-new/dist/quill.snow.css';
+import { TiptapEditor } from '../../ui';
 import { supabase } from '../../../lib/supabase';
 import { Button, Input, useToast } from '../../ui';
 import { replaceDocumentTags, sumInWords } from '../../../lib/formatUtils';
 import { formatDateLong } from '../../../lib/dateUtils';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 interface ContractGeneratorProps {
     invoiceId: string;
@@ -17,6 +18,7 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
     const [templates, setTemplates] = useState<any[]>([]);
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
     const [content, setContent] = useState('');
+    const [contentJson, setContentJson] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
     
@@ -29,7 +31,12 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
     const [fundingSource, setFundingSource] = useState('Собственные средства');
     const [paymentDeadlineDays, setPaymentDeadlineDays] = useState('5');
 
-    const quillRef = useRef<ReactQuill>(null);
+    // Margin settings
+    const [marginTop, setMarginTop] = useState('20');
+    const [marginBottom, setMarginBottom] = useState('20');
+    const [marginLeft, setMarginLeft] = useState('30');
+    const [marginRight, setMarginRight] = useState('15');
+
     const toast = useToast();
 
     useEffect(() => {
@@ -163,6 +170,7 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                     client_id: client?.id,
                     contract_number: contractNumber,
                     content: content,
+                    content_json: contentJson,
                     amount: invoice?.total_amount,
                     created_by: userData.user?.id
                 }]);
@@ -179,32 +187,182 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
         }
     };
 
-    const modules = {
-        toolbar: [
-            [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
-            ['bold', 'italic', 'underline', 'strike'],
-            [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-            [{ 'align': [] }],
-            ['link', 'clean']
-        ],
+    const handlePrint = () => {
+        window.print();
+    };
+
+    const handleDownloadPDF = async () => {
+        const element = document.getElementById('contract-document');
+        if (!element) return;
+
+        setIsSaving(true);
+        try {
+            const canvas = await html2canvas(element, {
+                scale: 2, // Higher quality
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff'
+            });
+            
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            const imgProps = pdf.getImageProperties(imgData);
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+            
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            pdf.save(`${contractNumber || 'contract'}.pdf`);
+            toast.success('PDF успешно сформирован');
+        } catch (error) {
+            console.error('PDF generation error:', error);
+            toast.error('Ошибка при создании PDF');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleDownloadDoc = () => {
+        const header = `
+            <html xmlns:o='urn:schemas-microsoft-com:office:office' 
+                  xmlns:w='urn:schemas-microsoft-com:office:word' 
+                  xmlns='http://www.w3.org/TR/REC-html40'>
+            <head>
+                <meta charset='utf-8'>
+                <style>
+                    body { font-family: "Times New Roman", serif; font-size: 12pt; line-height: 1.5; }
+                    p { margin: 0 0 10pt 0; }
+                    table { border-collapse: collapse; width: 100%; }
+                    td, th { border: 1px solid black; padding: 5pt; }
+                </style>
+            </head>
+            <body>
+                ${content}
+            </body>
+            </html>`;
+        
+        const blob = new Blob(['\ufeff', header], {
+            type: 'application/msword'
+        });
+        
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${contractNumber || 'contract'}.doc`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     };
 
     return (
         <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in">
-            <div className="bg-white rounded-[24px] w-full max-w-6xl h-[90vh] shadow-xl flex flex-col overflow-hidden">
+            <style>{`
+                @media print {
+                    @page {
+                        size: A4;
+                        margin: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm;
+                    }
+                    body * {
+                        visibility: hidden !important;
+                    }
+                    .print-container, .print-container * {
+                        visibility: visible !important;
+                    }
+                    .print-container {
+                        position: absolute;
+                        left: 0;
+                        top: 0;
+                        width: 100%;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        box-shadow: none !important;
+                        font-size: 12pt !important;
+                    }
+                    .no-print {
+                        display: none !important;
+                    }
+                }
+                .document-editor .ProseMirror {
+                    font-family: "Times New Roman", Times, serif !important;
+                    font-size: 12pt !important;
+                    line-height: 1.5 !important;
+                    padding: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm !important;
+                    min-height: 297mm !important;
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    background: white !important;
+                    color: black !important;
+                    -webkit-hyphens: none !important;
+                    -ms-hyphens: none !important;
+                    hyphens: none !important;
+                    word-break: normal !important;
+                    overflow-wrap: break-word !important;
+                    text-align: justify;
+                    text-justify: inter-word;
+                    white-space: pre-wrap !important;
+                    box-sizing: border-box !important;
+                    outline: none !important;
+                }
+                .document-editor .ProseMirror p {
+                    margin-bottom: 0 !important;
+                }
+                .document-editor .ProseMirror:focus {
+                    outline: none !important;
+                }
+                /* Скрываем любые внутренние скроллы редактора */
+                .document-editor {
+                    overflow: hidden !important;
+                }
+                .document-editor .ProseMirror:focus {
+                    outline: none !important;
+                }
+            `}</style>
+            <div className="bg-white rounded-[24px] w-full max-w-6xl h-[90vh] shadow-xl flex flex-col overflow-hidden no-print">
                 {/* Header */}
                 <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center shrink-0">
                     <div className="flex items-center gap-4">
                         <Button variant="secondary" icon="close" onClick={onClose}>Отмена</Button>
                         <h2 className="text-xl font-bold text-slate-800">Подготовка договора</h2>
                     </div>
-                    <Button 
-                        onClick={handleSave} 
-                        loading={isSaving}
-                        icon="save"
-                    >
-                        Сохранить договор
-                    </Button>
+                    <div className="flex gap-2">
+                        <Button 
+                            onClick={handleDownloadPDF} 
+                            variant="secondary"
+                            icon="picture_as_pdf"
+                            disabled={!content || isSaving}
+                            loading={isSaving}
+                        >
+                            PDF
+                        </Button>
+                        <Button 
+                            onClick={handleDownloadDoc} 
+                            variant="secondary"
+                            icon="description"
+                            disabled={!content}
+                        >
+                            .DOC
+                        </Button>
+                        <Button 
+                            onClick={handlePrint} 
+                            variant="secondary"
+                            icon="print"
+                            disabled={!content}
+                        >
+                            Печать / PDF
+                        </Button>
+                        <Button 
+                            onClick={handleSave} 
+                            loading={isSaving}
+                            icon="save"
+                        >
+                            Сохранить в CRM
+                        </Button>
+                    </div>
                 </div>
 
                 {/* Main Content */}
@@ -226,6 +384,36 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                                     </option>
                                 ))}
                             </select>
+                        </div>
+
+                        <div className="pt-4 border-t border-slate-200">
+                            <h3 className="text-sm font-bold text-slate-800 mb-4">Поля страницы (мм)</h3>
+                            <div className="grid grid-cols-2 gap-3">
+                                <Input 
+                                    label="Сверху" 
+                                    value={marginTop} 
+                                    onChange={(e) => setMarginTop(e.target.value)} 
+                                    type="number"
+                                />
+                                <Input 
+                                    label="Снизу" 
+                                    value={marginBottom} 
+                                    onChange={(e) => setMarginBottom(e.target.value)} 
+                                    type="number"
+                                />
+                                <Input 
+                                    label="Слева" 
+                                    value={marginLeft} 
+                                    onChange={(e) => setMarginLeft(e.target.value)} 
+                                    type="number"
+                                />
+                                <Input 
+                                    label="Справа" 
+                                    value={marginRight} 
+                                    onChange={(e) => setMarginRight(e.target.value)} 
+                                    type="number"
+                                />
+                            </div>
                         </div>
 
                         <div className="pt-4 border-t border-slate-200">
@@ -295,14 +483,14 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                             </div>
                         ) : null}
-                        <div className="w-[210mm] min-h-[297mm] bg-white shadow-lg flex flex-col">
-                            <ReactQuill 
-                                ref={quillRef}
-                                theme="snow" 
-                                value={content} 
-                                onChange={setContent}
-                                modules={modules}
-                                className="flex-grow flex flex-col h-full font-serif"
+                        <div id="contract-document" className="w-[210mm] min-h-[297mm] bg-white shadow-lg flex flex-col document-editor print-container">
+                            <TiptapEditor 
+                                content={content} 
+                                onChange={(html, json) => {
+                                    setContent(html);
+                                    setContentJson(json);
+                                }}
+                                className="flex-grow flex flex-col h-full border-none"
                                 placeholder="Сгенерируйте текст договора или вставьте свой..."
                             />
                         </div>

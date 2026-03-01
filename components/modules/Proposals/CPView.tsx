@@ -296,13 +296,23 @@ const CPView: React.FC<CPViewProps> = ({ proposalId, onClose, onInvoiceCreated }
                         <script src="https://cdn.tailwindcss.com"></script>
                         <style>
                             @media print { 
-                                @page { margin: 0; size: A4; }
-                                body { margin: 0; -webkit-print-color-adjust: exact; }
+                                @page { 
+                                    size: A4; 
+                                    margin: 15mm 10mm 15mm 15mm; 
+                                }
+                                body { 
+                                    margin: 0 !important; 
+                                    padding: 0 !important;
+                                    -webkit-print-color-adjust: exact; 
+                                }
                                 #cp-printable-area {
                                     margin: 0;
                                     width: 100%;
-                                    padding: 15mm 20mm !important;
+                                    padding: 0 !important;
                                     box-shadow: none !important;
+                                    word-break: normal !important;
+                                    overflow-wrap: break-word !important;
+                                    hyphens: none !important;
                                 }
                             }
                         </style>

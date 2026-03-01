@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
-import ReactQuill from 'react-quill-new';
-import 'react-quill-new/dist/quill.snow.css';
+import { TiptapEditor, TiptapEditorRef } from '../../ui';
 import { supabase } from '../../../lib/supabase';
 import { Button, useToast } from '../../ui';
 import { replaceDocumentTags } from '../../../lib/formatUtils';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 const TAG_GROUPS = [
   {
@@ -74,11 +75,18 @@ export const ContractTemplateEditor: React.FC = () => {
     const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
     const [templateName, setTemplateName] = useState('');
     const [content, setContent] = useState('');
+    const [contentJson, setContentJson] = useState<any>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [showPreview, setShowPreview] = useState(false);
     
-    const quillRef = useRef<ReactQuill>(null);
+    // Margin settings
+    const [marginTop, setMarginTop] = useState('20');
+    const [marginBottom, setMarginBottom] = useState('20');
+    const [marginLeft, setMarginLeft] = useState('30');
+    const [marginRight, setMarginRight] = useState('15');
+
+    const tiptapRef = useRef<TiptapEditorRef>(null);
     const toast = useToast();
 
     // Fetch templates on mount
@@ -170,6 +178,7 @@ export const ContractTemplateEditor: React.FC = () => {
                     .update({ 
                         name: templateName,
                         content: content,
+                        content_json: contentJson,
                         updated_at: new Date().toISOString()
                     })
                     .eq('id', selectedTemplateId);
@@ -185,6 +194,7 @@ export const ContractTemplateEditor: React.FC = () => {
                     .insert([{ 
                         name: templateName,
                         content: content,
+                        content_json: contentJson,
                         type: randomType, // Fallback for legacy constraint
                         is_system: false
                     }])
@@ -209,31 +219,82 @@ export const ContractTemplateEditor: React.FC = () => {
     };
 
     const handleInsertTag = (tag: string) => {
-        const editor = quillRef.current?.getEditor();
+        const editor = tiptapRef.current?.getEditor();
         if (!editor) {
             navigator.clipboard.writeText(tag);
             toast.success(`Тэг ${tag} скопирован в буфер обмена`);
             return;
         }
 
-        const range = editor.getSelection(true);
-        if (range) {
-            editor.insertText(range.index, tag);
-            editor.setSelection(range.index + tag.length, 0);
-        } else {
-            const length = editor.getLength();
-            editor.insertText(length, tag);
-        }
+        editor.chain().focus().insertContent(tag).run();
     };
 
-    const modules = {
-        toolbar: [
-            [{ 'header': [1, 2, 3, 4, 5, 6, false] }],
-            ['bold', 'italic', 'underline', 'strike'],
-            [{ 'list': 'ordered'}, { 'list': 'bullet' }],
-            [{ 'align': [] }],
-            ['link', 'clean']
-        ],
+    const handleDownloadDoc = () => {
+        const header = `
+            <html xmlns:o='urn:schemas-microsoft-com:office:office' 
+                  xmlns:w='urn:schemas-microsoft-com:office:word' 
+                  xmlns='http://www.w3.org/TR/REC-html40'>
+            <head>
+                <meta charset='utf-8'>
+                <style>
+                    body { font-family: "Times New Roman", serif; font-size: 12pt; line-height: 1.5; }
+                    p { margin: 0 0 10pt 0; }
+                    table { border-collapse: collapse; width: 100%; }
+                    td, th { border: 1px solid black; padding: 5pt; }
+                </style>
+            </head>
+            <body>
+                ${replaceDocumentTags(content, previewClientData, previewDocumentData)}
+            </body>
+            </html>`;
+        
+        const blob = new Blob(['\ufeff', header], {
+            type: 'application/msword'
+        });
+        
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `${templateName || 'template'}.doc`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+    };
+
+    const handleDownloadPDF = async () => {
+        const element = document.getElementById('template-preview-container');
+        if (!element) return;
+
+        setIsSaving(true);
+        try {
+            const canvas = await html2canvas(element, {
+                scale: 2,
+                useCORS: true,
+                logging: false,
+                backgroundColor: '#ffffff'
+            });
+            
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF({
+                orientation: 'portrait',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            const imgProps = pdf.getImageProperties(imgData);
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+            
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            pdf.save(`${templateName || 'template'}.pdf`);
+            toast.success('PDF успешно сформирован');
+        } catch (error) {
+            console.error('PDF generation error:', error);
+            toast.error('Ошибка при создании PDF');
+        } finally {
+            setIsSaving(false);
+        }
     };
 
     const previewClientData = {
@@ -279,21 +340,67 @@ export const ContractTemplateEditor: React.FC = () => {
                     max-width: none !important; 
                     width: 100% !important;
                     word-break: normal !important;
-                    overflow-wrap: break-word !important;
-                    hyphens: manual !important;
+                    overflow-wrap: normal !important;
+                    -webkit-hyphens: none !important;
+                    -ms-hyphens: none !important;
+                    hyphens: none !important;
+                    text-align: justify;
+                    text-justify: inter-word;
+                    white-space: pre-wrap !important;
                 }
-                .prose p {
+                .document-preview {
+                    font-family: "Times New Roman", Times, serif !important;
+                    font-size: 12pt !important;
+                    line-height: 1.5 !important;
+                    color: black !important;
+                    -webkit-hyphens: none !important;
+                    -ms-hyphens: none !important;
+                    hyphens: none !important;
+                    white-space: pre-wrap !important;
+                    padding: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm !important;
+                    width: 210mm !important;
+                    min-height: 297mm !important;
+                    background: white !important;
+                    box-sizing: border-box !important;
+                }
+                .document-preview p {
                     margin-bottom: 0.5em;
-                    line-height: 1.5;
                 }
-                .prose h1, .prose h2, .prose h3 {
+                .document-preview h1, .document-preview h2, .document-preview h3 {
                     margin-top: 1em;
                     margin-bottom: 0.5em;
                     font-weight: bold;
                 }
-                .ql-align-center { text-align: center; }
-                .ql-align-right { text-align: right; }
-                .ql-align-justify { text-align: justify; }
+                .document-editor .ProseMirror {
+                    font-family: "Times New Roman", Times, serif !important;
+                    font-size: 12pt !important;
+                    line-height: 1.5 !important;
+                    padding: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm !important;
+                    min-height: 297mm !important;
+                    width: 100% !important;
+                    max-width: 100% !important;
+                    background: white !important;
+                    color: black !important;
+                    -webkit-hyphens: none !important;
+                    -ms-hyphens: none !important;
+                    hyphens: none !important;
+                    word-break: normal !important;
+                    overflow-wrap: break-word !important;
+                    text-align: justify;
+                    text-justify: inter-word;
+                    white-space: pre-wrap !important;
+                    box-sizing: border-box !important;
+                    outline: none !important;
+                }
+                .document-editor .ProseMirror p {
+                    margin-bottom: 0 !important;
+                }
+                .document-editor {
+                    overflow: hidden !important;
+                }
+                .document-editor .ProseMirror:focus {
+                    outline: none !important;
+                }
             `}</style>
             {/* Header */}
             <div className="p-4 bg-white border-b border-slate-200 flex flex-col gap-4 shadow-sm sticky top-0 z-20">
@@ -313,6 +420,23 @@ export const ContractTemplateEditor: React.FC = () => {
                                 Удалить
                             </Button>
                         )}
+                        <Button 
+                            onClick={handleDownloadPDF} 
+                            variant="secondary"
+                            icon="picture_as_pdf"
+                            disabled={!content || isSaving}
+                            loading={isSaving}
+                        >
+                            PDF
+                        </Button>
+                        <Button 
+                            onClick={handleDownloadDoc} 
+                            variant="secondary"
+                            icon="description"
+                            disabled={!content}
+                        >
+                            .DOC
+                        </Button>
                         <Button 
                             onClick={() => setShowPreview(!showPreview)} 
                             variant="secondary"
@@ -396,18 +520,20 @@ export const ContractTemplateEditor: React.FC = () => {
                     
                     {showPreview ? (
                         <div 
-                            className="w-[210mm] min-h-[297mm] bg-white shadow-lg p-[20mm_15mm] prose max-w-none font-serif"
+                            id="template-preview-container"
+                            className="w-[210mm] min-h-[297mm] bg-white shadow-lg prose max-w-none document-preview"
                             dangerouslySetInnerHTML={{ __html: replaceDocumentTags(content, previewClientData, previewDocumentData) }}
                         />
                     ) : (
-                        <div className="w-[210mm] min-h-[297mm] bg-white shadow-lg flex flex-col">
-                            <ReactQuill 
-                                ref={quillRef}
-                                theme="snow" 
-                                value={content} 
-                                onChange={setContent}
-                                modules={modules}
-                                className="flex-grow flex flex-col h-full font-serif"
+                        <div className="w-[210mm] min-h-[297mm] bg-white shadow-lg flex flex-col document-editor">
+                            <TiptapEditor 
+                                ref={tiptapRef}
+                                content={content} 
+                                onChange={(html, json) => {
+                                    setContent(html);
+                                    setContentJson(json);
+                                }}
+                                className="flex-grow flex flex-col h-full border-none"
                                 placeholder="Вставьте текст шаблона договора сюда..."
                             />
                         </div>
@@ -424,6 +550,48 @@ export const ContractTemplateEditor: React.FC = () => {
                     </div>
                     
                     <div className="flex-grow overflow-y-auto p-4 space-y-6">
+                        <div className="pb-6 border-b border-slate-100">
+                            <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 px-1">Поля страницы (мм)</h4>
+                            <div className="grid grid-cols-2 gap-2 px-1">
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-slate-500 uppercase font-bold">Верх</label>
+                                    <input 
+                                        type="number" 
+                                        value={marginTop} 
+                                        onChange={(e) => setMarginTop(e.target.value)}
+                                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-slate-500 uppercase font-bold">Низ</label>
+                                    <input 
+                                        type="number" 
+                                        value={marginBottom} 
+                                        onChange={(e) => setMarginBottom(e.target.value)}
+                                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-slate-500 uppercase font-bold">Лево</label>
+                                    <input 
+                                        type="number" 
+                                        value={marginLeft} 
+                                        onChange={(e) => setMarginLeft(e.target.value)}
+                                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-slate-500 uppercase font-bold">Право</label>
+                                    <input 
+                                        type="number" 
+                                        value={marginRight} 
+                                        onChange={(e) => setMarginRight(e.target.value)}
+                                        className="w-full px-2 py-1 text-xs border border-slate-200 rounded focus:outline-none focus:ring-1 focus:ring-blue-500"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
                         {TAG_GROUPS.map((group, gIdx) => (
                             <div key={gIdx}>
                                 <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 px-1">{group.title}</h4>
