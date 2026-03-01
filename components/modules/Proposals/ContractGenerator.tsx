@@ -34,7 +34,7 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
     // Margin settings
     const [marginTop, setMarginTop] = useState('20');
     const [marginBottom, setMarginBottom] = useState('20');
-    const [marginLeft, setMarginLeft] = useState('30');
+    const [marginLeft, setMarginLeft] = useState('15');
     const [marginRight, setMarginRight] = useState('15');
 
     const toast = useToast();

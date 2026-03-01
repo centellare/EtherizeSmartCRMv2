@@ -83,7 +83,7 @@ export const ContractTemplateEditor: React.FC = () => {
     // Margin settings
     const [marginTop, setMarginTop] = useState('20');
     const [marginBottom, setMarginBottom] = useState('20');
-    const [marginLeft, setMarginLeft] = useState('30');
+    const [marginLeft, setMarginLeft] = useState('15');
     const [marginRight, setMarginRight] = useState('15');
 
     const tiptapRef = useRef<TiptapEditorRef>(null);
@@ -420,23 +420,6 @@ export const ContractTemplateEditor: React.FC = () => {
                                 Удалить
                             </Button>
                         )}
-                        <Button 
-                            onClick={handleDownloadPDF} 
-                            variant="secondary"
-                            icon="picture_as_pdf"
-                            disabled={!content || isSaving}
-                            loading={isSaving}
-                        >
-                            PDF
-                        </Button>
-                        <Button 
-                            onClick={handleDownloadDoc} 
-                            variant="secondary"
-                            icon="description"
-                            disabled={!content}
-                        >
-                            .DOC
-                        </Button>
                         <Button 
                             onClick={() => setShowPreview(!showPreview)} 
                             variant="secondary"
