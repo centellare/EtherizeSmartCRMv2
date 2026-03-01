@@ -416,11 +416,6 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
   };
 
   const handleDownloadContractDoc = (contract: any) => {
-    const mt = contract.margin_top || 20;
-    const mb = contract.margin_bottom || 20;
-    const ml = contract.margin_left || 15;
-    const mr = contract.margin_right || 15;
-
     const header = `
         <html xmlns:o='urn:schemas-microsoft-com:office:office' 
               xmlns:w='urn:schemas-microsoft-com:office:word' 
@@ -428,31 +423,14 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
         <head>
             <meta charset='utf-8'>
             <style>
-                @page Section1 {
-                    size: 595.3pt 841.9pt;
-                    margin: ${mt}mm ${mr}mm ${mb}mm ${ml}mm;
-                    mso-header-margin: 35.4pt;
-                    mso-footer-margin: 35.4pt;
-                    mso-paper-source: 0;
-                }
-                div.Section1 {
-                    page: Section1;
-                }
-                body { 
-                    font-family: "Times New Roman", serif; 
-                    font-size: 12pt; 
-                    line-height: 1.5; 
-                    white-space: pre-wrap;
-                }
-                p { margin: 0; padding: 0; }
+                body { font-family: "Times New Roman", serif; font-size: 12pt; line-height: 1.5; }
+                p { margin: 0 0 10pt 0; }
                 table { border-collapse: collapse; width: 100%; }
                 td, th { border: 1px solid black; padding: 5pt; }
             </style>
         </head>
         <body>
-            <div class="Section1">
-                ${contract.content}
-            </div>
+            ${contract.content}
         </body>
         </html>`;
     

@@ -123,11 +123,6 @@ export const ContractTemplateEditor: React.FC = () => {
         setSelectedTemplateId(template.id);
         setTemplateName(template.name || 'Без названия');
         setContent(template.content || '');
-        setContentJson(template.content_json || null);
-        setMarginTop(template.margin_top?.toString() || '20');
-        setMarginBottom(template.margin_bottom?.toString() || '20');
-        setMarginLeft(template.margin_left?.toString() || '15');
-        setMarginRight(template.margin_right?.toString() || '15');
     };
 
     const handleCreateNew = () => {
@@ -184,10 +179,6 @@ export const ContractTemplateEditor: React.FC = () => {
                         name: templateName,
                         content: content,
                         content_json: contentJson,
-                        margin_top: Number(marginTop),
-                        margin_bottom: Number(marginBottom),
-                        margin_left: Number(marginLeft),
-                        margin_right: Number(marginRight),
                         updated_at: new Date().toISOString()
                     })
                     .eq('id', selectedTemplateId);
@@ -204,10 +195,6 @@ export const ContractTemplateEditor: React.FC = () => {
                         name: templateName,
                         content: content,
                         content_json: contentJson,
-                        margin_top: Number(marginTop),
-                        margin_bottom: Number(marginBottom),
-                        margin_left: Number(marginLeft),
-                        margin_right: Number(marginRight),
                         type: randomType, // Fallback for legacy constraint
                         is_system: false
                     }])
@@ -250,31 +237,14 @@ export const ContractTemplateEditor: React.FC = () => {
             <head>
                 <meta charset='utf-8'>
                 <style>
-                    @page Section1 {
-                        size: 595.3pt 841.9pt;
-                        margin: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm;
-                        mso-header-margin: 35.4pt;
-                        mso-footer-margin: 35.4pt;
-                        mso-paper-source: 0;
-                    }
-                    div.Section1 {
-                        page: Section1;
-                    }
-                    body { 
-                        font-family: "Times New Roman", serif; 
-                        font-size: 12pt; 
-                        line-height: 1.5; 
-                        white-space: pre-wrap;
-                    }
-                    p { margin: 0; padding: 0; }
+                    body { font-family: "Times New Roman", serif; font-size: 12pt; line-height: 1.5; }
+                    p { margin: 0 0 10pt 0; }
                     table { border-collapse: collapse; width: 100%; }
                     td, th { border: 1px solid black; padding: 5pt; }
                 </style>
             </head>
             <body>
-                <div class="Section1">
-                    ${replaceDocumentTags(content, previewClientData, previewDocumentData)}
-                </div>
+                ${replaceDocumentTags(content, previewClientData, previewDocumentData)}
             </body>
             </html>`;
         

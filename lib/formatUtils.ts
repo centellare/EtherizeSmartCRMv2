@@ -157,8 +157,8 @@ export const replaceDocumentTags = (text: string | null | undefined, clientData:
 
   for (const [tag, value] of Object.entries(tags)) {
     // Use global replace
-    // Handle newlines for HTML content - Word prefers <br> over <br/>
-    const safeValue = String(value || '').replace(/\r?\n/g, '<br>');
+    // Handle newlines for HTML content
+    const safeValue = String(value).replace(/\n/g, '<br/>');
     result = result.split(tag).join(safeValue);
   }
 
