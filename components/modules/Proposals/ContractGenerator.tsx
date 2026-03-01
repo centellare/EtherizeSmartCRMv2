@@ -4,6 +4,7 @@ import 'react-quill-new/dist/quill.snow.css';
 import { supabase } from '../../../lib/supabase';
 import { Button, Input, useToast } from '../../ui';
 import { replaceDocumentTags, sumInWords } from '../../../lib/formatUtils';
+import { formatDateLong } from '../../../lib/dateUtils';
 
 interface ContractGeneratorProps {
     invoiceId: string;
@@ -113,9 +114,9 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
 
                 const documentData = {
                     contract_number: contractNumber,
-                    contract_date: new Date().toLocaleDateString('ru-RU'),
+                    contract_date: formatDateLong(new Date()),
                     invoice_number: invoice.number,
-                    invoice_date: new Date(invoice.date).toLocaleDateString('ru-RU'),
+                    invoice_date: formatDateLong(invoice.created_at || new Date()),
                     contract_amount: amountStr,
                     amount_words: amountWords,
                     vat_amount: vatAmountStr,

@@ -63,3 +63,31 @@ export const getMinskISODate = (dateInput?: Date | string): string => {
 export const getMinskNowISO = (): string => {
   return new Date().toISOString(); 
 };
+
+/**
+ * Форматирует дату в длинный формат: «DD» month YYYY г.
+ * Пример: «01» октября 2023 г.
+ */
+export const formatDateLong = (dateInput: string | Date | null | undefined): string => {
+  if (!dateInput) return '—';
+  
+  try {
+    const date = typeof dateInput === 'string' ? new Date(dateInput) : dateInput;
+    if (isNaN(date.getTime())) return '—';
+
+    const day = date.getDate().toString().padStart(2, '0');
+    const year = date.getFullYear();
+    
+    // Массив месяцев в родительном падеже
+    const monthsGenitive = [
+      'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+      'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'
+    ];
+    
+    const month = monthsGenitive[date.getMonth()];
+    
+    return `«${day}» ${month} ${year} г.`;
+  } catch (e) {
+    return 'Ошибка даты';
+  }
+};
