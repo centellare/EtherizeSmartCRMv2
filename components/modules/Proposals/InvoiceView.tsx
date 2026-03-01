@@ -5,6 +5,8 @@ import { Button, useToast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
 import { sumInWords, replaceDocumentTags } from '../../../lib/formatUtils';
 import { notifyRole } from '../../../lib/notifications';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 import { ContractGenerator } from './ContractGenerator';
 
 interface InvoiceViewProps {
@@ -20,6 +22,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
   const [statusLoading, setStatusLoading] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [showContractGenerator, setShowContractGenerator] = useState(false);
+  const [viewingContract, setViewingContract] = useState<any>(null);
   const [contracts, setContracts] = useState<any[]>([]);
   const [preamble, setPreamble] = useState('');
   const [footer, setFooter] = useState('');
@@ -329,23 +332,13 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                     <script src="https://cdn.tailwindcss.com"></script>
                     <style>
                         @media print {
-                            @page { 
-                                size: A4; 
-                                margin: 15mm 10mm 15mm 15mm; 
-                            }
-                            body { 
-                                margin: 0 !important; 
-                                padding: 0 !important;
-                                -webkit-print-color-adjust: exact; 
-                            }
+                            @page { margin: 0; size: A4; }
+                            body { margin: 0; -webkit-print-color-adjust: exact; }
                             #invoice-printable {
                                 margin: 0;
                                 width: 100%;
-                                padding: 0 !important;
+                                padding: 15mm 20mm !important;
                                 box-shadow: none !important;
-                                word-break: normal !important;
-                                overflow-wrap: break-word !important;
-                                hyphens: none !important;
                             }
                         }
                     </style>
@@ -379,75 +372,102 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
       }
   };
 
-  const handlePrintContract = (content: string, number: string) => {
-      const win = window.open('', '_blank');
-      if (win) {
-          win.document.write(`
-              <html>
-                  <head>
-                      <title>Договор №${number}</title>
-                      <script src="https://cdn.tailwindcss.com"></script>
-                      <style>
-                          @media print {
-                              @page { 
-                                  size: A4; 
-                                  margin: 20mm 10mm 20mm 20mm; 
-                              }
-                              html, body { 
-                                  width: 100%;
-                                  margin: 0 !important; 
-                                  padding: 0 !important;
-                              }
-                              .print-container {
-                                  padding: 0 !important;
-                                  width: 100%;
-                                  box-sizing: border-box;
-                              }
-                          }
-                          /* Quill Styles for Print */
-                          .ql-align-center { text-align: center; }
-                          .ql-align-right { text-align: right; }
-                          .ql-align-justify { text-align: justify; }
-                          blockquote { border-left: 4px solid #ccc; padding-left: 16px; margin-left: 0; font-style: italic; }
-                          ul, ol { padding-left: 2em; margin: 1em 0; }
-                          ul { list-style-type: disc; }
-                          ol { list-style-type: decimal; }
-                          strong { font-weight: bold; }
-                          em { font-style: italic; }
-                          u { text-decoration: underline; }
-                          s { text-decoration: line-through; }
-                          h1 { font-size: 2em; font-weight: bold; margin: 0.67em 0; }
-                          h2 { font-size: 1.5em; font-weight: bold; margin: 0.83em 0; }
-                          h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0; }
-                          p { margin: 0.5em 0; line-height: 1.5; }
-                          
-                          /* Ensure text wraps correctly without breaking words in the middle */
-                          .prose { 
-                              max-width: 100% !important; 
-                              width: 100% !important;
-                              word-break: normal !important;
-                              overflow-wrap: break-word !important;
-                              hyphens: none !important;
-                              font-size: 14px !important;
-                          }
-                          .prose p {
-                              margin-bottom: 0.5em;
-                              line-height: 1.5;
-                          }
-                      </style>
-                  </head>
-                  <body class="font-serif">
-                      <div class="print-container">
-                          <div class="prose">
-                              ${content}
-                          </div>
-                      </div>
-                      <script>setTimeout(()=>window.print(), 800)</script>
-                  </body>
-              </html>
-          `);
-          win.document.close();
-      }
+  const handleDownloadContractPDF = async (contract: any) => {
+    const element = document.createElement('div');
+    element.className = 'document-preview';
+    element.style.width = '210mm';
+    element.style.minHeight = '297mm';
+    element.style.padding = '20mm 15mm';
+    element.style.background = 'white';
+    element.style.fontFamily = '"Times New Roman", Times, serif';
+    element.style.fontSize = '12pt';
+    element.style.lineHeight = '1.5';
+    element.innerHTML = contract.content;
+    document.body.appendChild(element);
+
+    try {
+        const canvas = await html2canvas(element, {
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            backgroundColor: '#ffffff'
+        });
+        
+        const imgData = canvas.toDataURL('image/png');
+        const pdf = new jsPDF({
+            orientation: 'portrait',
+            unit: 'mm',
+            format: 'a4'
+        });
+
+        const imgProps = pdf.getImageProperties(imgData);
+        const pdfWidth = pdf.internal.pageSize.getWidth();
+        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+        
+        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+        pdf.save(`Договор_${contract.contract_number}.pdf`);
+        toast.success('PDF успешно сформирован');
+    } catch (error) {
+        console.error('PDF generation error:', error);
+        toast.error('Ошибка при создании PDF');
+    } finally {
+        document.body.removeChild(element);
+    }
+  };
+
+  const handleDownloadContractDoc = (contract: any) => {
+    const mt = contract.margin_top || 20;
+    const mb = contract.margin_bottom || 20;
+    const ml = contract.margin_left || 15;
+    const mr = contract.margin_right || 15;
+
+    const header = `
+        <html xmlns:o='urn:schemas-microsoft-com:office:office' 
+              xmlns:w='urn:schemas-microsoft-com:office:word' 
+              xmlns='http://www.w3.org/TR/REC-html40'>
+        <head>
+            <meta charset='utf-8'>
+            <style>
+                @page Section1 {
+                    size: 595.3pt 841.9pt;
+                    margin: ${mt}mm ${mr}mm ${mb}mm ${ml}mm;
+                    mso-header-margin: 35.4pt;
+                    mso-footer-margin: 35.4pt;
+                    mso-paper-source: 0;
+                }
+                div.Section1 {
+                    page: Section1;
+                }
+                body { 
+                    font-family: "Times New Roman", serif; 
+                    font-size: 12pt; 
+                    line-height: 1.5; 
+                    white-space: pre-wrap;
+                }
+                p { margin: 0; padding: 0; }
+                table { border-collapse: collapse; width: 100%; }
+                td, th { border: 1px solid black; padding: 5pt; }
+            </style>
+        </head>
+        <body>
+            <div class="Section1">
+                ${contract.content}
+            </div>
+        </body>
+        </html>`;
+    
+    const blob = new Blob(['\ufeff', header], {
+        type: 'application/msword'
+    });
+    
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Договор_${contract.contract_number}.doc`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   // --- RENDER BLOCK STARTS HERE ---
@@ -537,6 +557,26 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
             </div>
         )}
 
+        {viewingContract && (
+            <div className="fixed inset-0 z-[1001] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in">
+                <div className="bg-white rounded-[24px] w-full max-w-5xl h-[90vh] shadow-2xl flex flex-col overflow-hidden">
+                    <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center shrink-0">
+                        <div className="flex items-center gap-4">
+                            <Button variant="secondary" icon="close" onClick={() => setViewingContract(null)}>Закрыть</Button>
+                            <h2 className="text-xl font-bold text-slate-800">Просмотр договора №{viewingContract.contract_number}</h2>
+                        </div>
+                        <div className="flex gap-2">
+                            <Button variant="secondary" icon="picture_as_pdf" onClick={() => handleDownloadContractPDF(viewingContract)}>PDF</Button>
+                            <Button variant="secondary" icon="description" onClick={() => handleDownloadContractDoc(viewingContract)}>.DOC</Button>
+                        </div>
+                    </div>
+                    <div className="flex-grow p-8 overflow-y-auto bg-slate-100 flex flex-col items-center">
+                        <div className="w-[210mm] min-h-[297mm] bg-white shadow-lg p-[20mm] font-serif text-[12pt] leading-[1.5] text-black whitespace-pre-wrap" dangerouslySetInnerHTML={{ __html: viewingContract.content }} />
+                    </div>
+                </div>
+            </div>
+        )}
+
         <div className="flex-grow overflow-y-auto p-4 md:p-8 flex flex-col items-center">
             {/* Attached Contracts Section */}
             {contracts.length > 0 && (
@@ -558,7 +598,9 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                                     </div>
                                 </div>
                                 <div className="flex gap-2">
-                                    <Button variant="secondary" icon="print" onClick={() => handlePrintContract(c.content, c.contract_number)}>Печать</Button>
+                                    <Button variant="secondary" icon="visibility" onClick={() => setViewingContract(c)}>Просмотр</Button>
+                                    <Button variant="secondary" icon="picture_as_pdf" onClick={() => handleDownloadContractPDF(c)}>PDF</Button>
+                                    <Button variant="secondary" icon="description" onClick={() => handleDownloadContractDoc(c)}>.DOC</Button>
                                     <Button variant="danger" icon="delete" onClick={() => handleDeleteContract(c.id)} />
                                 </div>
                             </div>

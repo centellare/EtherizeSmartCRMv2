@@ -599,15 +599,57 @@ export const ClientDetails: React.FC<ClientDetailsProps> = ({ client, onClose, o
 
         {client.requisites && (
             <div className="p-4 bg-white rounded-2xl border border-[#e1e2e1]">
-            <div className="flex justify-between items-center mb-3">
-                <p className="text-[10px] font-bold text-slate-400 uppercase">Реквизиты</p>
-                <CopyButton text={client.requisites} />
+                <div className="flex justify-between items-center mb-3">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase">Реквизиты (УНП)</p>
+                    <CopyButton text={client.requisites} />
+                </div>
+                <div className="p-3 bg-[#f7f9fc] rounded-xl border border-slate-100">
+                    <p className="text-sm text-[#444746] whitespace-pre-wrap leading-relaxed select-all">
+                        {client.requisites}
+                    </p>
+                </div>
             </div>
-            <div className="p-3 bg-[#f7f9fc] rounded-xl border border-slate-100">
-                <p className="text-sm text-[#444746] whitespace-pre-wrap leading-relaxed select-all">
-                {client.requisites}
-                </p>
-            </div>
+        )}
+
+        {client.type === 'company' && (
+            <div className="p-4 bg-white rounded-2xl border border-[#e1e2e1] space-y-4">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">Юридические данные</p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Полное название</p>
+                        <p className="text-sm font-medium">{client.legal_name || '—'}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">УНП</p>
+                        <p className="text-sm font-medium font-mono">{client.unp || '—'}</p>
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Представитель (Им.п.)</p>
+                        <p className="text-sm font-medium">{client.rep_position_nom} {client.rep_name_nom || '—'}</p>
+                    </div>
+                    <div>
+                        <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Основание</p>
+                        <p className="text-sm font-medium">{client.basis_of_authority || '—'}</p>
+                    </div>
+                </div>
+
+                {client.bank_details && (
+                    <div className="pt-2">
+                        <div className="flex justify-between items-center mb-2">
+                            <p className="text-[10px] font-bold text-slate-400 uppercase">Банковские реквизиты</p>
+                            <CopyButton text={client.bank_details} />
+                        </div>
+                        <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                            <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed font-mono">
+                                {client.bank_details}
+                            </p>
+                        </div>
+                    </div>
+                )}
             </div>
         )}
 

@@ -70,6 +70,11 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
         unp: initialData.unp || '',
         bank_details: initialData.bank_details || '',
       });
+
+      // Auto-open legal data if any field is populated
+      if (initialData.legal_name || initialData.unp || initialData.bank_details || initialData.rep_name_nom) {
+        setShowLegalData(true);
+      }
     }
     
     const fetchPartners = async () => {

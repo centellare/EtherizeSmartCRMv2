@@ -29,7 +29,7 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
     const [deliveryDays, setDeliveryDays] = useState('14');
     const [purchasePurpose, setPurchasePurpose] = useState('Для собственного потребления');
     const [fundingSource, setFundingSource] = useState('Собственные средства');
-    const [paymentDeadlineDays, setPaymentDeadlineDays] = useState('5');
+    const [paymentDeadlineDays, setPaymentDeadlineDays] = useState('');
 
     // Margin settings
     const [marginTop, setMarginTop] = useState('20');
@@ -99,6 +99,12 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
             const template = templates.find(t => t.id === selectedTemplateId);
             
             if (template) {
+                // Load margins from template
+                setMarginTop(template.margin_top?.toString() || '20');
+                setMarginBottom(template.margin_bottom?.toString() || '20');
+                setMarginLeft(template.margin_left?.toString() || '15');
+                setMarginRight(template.margin_right?.toString() || '15');
+
                 // Prepare document data
                 const totalSum = Number(invoice?.total_amount || 0);
                 const amountWords = sumInWords(totalSum);
@@ -172,6 +178,10 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                     content: content,
                     content_json: contentJson,
                     amount: invoice?.total_amount,
+                    margin_top: Number(marginTop),
+                    margin_bottom: Number(marginBottom),
+                    margin_left: Number(marginLeft),
+                    margin_right: Number(marginRight),
                     created_by: userData.user?.id
                 }]);
             
@@ -234,14 +244,31 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
             <head>
                 <meta charset='utf-8'>
                 <style>
-                    body { font-family: "Times New Roman", serif; font-size: 12pt; line-height: 1.5; }
-                    p { margin: 0 0 10pt 0; }
+                    @page Section1 {
+                        size: 595.3pt 841.9pt;
+                        margin: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm;
+                        mso-header-margin: 35.4pt;
+                        mso-footer-margin: 35.4pt;
+                        mso-paper-source: 0;
+                    }
+                    div.Section1 {
+                        page: Section1;
+                    }
+                    body { 
+                        font-family: "Times New Roman", serif; 
+                        font-size: 12pt; 
+                        line-height: 1.5; 
+                        white-space: pre-wrap;
+                    }
+                    p { margin: 0; padding: 0; }
                     table { border-collapse: collapse; width: 100%; }
                     td, th { border: 1px solid black; padding: 5pt; }
                 </style>
             </head>
             <body>
-                ${content}
+                <div class="Section1">
+                    ${content}
+                </div>
             </body>
             </html>`;
         
@@ -346,14 +373,6 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                             disabled={!content}
                         >
                             .DOC
-                        </Button>
-                        <Button 
-                            onClick={handlePrint} 
-                            variant="secondary"
-                            icon="print"
-                            disabled={!content}
-                        >
-                            Печать / PDF
                         </Button>
                         <Button 
                             onClick={handleSave} 
