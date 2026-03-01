@@ -379,8 +379,8 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                       <script src="https://cdn.tailwindcss.com"></script>
                       <style>
                           @media print {
-                              @page { margin: 15mm; size: A4; }
-                              body { margin: 0; -webkit-print-color-adjust: exact; }
+                              @page { margin: 0; size: A4; }
+                              body { margin: 20mm; -webkit-print-color-adjust: exact; }
                           }
                           /* Quill Styles for Print */
                           .ql-align-center { text-align: center; }
@@ -400,7 +400,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                           p { margin: 0.5em 0; line-height: 1.5; }
                       </style>
                   </head>
-                  <body class="p-8 font-serif">
+                  <body class="font-serif">
                       <div class="prose max-w-none">
                           ${content}
                       </div>
