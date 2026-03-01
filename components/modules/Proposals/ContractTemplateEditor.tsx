@@ -2,15 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { supabase } from '../../../lib/supabase';
-import { Button, Select, useToast } from '../../ui';
+import { Button, useToast } from '../../ui';
 import { replaceDocumentTags } from '../../../lib/formatUtils';
-
-const TEMPLATE_TYPES = [
-  { value: 'individual_100', label: 'Физлицо 100%' },
-  { value: 'individual_partial', label: 'Физлицо Частичная' },
-  { value: 'legal_100', label: 'Юрлицо 100%' },
-  { value: 'legal_partial', label: 'Юрлицо Частичная' }
-];
 
 const TAG_GROUPS = [
   {
@@ -75,9 +68,10 @@ const TAG_GROUPS = [
 ];
 
 export const ContractTemplateEditor: React.FC = () => {
-    const [selectedType, setSelectedType] = useState(TEMPLATE_TYPES[0].value);
+    const [templates, setTemplates] = useState<any[]>([]);
+    const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
+    const [templateName, setTemplateName] = useState('');
     const [content, setContent] = useState('');
-    const [templateId, setTemplateId] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [showPreview, setShowPreview] = useState(false);
@@ -85,55 +79,125 @@ export const ContractTemplateEditor: React.FC = () => {
     const quillRef = useRef<ReactQuill>(null);
     const toast = useToast();
 
+    // Fetch templates on mount
     useEffect(() => {
-        const fetchTemplate = async () => {
-            setIsLoading(true);
-            try {
-                const { data, error } = await (supabase as any)
-                    .from('contract_templates')
-                    .select('*')
-                    .eq('type', selectedType)
-                    .maybeSingle();
-                
-                if (error && error.code !== 'PGRST116') throw error;
-                
-                if (data) {
-                    setContent(data.content || '');
-                    setTemplateId(data.id);
-                } else {
-                    setContent('');
-                    setTemplateId(null);
+        fetchTemplates();
+    }, []);
+
+    const fetchTemplates = async () => {
+        setIsLoading(true);
+        try {
+            const { data, error } = await (supabase as any)
+                .from('contract_templates')
+                .select('*')
+                .order('name');
+            
+            if (error) throw error;
+            
+            if (data && data.length > 0) {
+                setTemplates(data);
+                // Select first template if none selected
+                if (!selectedTemplateId) {
+                    handleSelectTemplate(data[0]);
                 }
-            } catch (error: any) {
-                console.error('Error fetching template:', error);
-                toast.error('Ошибка при загрузке шаблона');
-            } finally {
-                setIsLoading(false);
             }
-        };
+        } catch (error: any) {
+            console.error('Error fetching templates:', error);
+            toast.error('Ошибка при загрузке списка шаблонов');
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
-        fetchTemplate();
-    }, [selectedType]);
+    const handleSelectTemplate = (template: any) => {
+        setSelectedTemplateId(template.id);
+        setTemplateName(template.name || 'Без названия');
+        setContent(template.content || '');
+    };
 
-    const handleSave = async () => {
+    const handleCreateNew = () => {
+        setSelectedTemplateId('new');
+        setTemplateName('Новый шаблон');
+        setContent('');
+        toast.info('Создание нового шаблона');
+    };
+
+    const handleDelete = async () => {
+        if (!selectedTemplateId || selectedTemplateId === 'new') return;
+        
+        const template = templates.find(t => t.id === selectedTemplateId);
+        if (template?.is_system) {
+            toast.error('Нельзя удалить системный шаблон');
+            return;
+        }
+
+        if (!confirm('Вы уверены, что хотите удалить этот шаблон?')) return;
+
         setIsSaving(true);
         try {
-            if (templateId) {
+            const { error } = await (supabase as any)
+                .from('contract_templates')
+                .delete()
+                .eq('id', selectedTemplateId);
+            
+            if (error) throw error;
+            
+            toast.success('Шаблон удален');
+            await fetchTemplates();
+            setSelectedTemplateId(''); // Reset selection to trigger auto-select
+        } catch (error: any) {
+            console.error('Error deleting template:', error);
+            toast.error('Ошибка при удалении шаблона');
+        } finally {
+            setIsSaving(false);
+        }
+    };
+
+    const handleSave = async () => {
+        if (!templateName.trim()) {
+            toast.error('Введите название шаблона');
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            if (selectedTemplateId && selectedTemplateId !== 'new') {
+                // Update existing
                 const { error } = await (supabase as any)
                     .from('contract_templates')
-                    .update({ content })
-                    .eq('id', templateId);
+                    .update({ 
+                        name: templateName,
+                        content: content,
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', selectedTemplateId);
                 if (error) throw error;
             } else {
+                // Create new
+                // Generate a unique type string for backward compatibility if needed, 
+                // or just rely on ID. Let's use a random string for type to satisfy unique constraint if it exists.
+                const randomType = `custom_${Date.now()}`;
+                
                 const { data, error } = await (supabase as any)
                     .from('contract_templates')
-                    .insert([{ type: selectedType, content }])
+                    .insert([{ 
+                        name: templateName,
+                        content: content,
+                        type: randomType, // Fallback for legacy constraint
+                        is_system: false
+                    }])
                     .select()
                     .single();
+                
                 if (error) throw error;
-                if (data) setTemplateId(data.id);
+                if (data) {
+                    await fetchTemplates(); // Refresh list
+                    setSelectedTemplateId(data.id); // Select the new template
+                }
             }
             toast.success('Шаблон успешно сохранен');
+            // Refresh list to update names if changed
+            fetchTemplates();
         } catch (error: any) {
             console.error('Error saving template:', error);
             toast.error('Ошибка при сохранении шаблона');
@@ -228,32 +292,91 @@ export const ContractTemplateEditor: React.FC = () => {
                 .ql-align-justify { text-align: justify; }
             `}</style>
             {/* Header */}
-            <div className="p-4 bg-white border-b border-slate-200 flex justify-between items-center shadow-sm sticky top-0 z-10">
-                <div className="flex items-center gap-4">
-                    <h2 className="text-xl font-bold text-slate-800">Шаблоны договоров</h2>
-                    <div className="w-64">
-                        <Select
-                            value={selectedType}
-                            onChange={(e) => setSelectedType(e.target.value)}
-                            options={TEMPLATE_TYPES}
-                        />
+            <div className="p-4 bg-white border-b border-slate-200 flex flex-col gap-4 shadow-sm sticky top-0 z-20">
+                <div className="flex justify-between items-center">
+                    <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                        <span className="material-icons-round text-blue-600">description</span>
+                        Шаблоны договоров
+                    </h2>
+                    <div className="flex gap-2">
+                        {selectedTemplateId && selectedTemplateId !== 'new' && !templates.find(t => t.id === selectedTemplateId)?.is_system && (
+                            <Button 
+                                onClick={handleDelete} 
+                                variant="danger"
+                                disabled={isSaving}
+                                icon="delete"
+                            >
+                                Удалить
+                            </Button>
+                        )}
+                        <Button 
+                            onClick={() => setShowPreview(!showPreview)} 
+                            variant="secondary"
+                            icon={showPreview ? "edit" : "visibility"}
+                        >
+                            {showPreview ? "Редактор" : "Предпросмотр"}
+                        </Button>
+                        <Button 
+                            onClick={handleSave} 
+                            loading={isSaving}
+                            disabled={isLoading}
+                            icon="save"
+                            variant="primary"
+                        >
+                            Сохранить
+                        </Button>
                     </div>
                 </div>
-                <div className="flex gap-2">
-                    <Button 
-                        onClick={() => setShowPreview(!showPreview)} 
-                        variant={showPreview ? "primary" : "secondary"}
-                        icon={showPreview ? "edit" : "visibility"}
-                    >
-                        {showPreview ? "Редактировать" : "Предпросмотр"}
-                    </Button>
-                    <Button 
-                        onClick={handleSave} 
-                        loading={isSaving}
-                        icon="save"
-                    >
-                        Сохранить шаблон
-                    </Button>
+
+                <div className="flex gap-4 items-center bg-slate-50 p-3 rounded-xl border border-slate-200">
+                    <div className="w-1/3">
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Выберите шаблон</label>
+                        <select
+                            value={selectedTemplateId}
+                            onChange={(e) => {
+                                const val = e.target.value;
+                                if (val === 'new') {
+                                    handleCreateNew();
+                                } else {
+                                    const template = templates.find(t => t.id === val);
+                                    if (template) handleSelectTemplate(template);
+                                }
+                            }}
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                            disabled={isLoading}
+                        >
+                            <option value="" disabled>-- Выберите шаблон --</option>
+                            <optgroup label="Действия">
+                                <option value="new">+ Создать новый шаблон</option>
+                            </optgroup>
+                            <optgroup label="Существующие шаблоны">
+                                {templates.map(t => (
+                                    <option key={t.id} value={t.id}>
+                                        {t.name || t.type} {t.is_system ? '(Системный)' : ''}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        </select>
+                    </div>
+                    <div className="flex-grow">
+                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">Название шаблона</label>
+                        <div className="relative">
+                            <input
+                                type="text"
+                                value={templateName}
+                                onChange={(e) => setTemplateName(e.target.value)}
+                                placeholder="Введите название шаблона..."
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all disabled:bg-slate-100 disabled:text-slate-400"
+                                disabled={isLoading || (selectedTemplateId && templates.find(t => t.id === selectedTemplateId)?.is_system)}
+                            />
+                            {selectedTemplateId && templates.find(t => t.id === selectedTemplateId)?.is_system && (
+                                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <span className="material-icons-round text-[12px]">lock</span>
+                                    Системный
+                                </span>
+                            )}
+                        </div>
+                    </div>
                 </div>
             </div>
 

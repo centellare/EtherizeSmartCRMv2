@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import ReactQuill from 'react-quill-new';
 import 'react-quill-new/dist/quill.snow.css';
 import { supabase } from '../../../lib/supabase';
-import { Button, Input, Select, useToast } from '../../ui';
+import { Button, Input, useToast } from '../../ui';
 import { replaceDocumentTags, sumInWords } from '../../../lib/formatUtils';
 
 interface ContractGeneratorProps {
@@ -10,17 +10,11 @@ interface ContractGeneratorProps {
     onClose: () => void;
 }
 
-const TEMPLATE_TYPES = [
-  { value: 'individual_100', label: 'Физлицо 100%' },
-  { value: 'individual_partial', label: 'Физлицо Частичная' },
-  { value: 'legal_100', label: 'Юрлицо 100%' },
-  { value: 'legal_partial', label: 'Юрлицо Частичная' }
-];
-
 export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId, onClose }) => {
     const [invoice, setInvoice] = useState<any>(null);
     const [client, setClient] = useState<any>(null);
-    const [selectedType, setSelectedType] = useState(TEMPLATE_TYPES[0].value);
+    const [templates, setTemplates] = useState<any[]>([]);
+    const [selectedTemplateId, setSelectedTemplateId] = useState<string>('');
     const [content, setContent] = useState('');
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
@@ -52,11 +46,24 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                 setInvoice(inv);
                 setClient(inv.client);
 
+                // Fetch templates
+                const { data: tmpls, error: tmplError } = await (supabase as any)
+                    .from('contract_templates')
+                    .select('*')
+                    .order('name');
+                
+                if (tmplError) throw tmplError;
+                setTemplates(tmpls || []);
+
                 // Try to auto-detect template type
-                if (inv.client?.type === 'person') {
-                    setSelectedType('individual_100');
-                } else {
-                    setSelectedType('legal_100');
+                if (tmpls && tmpls.length > 0) {
+                    let defaultTemplate;
+                    if (inv.client?.type === 'person') {
+                        defaultTemplate = tmpls.find((t: any) => t.type === 'individual_100') || tmpls[0];
+                    } else {
+                        defaultTemplate = tmpls.find((t: any) => t.type === 'legal_100') || tmpls[0];
+                    }
+                    setSelectedTemplateId(defaultTemplate.id);
                 }
 
                 // Default contract number based on invoice number
@@ -64,7 +71,7 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
 
             } catch (error: any) {
                 console.error('Error fetching data:', error);
-                toast.error('Ошибка при загрузке данных счета');
+                toast.error('Ошибка при загрузке данных');
             } finally {
                 setIsLoading(false);
             }
@@ -74,17 +81,16 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
     }, [invoiceId]);
 
     const loadTemplate = async () => {
+        if (!selectedTemplateId) {
+            toast.error('Выберите шаблон');
+            return;
+        }
+
         setIsLoading(true);
         try {
-            const { data, error } = await (supabase as any)
-                .from('contract_templates')
-                .select('*')
-                .eq('type', selectedType)
-                .maybeSingle();
+            const template = templates.find(t => t.id === selectedTemplateId);
             
-            if (error && error.code !== 'PGRST116') throw error;
-            
-            if (data) {
+            if (template) {
                 // Prepare document data
                 const totalSum = Number(invoice?.total_amount || 0);
                 const amountWords = sumInWords(totalSum);
@@ -124,15 +130,15 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                 };
 
                 // Replace tags
-                const replacedContent = replaceDocumentTags(data.content, client, documentData);
+                const replacedContent = replaceDocumentTags(template.content, client, documentData);
                 setContent(replacedContent);
             } else {
                 setContent('');
                 toast.error('Шаблон не найден');
             }
         } catch (error: any) {
-            console.error('Error fetching template:', error);
-            toast.error('Ошибка при загрузке шаблона');
+            console.error('Error processing template:', error);
+            toast.error('Ошибка при обработке шаблона');
         } finally {
             setIsLoading(false);
         }
@@ -204,11 +210,19 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                     <div className="w-80 bg-slate-50 border-r border-slate-200 p-6 overflow-y-auto flex-shrink-0 flex flex-col gap-4">
                         <div>
                             <label className="block text-xs font-bold text-slate-700 mb-1 uppercase tracking-wider">Шаблон</label>
-                            <Select
-                                value={selectedType}
-                                onChange={(e) => setSelectedType(e.target.value)}
-                                options={TEMPLATE_TYPES}
-                            />
+                            <select
+                                value={selectedTemplateId}
+                                onChange={(e) => setSelectedTemplateId(e.target.value)}
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                                disabled={isLoading}
+                            >
+                                <option value="" disabled>-- Выберите шаблон --</option>
+                                {templates.map(t => (
+                                    <option key={t.id} value={t.id}>
+                                        {t.name || t.type}
+                                    </option>
+                                ))}
+                            </select>
                         </div>
 
                         <div className="pt-4 border-t border-slate-200">

@@ -67,6 +67,44 @@ export const INITIAL_SUGGESTED_SCHEMA: TableSchema[] = [
   }
 ];
 
+export const MIGRATION_SQL_V22 = `
+-- SmartHome CRM: CUSTOM CONTRACT TEMPLATES (v22.0)
+-- Добавляет возможность создания пользовательских шаблонов договоров.
+
+BEGIN;
+
+-- 1. Add name column to contract_templates
+ALTER TABLE public.contract_templates ADD COLUMN IF NOT EXISTS name text;
+
+-- 2. Add is_system column to protect default templates
+ALTER TABLE public.contract_templates ADD COLUMN IF NOT EXISTS is_system boolean DEFAULT false;
+
+-- 3. Update existing templates with names
+UPDATE public.contract_templates 
+SET name = 'Физлицо 100%', is_system = true 
+WHERE type = 'individual_100';
+
+UPDATE public.contract_templates 
+SET name = 'Физлицо Частичная', is_system = true 
+WHERE type = 'individual_partial';
+
+UPDATE public.contract_templates 
+SET name = 'Юрлицо 100%', is_system = true 
+WHERE type = 'legal_100';
+
+UPDATE public.contract_templates 
+SET name = 'Юрлицо Частичная', is_system = true 
+WHERE type = 'legal_partial';
+
+-- 4. Make type nullable or handle it for custom templates
+-- We will use 'custom' or generated UUID for custom templates, 
+-- but type constraint might be an issue if it's unique.
+-- Let's drop the unique constraint on type if it exists, or just ensure we generate unique types.
+-- Better: Allow type to be anything, unique constraint is fine if we generate unique strings.
+
+COMMIT;
+`;
+
 export const MIGRATION_SQL_V21 = `
 -- SmartHome CRM: FINANCIAL ANALYTICS (v21.0)
 -- Добавляет поля для структурированной аналитики финансов.
