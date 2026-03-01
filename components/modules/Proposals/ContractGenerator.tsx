@@ -28,10 +28,11 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
     // Dynamic fields
     const [contractNumber, setContractNumber] = useState('');
     const [purchaseSubject, setPurchaseSubject] = useState('');
-    const [prepaymentPercent, setPrepaymentPercent] = useState('');
-    const [deliveryDays, setDeliveryDays] = useState('');
-    const [purchasePurpose, setPurchasePurpose] = useState('');
-    const [fundingSource, setFundingSource] = useState('');
+    const [prepaymentPercent, setPrepaymentPercent] = useState('100');
+    const [deliveryDays, setDeliveryDays] = useState('14');
+    const [purchasePurpose, setPurchasePurpose] = useState('Для собственного потребления');
+    const [fundingSource, setFundingSource] = useState('Собственные средства');
+    const [paymentDeadlineDays, setPaymentDeadlineDays] = useState('5');
 
     const quillRef = useRef<ReactQuill>(null);
     const toast = useToast();
@@ -115,7 +116,11 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                     prepayment_percent: prepaymentPercent,
                     delivery_days: deliveryDays,
                     purchase_purpose: purchasePurpose,
-                    funding_source: fundingSource
+                    funding_source: fundingSource,
+                    payment_deadline_days: paymentDeadlineDays,
+                    // Raw values for calculations
+                    total_amount_value: totalSum,
+                    total_vat_value: vatAmount,
                 };
 
                 // Replace tags
@@ -225,6 +230,12 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                                     label="Размер предоплаты, %" 
                                     value={prepaymentPercent} 
                                     onChange={(e) => setPrepaymentPercent(e.target.value)} 
+                                    type="number"
+                                />
+                                <Input 
+                                    label="Срок оплаты остатка, дней" 
+                                    value={paymentDeadlineDays} 
+                                    onChange={(e) => setPaymentDeadlineDays(e.target.value)} 
                                     type="number"
                                 />
                                 <Input 

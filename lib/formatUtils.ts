@@ -113,11 +113,40 @@ export const replaceDocumentTags = (text: string | null | undefined, clientData:
     '{{vat_amount}}': documentData?.vat_amount || '',
     '{{vat_amount_words}}': documentData?.vat_amount_words || '',
     '{{purchase_subject}}': documentData?.purchase_subject || '',
-    '{{prepayment_percent}}': documentData?.prepayment_percent || '',
     '{{delivery_days}}': documentData?.delivery_days || '',
     '{{purchase_purpose}}': documentData?.purchase_purpose || '',
     '{{funding_source}}': documentData?.funding_source || '',
+    '{{payment_deadline_days}}': documentData?.payment_deadline_days ? documentData.payment_deadline_days.toString() : '',
   };
+
+  // Partial payment calculations
+  if (documentData && typeof documentData.total_amount_value === 'number') {
+      const totalAmount = documentData.total_amount_value;
+      const totalVat = documentData.total_vat_value || 0;
+      const percent = typeof documentData.prepayment_percent === 'number' ? documentData.prepayment_percent : 100;
+      
+      const prepAmount = totalAmount * (percent / 100);
+      const prepVat = totalVat * (percent / 100);
+      const remAmount = totalAmount - prepAmount;
+      const remVat = totalVat - prepVat;
+      
+      const fmt = (n: number) => new Intl.NumberFormat('ru-BY', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n) + ' руб.';
+
+      tags['{{prepayment_percent}}'] = percent.toString();
+      tags['{{prepayment_amount}}'] = fmt(prepAmount);
+      tags['{{prepayment_amount_words}}'] = sumInWords(prepAmount);
+      tags['{{prepayment_vat_amount}}'] = fmt(prepVat);
+      tags['{{prepayment_vat_amount_words}}'] = sumInWords(prepVat);
+
+      tags['{{remaining_percent}}'] = (100 - percent).toString();
+      tags['{{remaining_amount}}'] = fmt(remAmount);
+      tags['{{remaining_amount_words}}'] = sumInWords(remAmount);
+      tags['{{remaining_vat_amount}}'] = fmt(remVat);
+      tags['{{remaining_vat_amount_words}}'] = sumInWords(remVat);
+  } else {
+      // Fallback if values not provided
+      tags['{{prepayment_percent}}'] = documentData?.prepayment_percent || '';
+  }
 
   for (const [tag, value] of Object.entries(tags)) {
     // Use global replace
