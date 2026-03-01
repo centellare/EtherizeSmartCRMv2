@@ -209,19 +209,21 @@ export const ContractTemplateEditor: React.FC = () => {
                     <div className="flex-grow flex flex-col h-full border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                         {showPreview ? (
                             <div 
-                                className="flex-grow p-8 bg-white overflow-y-auto prose max-w-none font-serif"
+                                className="w-[210mm] min-h-[297mm] mx-auto bg-white shadow-lg p-[20mm_15mm] prose max-w-none font-serif"
                                 dangerouslySetInnerHTML={{ __html: replaceDocumentTags(content, previewClientData, previewDocumentData) }}
                             />
                         ) : (
-                            <ReactQuill 
-                                ref={quillRef}
-                                theme="snow" 
-                                value={content} 
-                                onChange={setContent}
-                                modules={modules}
-                                className="flex-grow flex flex-col h-full bg-white font-serif"
-                                placeholder="Вставьте текст шаблона договора сюда..."
-                            />
+                            <div className="w-[210mm] min-h-[297mm] mx-auto bg-white shadow-lg flex flex-col">
+                                <ReactQuill 
+                                    ref={quillRef}
+                                    theme="snow" 
+                                    value={content} 
+                                    onChange={setContent}
+                                    modules={modules}
+                                    className="flex-grow flex flex-col h-full font-serif"
+                                    placeholder="Вставьте текст шаблона договора сюда..."
+                                />
+                            </div>
                         )}
                     </div>
                 </div>

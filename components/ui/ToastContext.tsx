@@ -21,13 +21,15 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined);
 
 export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [toasts, setToasts] = useState<ToastData[]>([]);
+  const toastIdRef = React.useRef(0);
 
   const removeToast = useCallback((id: number) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
   const showToast = useCallback((message: string, type: ToastType = 'success', duration = 3000) => {
-    const id = Date.now();
+    // Ensure unique ID even if called multiple times in the same millisecond
+    const id = Date.now() + (toastIdRef.current++);
     setToasts((prev) => [...prev, { id, message, type, duration }]);
     // Note: The Toast component itself handles the timeout for calling onClose, 
     // but we also need to ensure it's removed from state if the component unmounts or similar.

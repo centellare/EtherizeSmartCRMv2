@@ -273,13 +273,18 @@ export const ClientForm: React.FC<ClientFormProps> = ({ mode, initialData, staff
                 icon="tag" 
                 placeholder="123456789"
               />
-              <Input 
-                label="Реквизиты" 
-                value={formData.bank_details} 
-                onChange={(e: any) => setFormData({...formData, bank_details: e.target.value})} 
-                icon="account_balance" 
-                placeholder="р/с BY... в банке..."
-              />
+              <div className="flex flex-col gap-2">
+                <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                    <span className="material-icons text-slate-400 text-[18px]">account_balance</span>
+                    Реквизиты
+                </label>
+                <textarea 
+                    value={formData.bank_details}
+                    onChange={(e) => setFormData({...formData, bank_details: e.target.value})}
+                    className="w-full h-32 p-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-blue-500 outline-none text-sm"
+                    placeholder="р/с BY... в банке..."
+                />
+              </div>
             </div>
           </div>
         )}

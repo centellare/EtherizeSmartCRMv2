@@ -261,20 +261,20 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                     </div>
 
                     {/* Text Editor Area */}
-                    <div className="flex-grow p-6 overflow-y-auto relative bg-white flex flex-col">
+                    <div className="flex-grow p-6 overflow-y-auto relative bg-slate-100 flex flex-col items-center">
                         {isLoading ? (
                             <div className="absolute inset-0 flex items-center justify-center bg-white/50 z-10">
                                 <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                             </div>
                         ) : null}
-                        <div className="flex-grow flex flex-col h-full border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                        <div className="w-[210mm] min-h-[297mm] bg-white shadow-lg flex flex-col">
                             <ReactQuill 
                                 ref={quillRef}
                                 theme="snow" 
                                 value={content} 
                                 onChange={setContent}
                                 modules={modules}
-                                className="flex-grow flex flex-col h-full bg-white font-serif"
+                                className="flex-grow flex flex-col h-full font-serif"
                                 placeholder="Сгенерируйте текст договора или вставьте свой..."
                             />
                         </div>
