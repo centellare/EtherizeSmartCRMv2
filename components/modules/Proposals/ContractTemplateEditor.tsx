@@ -12,41 +12,66 @@ const TEMPLATE_TYPES = [
   { value: 'legal_partial', label: 'Юрлицо Частичная' }
 ];
 
-const AVAILABLE_TAGS = [
-  { tag: '{{client_name}}', description: 'Название клиента (ФИО)' },
-  { tag: '{{legal_name}}', description: 'Юридическое название' },
-  { tag: '{{rep_position_nom}}', description: 'Должность (Им. падеж)' },
-  { tag: '{{rep_position_gen}}', description: 'Должность (Род. падеж)' },
-  { tag: '{{rep_name_nom}}', description: 'ФИО представителя (Им. падеж)' },
-  { tag: '{{rep_name_gen}}', description: 'ФИО представителя (Род. падеж)' },
-  { tag: '{{rep_name_short}}', description: 'ФИО кратко (Иванов И.И.)' },
-  { tag: '{{basis_of_authority}}', description: 'Основание (Устав, Доверенность)' },
-  { tag: '{{unp}}', description: 'УНП' },
-  { tag: '{{bank_details}}', description: 'Банковские реквизиты' },
-  { tag: '{{contact_person}}', description: 'Контактное лицо' },
-  { tag: '{{phone}}', description: 'Телефон' },
-  { tag: '{{email}}', description: 'Email' },
-  { tag: '{{contract_number}}', description: 'Номер договора' },
-  { tag: '{{contract_date}}', description: 'Дата договора' },
-  { tag: '{{contract_amount}}', description: 'Сумма договора' },
-  { tag: '{{amount_words}}', description: 'Сумма прописью' },
-  { tag: '{{vat_amount}}', description: 'Сумма НДС' },
-  { tag: '{{vat_amount_words}}', description: 'Сумма НДС прописью' },
-  { tag: '{{purchase_subject}}', description: 'Предмет приобретения' },
-  { tag: '{{prepayment_percent}}', description: 'Размер предоплаты, %' },
-  { tag: '{{prepayment_amount}}', description: 'Сумма предоплаты' },
-  { tag: '{{prepayment_amount_words}}', description: 'Сумма предоплаты прописью' },
-  { tag: '{{prepayment_vat_amount}}', description: 'НДС с предоплаты' },
-  { tag: '{{prepayment_vat_amount_words}}', description: 'НДС с предоплаты прописью' },
-  { tag: '{{remaining_percent}}', description: 'Оставшийся % оплаты' },
-  { tag: '{{remaining_amount}}', description: 'Сумма остатка' },
-  { tag: '{{remaining_amount_words}}', description: 'Сумма остатка прописью' },
-  { tag: '{{remaining_vat_amount}}', description: 'НДС с остатка' },
-  { tag: '{{remaining_vat_amount_words}}', description: 'НДС с остатка прописью' },
-  { tag: '{{payment_deadline_days}}', description: 'Срок оплаты остатка, дней' },
-  { tag: '{{delivery_days}}', description: 'Срок поставки товара, дней' },
-  { tag: '{{purchase_purpose}}', description: 'Цель приобретения Товара' },
-  { tag: '{{funding_source}}', description: 'Источник финансирования' },
+const TAG_GROUPS = [
+  {
+    title: 'Данные клиента',
+    items: [
+      { tag: '{{client_name}}', description: 'Название клиента (ФИО)' },
+      { tag: '{{legal_name}}', description: 'Юридическое название' },
+      { tag: '{{unp}}', description: 'УНП' },
+      { tag: '{{bank_details}}', description: 'Банковские реквизиты' },
+      { tag: '{{contact_person}}', description: 'Контактное лицо' },
+      { tag: '{{phone}}', description: 'Телефон' },
+      { tag: '{{email}}', description: 'Email' },
+    ]
+  },
+  {
+    title: 'Представитель',
+    items: [
+      { tag: '{{rep_position_nom}}', description: 'Должность (Им. падеж)' },
+      { tag: '{{rep_position_gen}}', description: 'Должность (Род. падеж)' },
+      { tag: '{{rep_name_nom}}', description: 'ФИО (Им. падеж)' },
+      { tag: '{{rep_name_gen}}', description: 'ФИО (Род. падеж)' },
+      { tag: '{{rep_name_short}}', description: 'ФИО кратко (Иванов И.И.)' },
+      { tag: '{{basis_of_authority}}', description: 'Основание (Устав...)' },
+    ]
+  },
+  {
+    title: 'Договор',
+    items: [
+      { tag: '{{contract_number}}', description: 'Номер договора' },
+      { tag: '{{contract_date}}', description: 'Дата договора' },
+      { tag: '{{purchase_subject}}', description: 'Предмет приобретения' },
+      { tag: '{{purchase_purpose}}', description: 'Цель приобретения' },
+      { tag: '{{funding_source}}', description: 'Источник финансирования' },
+    ]
+  },
+  {
+    title: 'Суммы и НДС',
+    items: [
+      { tag: '{{contract_amount}}', description: 'Сумма договора' },
+      { tag: '{{amount_words}}', description: 'Сумма прописью' },
+      { tag: '{{vat_amount}}', description: 'Сумма НДС' },
+      { tag: '{{vat_amount_words}}', description: 'Сумма НДС прописью' },
+    ]
+  },
+  {
+    title: 'Оплата и Доставка',
+    items: [
+      { tag: '{{delivery_days}}', description: 'Срок поставки (дней)' },
+      { tag: '{{prepayment_percent}}', description: '% предоплаты' },
+      { tag: '{{prepayment_amount}}', description: 'Сумма предоплаты' },
+      { tag: '{{prepayment_amount_words}}', description: 'Сумма предоплаты прописью' },
+      { tag: '{{prepayment_vat_amount}}', description: 'НДС с предоплаты' },
+      { tag: '{{prepayment_vat_amount_words}}', description: 'НДС с предоплаты прописью' },
+      { tag: '{{remaining_percent}}', description: '% остатка' },
+      { tag: '{{remaining_amount}}', description: 'Сумма остатка' },
+      { tag: '{{remaining_amount_words}}', description: 'Сумма остатка прописью' },
+      { tag: '{{remaining_vat_amount}}', description: 'НДС с остатка' },
+      { tag: '{{remaining_vat_amount_words}}', description: 'НДС с остатка прописью' },
+      { tag: '{{payment_deadline_days}}', description: 'Срок оплаты остатка (дней)' },
+    ]
+  }
 ];
 
 export const ContractTemplateEditor: React.FC = () => {
@@ -169,14 +194,18 @@ export const ContractTemplateEditor: React.FC = () => {
         vat_amount: '1 750,00 руб.',
         vat_amount_words: 'Одна тысяча семьсот пятьдесят рублей 00 копеек',
         purchase_subject: 'Оборудование для умного дома',
-        prepayment_percent: '50',
+        prepayment_percent: 50,
         delivery_days: '14',
         purchase_purpose: 'Для собственного потребления',
-        funding_source: 'Собственные средства'
+        funding_source: 'Собственные средства',
+        payment_deadline_days: '5',
+        // Raw values for calculations
+        total_amount_value: 10500,
+        total_vat_value: 1750
     };
 
     return (
-        <div className="h-full flex flex-col bg-slate-50">
+        <div className="flex flex-col bg-slate-50 rounded-2xl overflow-hidden border border-slate-200 shadow-sm" style={{ height: 'calc(100vh - 140px)' }}>
             <style>{`
                 .prose { 
                     max-width: none !important; 
@@ -259,30 +288,39 @@ export const ContractTemplateEditor: React.FC = () => {
                 </div>
 
                 {/* Tags Sidebar */}
-                <div className="w-80 bg-white border-l border-slate-200 p-6 overflow-y-auto flex-shrink-0">
-                    <h3 className="text-sm font-bold text-slate-800 mb-4 uppercase tracking-wider">Доступные тэги</h3>
-                    <p className="text-xs text-slate-500 mb-6 leading-relaxed">
-                        Кликните на тэг, чтобы вставить его в позицию курсора, или скопировать в буфер обмена.
-                    </p>
+                <div className="w-80 bg-white border-l border-slate-200 flex-shrink-0 flex flex-col h-full">
+                    <div className="p-4 border-b border-slate-100 bg-white sticky top-0 z-10">
+                        <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wider">Доступные тэги</h3>
+                        <p className="text-xs text-slate-500 mt-1 leading-relaxed">
+                            Кликните на тэг, чтобы вставить его в позицию курсора.
+                        </p>
+                    </div>
                     
-                    <div className="space-y-3">
-                        {AVAILABLE_TAGS.map((t, idx) => (
-                            <div 
-                                key={idx} 
-                                className="group p-3 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-all"
-                                onClick={() => handleInsertTag(t.tag)}
-                            >
-                                <div className="flex items-center justify-between mb-1">
-                                    <span className="font-mono text-xs font-bold text-blue-700 bg-blue-100 px-2 py-0.5 rounded">
-                                        {t.tag}
-                                    </span>
-                                    <span className="material-icons text-slate-400 group-hover:text-blue-500 text-[16px]">
-                                        content_copy
-                                    </span>
+                    <div className="flex-grow overflow-y-auto p-4 space-y-6">
+                        {TAG_GROUPS.map((group, gIdx) => (
+                            <div key={gIdx}>
+                                <h4 className="text-xs font-bold text-slate-400 uppercase mb-3 px-1">{group.title}</h4>
+                                <div className="space-y-2">
+                                    {group.items.map((t, idx) => (
+                                        <div 
+                                            key={idx} 
+                                            className="group p-2.5 rounded-lg border border-slate-200 hover:border-blue-300 hover:bg-blue-50 cursor-pointer transition-all"
+                                            onClick={() => handleInsertTag(t.tag)}
+                                        >
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="font-mono text-[10px] font-bold text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded">
+                                                    {t.tag}
+                                                </span>
+                                                <span className="material-icons text-slate-300 group-hover:text-blue-500 text-[14px]">
+                                                    content_copy
+                                                </span>
+                                            </div>
+                                            <p className="text-[10px] text-slate-500 group-hover:text-slate-700 leading-tight">
+                                                {t.description}
+                                            </p>
+                                        </div>
+                                    ))}
                                 </div>
-                                <p className="text-[11px] text-slate-500 group-hover:text-slate-700">
-                                    {t.description}
-                                </p>
                             </div>
                         ))}
                     </div>

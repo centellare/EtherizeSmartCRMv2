@@ -123,7 +123,12 @@ export const replaceDocumentTags = (text: string | null | undefined, clientData:
   if (documentData && typeof documentData.total_amount_value === 'number') {
       const totalAmount = documentData.total_amount_value;
       const totalVat = documentData.total_vat_value || 0;
-      const percent = typeof documentData.prepayment_percent === 'number' ? documentData.prepayment_percent : 100;
+      
+      let percent = 100;
+      if (documentData.prepayment_percent !== undefined && documentData.prepayment_percent !== null && documentData.prepayment_percent !== '') {
+          percent = Number(documentData.prepayment_percent);
+          if (isNaN(percent)) percent = 100;
+      }
       
       const prepAmount = totalAmount * (percent / 100);
       const prepVat = totalVat * (percent / 100);
