@@ -380,7 +380,17 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                       <style>
                           @media print {
                               @page { margin: 0; size: A4; }
-                              body { margin: 20mm; -webkit-print-color-adjust: exact; }
+                              html, body { 
+                                  width: 210mm;
+                                  height: 100%;
+                                  margin: 0 !important; 
+                                  padding: 0 !important;
+                              }
+                              .print-container {
+                                  padding: 20mm 15mm;
+                                  width: 100%;
+                                  box-sizing: border-box;
+                              }
                           }
                           /* Quill Styles for Print */
                           .ql-align-center { text-align: center; }
@@ -398,11 +408,21 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                           h2 { font-size: 1.5em; font-weight: bold; margin: 0.83em 0; }
                           h3 { font-size: 1.17em; font-weight: bold; margin: 1em 0; }
                           p { margin: 0.5em 0; line-height: 1.5; }
+                          
+                          /* Ensure text wraps */
+                          .prose { 
+                              max-width: none !important; 
+                              width: 100% !important;
+                              word-wrap: break-word;
+                              overflow-wrap: break-word;
+                          }
                       </style>
                   </head>
                   <body class="font-serif">
-                      <div class="prose max-w-none">
-                          ${content}
+                      <div class="print-container">
+                          <div class="prose">
+                              ${content}
+                          </div>
                       </div>
                       <script>setTimeout(()=>window.print(), 800)</script>
                   </body>
