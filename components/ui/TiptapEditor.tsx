@@ -1,9 +1,7 @@
 import React, { useEffect, useImperativeHandle, forwardRef } from 'react';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
-import Underline from '@tiptap/extension-underline';
 import TextAlign from '@tiptap/extension-text-align';
-import Link from '@tiptap/extension-link';
 import Placeholder from '@tiptap/extension-placeholder';
 import { Button } from './Button';
 
@@ -27,12 +25,8 @@ export const TiptapEditor = forwardRef<TiptapEditorRef, TiptapEditorProps>(({
     const editor = useEditor({
         extensions: [
             StarterKit,
-            Underline,
             TextAlign.configure({
                 types: ['heading', 'paragraph'],
-            }),
-            Link.configure({
-                openOnClick: false,
             }),
             Placeholder.configure({
                 placeholder: placeholder,
