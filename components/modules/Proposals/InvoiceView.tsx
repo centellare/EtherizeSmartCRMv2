@@ -5,8 +5,6 @@ import { Button, useToast } from '../../ui';
 import { formatDate } from '../../../lib/dateUtils';
 import { sumInWords, replaceDocumentTags } from '../../../lib/formatUtils';
 import { notifyRole } from '../../../lib/notifications';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 import { ContractGenerator } from './ContractGenerator';
 
 interface InvoiceViewProps {
@@ -372,49 +370,6 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
       }
   };
 
-  const handleDownloadContractPDF = async (contract: any) => {
-    const element = document.createElement('div');
-    element.className = 'document-preview';
-    element.style.width = '210mm';
-    element.style.minHeight = '297mm';
-    element.style.padding = '20mm 15mm';
-    element.style.background = 'white';
-    element.style.fontFamily = '"Times New Roman", Times, serif';
-    element.style.fontSize = '12pt';
-    element.style.lineHeight = '1.5';
-    element.innerHTML = contract.content;
-    document.body.appendChild(element);
-
-    try {
-        const canvas = await html2canvas(element, {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            backgroundColor: '#ffffff'
-        });
-        
-        const imgData = canvas.toDataURL('image/png');
-        const pdf = new jsPDF({
-            orientation: 'portrait',
-            unit: 'mm',
-            format: 'a4'
-        });
-
-        const imgProps = pdf.getImageProperties(imgData);
-        const pdfWidth = pdf.internal.pageSize.getWidth();
-        const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-        
-        pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-        pdf.save(`Договор_${contract.contract_number}.pdf`);
-        toast.success('PDF успешно сформирован');
-    } catch (error) {
-        console.error('PDF generation error:', error);
-        toast.error('Ошибка при создании PDF');
-    } finally {
-        document.body.removeChild(element);
-    }
-  };
-
   const handleDownloadContractDoc = (contract: any) => {
     const header = `
         <html xmlns:o='urn:schemas-microsoft-com:office:office' 
@@ -544,8 +499,7 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                             <h2 className="text-xl font-bold text-slate-800">Просмотр договора №{viewingContract.contract_number}</h2>
                         </div>
                         <div className="flex gap-2">
-                            <Button variant="secondary" icon="picture_as_pdf" onClick={() => handleDownloadContractPDF(viewingContract)}>PDF</Button>
-                            <Button variant="secondary" icon="description" onClick={() => handleDownloadContractDoc(viewingContract)}>.DOC</Button>
+                            <Button variant="secondary" icon="description" onClick={() => handleDownloadContractDoc(viewingContract)}>Скачать .DOC</Button>
                         </div>
                     </div>
                     <div className="flex-grow p-8 overflow-y-auto bg-slate-100 flex flex-col items-center">
@@ -577,7 +531,6 @@ const InvoiceView: React.FC<InvoiceViewProps> = ({ invoiceId, onClose }) => {
                                 </div>
                                 <div className="flex gap-2">
                                     <Button variant="secondary" icon="visibility" onClick={() => setViewingContract(c)}>Просмотр</Button>
-                                    <Button variant="secondary" icon="picture_as_pdf" onClick={() => handleDownloadContractPDF(c)}>PDF</Button>
                                     <Button variant="secondary" icon="description" onClick={() => handleDownloadContractDoc(c)}>.DOC</Button>
                                     <Button variant="danger" icon="delete" onClick={() => handleDeleteContract(c.id)} />
                                 </div>

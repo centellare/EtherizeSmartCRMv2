@@ -159,7 +159,14 @@ export const replaceDocumentTags = (text: string | null | undefined, clientData:
     // Use global replace
     // Handle newlines for HTML content
     const safeValue = String(value).replace(/\n/g, '<br/>');
-    result = result.split(tag).join(safeValue);
+    
+    // Wrap requisites in a span with tight line-height
+    let finalValue = safeValue;
+    if (['{{bank_details}}', '{{requisites}}', '{{client_name}}', '{{legal_name}}', '{{unp}}', '{{contact_person}}', '{{phone}}', '{{email}}'].includes(tag)) {
+        finalValue = `<span style="line-height: 1.0; display: inline-block;">${safeValue}</span>`;
+    }
+
+    result = result.split(tag).join(finalValue);
   }
 
   return result;

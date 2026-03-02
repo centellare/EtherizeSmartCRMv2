@@ -4,8 +4,6 @@ import { supabase } from '../../../lib/supabase';
 import { Button, Input, useToast } from '../../ui';
 import { replaceDocumentTags, sumInWords } from '../../../lib/formatUtils';
 import { formatDateLong } from '../../../lib/dateUtils';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 
 interface ContractGeneratorProps {
     invoiceId: string;
@@ -191,41 +189,6 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
         window.print();
     };
 
-    const handleDownloadPDF = async () => {
-        const element = document.getElementById('contract-document');
-        if (!element) return;
-
-        setIsSaving(true);
-        try {
-            const canvas = await html2canvas(element, {
-                scale: 2, // Higher quality
-                useCORS: true,
-                logging: false,
-                backgroundColor: '#ffffff'
-            });
-            
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF({
-                orientation: 'portrait',
-                unit: 'mm',
-                format: 'a4'
-            });
-
-            const imgProps = pdf.getImageProperties(imgData);
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-            
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-            pdf.save(`${contractNumber || 'contract'}.pdf`);
-            toast.success('PDF успешно сформирован');
-        } catch (error) {
-            console.error('PDF generation error:', error);
-            toast.error('Ошибка при создании PDF');
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
     const handleDownloadDoc = () => {
         const header = `
             <html xmlns:o='urn:schemas-microsoft-com:office:office' 
@@ -290,9 +253,10 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                 .document-editor .ProseMirror {
                     font-family: "Times New Roman", Times, serif !important;
                     font-size: 12pt !important;
-                    line-height: 1.5 !important;
+                    line-height: 1 !important;
                     padding: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm !important;
                     min-height: 297mm !important;
+                    height: auto !important;
                     width: 100% !important;
                     max-width: 100% !important;
                     background: white !important;
@@ -316,7 +280,7 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                 }
                 /* Скрываем любые внутренние скроллы редактора */
                 .document-editor {
-                    overflow: hidden !important;
+                    /* overflow: hidden !important; REMOVED to allow content to grow */
                 }
                 .document-editor .ProseMirror:focus {
                     outline: none !important;
@@ -331,21 +295,12 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                     </div>
                     <div className="flex gap-2">
                         <Button 
-                            onClick={handleDownloadPDF} 
-                            variant="secondary"
-                            icon="picture_as_pdf"
-                            disabled={!content || isSaving}
-                            loading={isSaving}
-                        >
-                            PDF
-                        </Button>
-                        <Button 
                             onClick={handleDownloadDoc} 
                             variant="secondary"
                             icon="description"
                             disabled={!content}
                         >
-                            .DOC
+                            Скачать .DOC
                         </Button>
                         <Button 
                             onClick={handleSave} 
@@ -482,7 +437,7 @@ export const ContractGenerator: React.FC<ContractGeneratorProps> = ({ invoiceId,
                                     setContent(html);
                                     setContentJson(json);
                                 }}
-                                className="flex-grow flex flex-col h-full border-none"
+                                className="flex-grow flex flex-col min-h-full border-none"
                                 placeholder="Сгенерируйте текст договора или вставьте свой..."
                             />
                         </div>

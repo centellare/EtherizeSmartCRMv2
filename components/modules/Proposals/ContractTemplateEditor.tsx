@@ -3,8 +3,6 @@ import { TiptapEditor, TiptapEditorRef } from '../../ui';
 import { supabase } from '../../../lib/supabase';
 import { Button, useToast } from '../../ui';
 import { replaceDocumentTags } from '../../../lib/formatUtils';
-import jsPDF from 'jspdf';
-import html2canvas from 'html2canvas';
 
 const TAG_GROUPS = [
   {
@@ -229,74 +227,6 @@ export const ContractTemplateEditor: React.FC = () => {
         editor.chain().focus().insertContent(tag).run();
     };
 
-    const handleDownloadDoc = () => {
-        const header = `
-            <html xmlns:o='urn:schemas-microsoft-com:office:office' 
-                  xmlns:w='urn:schemas-microsoft-com:office:word' 
-                  xmlns='http://www.w3.org/TR/REC-html40'>
-            <head>
-                <meta charset='utf-8'>
-                <style>
-                    body { font-family: "Times New Roman", serif; font-size: 12pt; line-height: 1.5; }
-                    p { margin: 0 0 10pt 0; }
-                    table { border-collapse: collapse; width: 100%; }
-                    td, th { border: 1px solid black; padding: 5pt; }
-                </style>
-            </head>
-            <body>
-                ${replaceDocumentTags(content, previewClientData, previewDocumentData)}
-            </body>
-            </html>`;
-        
-        const blob = new Blob(['\ufeff', header], {
-            type: 'application/msword'
-        });
-        
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `${templateName || 'template'}.doc`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-    };
-
-    const handleDownloadPDF = async () => {
-        const element = document.getElementById('template-preview-container');
-        if (!element) return;
-
-        setIsSaving(true);
-        try {
-            const canvas = await html2canvas(element, {
-                scale: 2,
-                useCORS: true,
-                logging: false,
-                backgroundColor: '#ffffff'
-            });
-            
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF({
-                orientation: 'portrait',
-                unit: 'mm',
-                format: 'a4'
-            });
-
-            const imgProps = pdf.getImageProperties(imgData);
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-            
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-            pdf.save(`${templateName || 'template'}.pdf`);
-            toast.success('PDF успешно сформирован');
-        } catch (error) {
-            console.error('PDF generation error:', error);
-            toast.error('Ошибка при создании PDF');
-        } finally {
-            setIsSaving(false);
-        }
-    };
-
     const previewClientData = {
         name: 'Иванов Иван Иванович',
         legal_name: 'ИП Иванов И.И.',
@@ -351,7 +281,7 @@ export const ContractTemplateEditor: React.FC = () => {
                 .document-preview {
                     font-family: "Times New Roman", Times, serif !important;
                     font-size: 12pt !important;
-                    line-height: 1.5 !important;
+                    line-height: 1 !important;
                     color: black !important;
                     -webkit-hyphens: none !important;
                     -ms-hyphens: none !important;
@@ -360,6 +290,7 @@ export const ContractTemplateEditor: React.FC = () => {
                     padding: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm !important;
                     width: 210mm !important;
                     min-height: 297mm !important;
+                    height: auto !important;
                     background: white !important;
                     box-sizing: border-box !important;
                 }
@@ -374,9 +305,10 @@ export const ContractTemplateEditor: React.FC = () => {
                 .document-editor .ProseMirror {
                     font-family: "Times New Roman", Times, serif !important;
                     font-size: 12pt !important;
-                    line-height: 1.5 !important;
+                    line-height: 1 !important;
                     padding: ${marginTop}mm ${marginRight}mm ${marginBottom}mm ${marginLeft}mm !important;
                     min-height: 297mm !important;
+                    height: auto !important;
                     width: 100% !important;
                     max-width: 100% !important;
                     background: white !important;
@@ -396,7 +328,7 @@ export const ContractTemplateEditor: React.FC = () => {
                     margin-bottom: 0 !important;
                 }
                 .document-editor {
-                    overflow: hidden !important;
+                    /* overflow: hidden !important; REMOVED */
                 }
                 .document-editor .ProseMirror:focus {
                     outline: none !important;
@@ -504,7 +436,7 @@ export const ContractTemplateEditor: React.FC = () => {
                     {showPreview ? (
                         <div 
                             id="template-preview-container"
-                            className="w-[210mm] min-h-[297mm] bg-white shadow-lg prose max-w-none document-preview"
+                            className="w-[210mm] min-h-[297mm] bg-white shadow-lg document-preview"
                             dangerouslySetInnerHTML={{ __html: replaceDocumentTags(content, previewClientData, previewDocumentData) }}
                         />
                     ) : (
@@ -516,7 +448,7 @@ export const ContractTemplateEditor: React.FC = () => {
                                     setContent(html);
                                     setContentJson(json);
                                 }}
-                                className="flex-grow flex flex-col h-full border-none"
+                                className="flex-grow flex flex-col min-h-full border-none"
                                 placeholder="Вставьте текст шаблона договора сюда..."
                             />
                         </div>
